@@ -143,7 +143,7 @@ func getDistFolderTimestamp(path string) (time.Time, error) {
 }
 
 func areSourceFilesModifiedSince(timestamp time.Time) (bool, error) {
-	excludedFolders := []string{"it-tests", "dist-tests", "dist"}
+	excludedFolders := []string{"e2e-tests", "dist-tests", "dist"}
 	modificationsDetected := false
 
 	err := filepath.Walk(parentPath, func(path string, info os.FileInfo, err error) error {
