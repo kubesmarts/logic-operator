@@ -15,13 +15,19 @@
 # specific language governing permissions and limitations
 # under the License.
 
+# Load .env file if it exists, allowing environment variables to override
+ifneq (,$(wildcard .env))
+    include .env
+    export
+endif
+
 # VERSION defines the project version for the bundle.
 # Update this value when you upgrade the version of your project.
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
-VERSION ?= $(shell pnpm exec build-env sonataFlowOperator.version)
-IMAGE_TAG ?= $(shell pnpm exec build-env sonataFlowOperator.buildTag)
+VERSION ?= 2.0.0-snapshot
+IMAGE_TAG ?= 2.0.0
 
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
@@ -47,7 +53,10 @@ BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 #
 # For example, running 'make bundle-build bundle-push catalog-build catalog-push' will build and push both
 # apache/sonataflow-operator-bundle:$VERSION and apache/sonataflow-operator-catalog:$VERSION.
-IMAGE_TAG_BASE ?= $(shell pnpm exec build-env sonataFlowOperator.registry)/$(shell pnpm exec build-env sonataFlowOperator.account)/$(shell pnpm exec build-env sonataFlowOperator.name)
+REGISTRY ?= quay.io
+ACCOUNT ?= kiegroup
+OPERATOR_NAME ?= logic-operator
+IMAGE_TAG_BASE ?= $(REGISTRY)/$(ACCOUNT)/$(OPERATOR_NAME)
 
 # BUNDLE_IMG defines the image:tag used for the bundle.
 # You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)
@@ -486,8 +495,8 @@ before-pr: generate-all test ## Run generate-all before executing tests.
 .PHONY: load-docker-image
 load-docker-image: install-kind
 	kind load docker-image $(IMG)
-	kind load docker-image $(shell pnpm exec build-env sonataFlowOperator.sonataflowBuilderImage)
-	kind load docker-image $(shell pnpm exec build-env sonataFlowOperator.sonataflowDevModeImage)
+	kind load docker-image $(RELATED_IMAGE_BASE_BUILDER)
+	kind load docker-image $(RELATED_IMAGE_DEVMODE)
 
 .PHONY: install-kind
 install-kind:
@@ -526,19 +535,18 @@ delete-cluster: install-kind
 .PHONY: update-patch
 update-patch:
 	@echo "🔧 Updating Kustomize patch file..."
-	$(eval PIN_TOOL ?= $$(shell build-env sonataFlowOperator.pinImageSHABundleTool)) # set to docker, podman, or skopeo if needed
 	$(eval PARAMS := \
-		RELATED_IMAGE_JOBS_SERVICE_POSTGRESQL=$$(shell build-env sonataFlowOperator.kogitoJobsServicePostgresqlImage) \
-		RELATED_IMAGE_JOBS_SERVICE_EPHEMERAL=$$(shell build-env sonataFlowOperator.kogitoJobsServiceEphemeralImage) \
-		RELATED_IMAGE_DATA_INDEX_POSTGRESQL=$$(shell build-env sonataFlowOperator.kogitoDataIndexPostgresqlImage) \
-		RELATED_IMAGE_DATA_INDEX_EPHEMERAL=$$(shell build-env sonataFlowOperator.kogitoDataIndexEphemeralImage) \
-		RELATED_IMAGE_BASE_BUILDER=$$(shell build-env sonataFlowOperator.sonataflowBuilderImage) \
-		RELATED_IMAGE_DEVMODE=$$(shell build-env sonataFlowOperator.sonataflowDevModeImage) \
-		RELATED_IMAGE_DB_MIGRATOR_TOOL=$$(shell build-env sonataFlowOperator.kogitoDBMigratorToolImage))
+		RELATED_IMAGE_JOBS_SERVICE_POSTGRESQL=$(RELATED_IMAGE_JOBS_SERVICE_POSTGRESQL) \
+		RELATED_IMAGE_JOBS_SERVICE_EPHEMERAL=$(RELATED_IMAGE_JOBS_SERVICE_EPHEMERAL) \
+		RELATED_IMAGE_DATA_INDEX_POSTGRESQL=$(RELATED_IMAGE_DATA_INDEX_POSTGRESQL) \
+		RELATED_IMAGE_DATA_INDEX_EPHEMERAL=$(RELATED_IMAGE_DATA_INDEX_EPHEMERAL) \
+		RELATED_IMAGE_BASE_BUILDER=$(RELATED_IMAGE_BASE_BUILDER) \
+		RELATED_IMAGE_DEVMODE=$(RELATED_IMAGE_DEVMODE) \
+		RELATED_IMAGE_DB_MIGRATOR_TOOL=$(RELATED_IMAGE_DB_MIGRATOR_TOOL))
 	@if [ -z "$(strip $(PARAMS))" ]; then \
 		echo "⚠️  No variables resolved. Skipping updates."; \
 	else \
 		echo "✅ Resolved:"; echo "$(PARAMS)" | tr ' ' '\n'; \
-		python ./hack/update_patch_env.py "$(PIN_TOOL)" $(PARAMS); \
+		python ./hack/update_patch_env.py "$(PIN_IMAGE_SHA_BUNDLE_TOOL)" $(PARAMS); \
 		echo "✅ Patch updated!"; \
 	fi
