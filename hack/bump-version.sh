@@ -20,10 +20,16 @@
 
 set -e
 
-imageName=$(pnpm exec build-env sonataFlowOperator.registry)/$(pnpm exec build-env sonataFlowOperator.account)/$(pnpm exec build-env sonataFlowOperator.name)
-imageTag=$(pnpm exec build-env sonataFlowOperator.buildTag)
-platformTag=$(pnpm exec build-env sonataFlowOperator.platformTag)
-version=$(pnpm exec build-env sonataFlowOperator.version)
+# Source .env file if it exists
+if [ -f .env ]; then
+    source .env
+fi
+
+# Use environment variables with defaults
+imageName="${REGISTRY:-quay.io}/${ACCOUNT:-kiegroup}/${OPERATOR_NAME:-logic-operator}"
+imageTag="${IMAGE_TAG:-2.0.0}"
+platformTag="${PLATFORM_TAG:-2.0.0}"
+version="${VERSION:-2.0.0-snapshot}"
 
 if [ -z "${version}" ]; then
   echo "Please inform the new version"
@@ -35,6 +41,9 @@ newMajorMinorVersion=${version%.*}
 targetSonataflowOperatorImage="${imageName}:${imageTag}"
 
 echo "Set new version to ${version} (majorMinor = ${newMajorMinorVersion}, imageName:imageTag = ${targetSonataflowOperatorImage})"
+
+# Note: Requires replace-in-file npm package installed globally:
+# npm install -g replace-in-file
 
 node -p "require('replace-in-file').sync({ from: /\bnewTag:.*\b/g, to: 'newTag: ${version}', files: ['./config/manager/kustomization.yaml'] });"
 node -p "require('replace-in-file').sync({ from: /\bnewName:.*\b/g, to: 'newName: ${imageName}', files: ['./config/manager/kustomization.yaml'] });"
