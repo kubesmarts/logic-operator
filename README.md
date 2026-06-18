@@ -15,14 +15,17 @@
    under the License.
 -->
 
-# SonataFlow Operator
+# Logic Operator
 
-The SonataFlow Operator defines a set
-of [Kubernetes Custom Resources](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/)
-to help users to deploy SonataFlow projects on Kubernetes and OpenShift.
+The Logic Operator is a Kubernetes operator for deploying and managing serverless workflow applications.
+It defines a set of [Kubernetes Custom Resources](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/)
+to help users deploy workflow projects on Kubernetes and OpenShift.
 
-Please [visit our official documentation](https://kiegroup.github.io/kogito-docs/serverlessworkflow/latest/cloud/operator/install-serverless-operator.html)
-to know more.
+This operator is a continuation of the Apache KIE SonataFlow Operator, maintained by Kubesmarts.
+
+## Documentation
+
+For detailed documentation, please visit [the official documentation](https://kiegroup.github.io/kogito-docs/serverlessworkflow/latest/cloud/operator/install-serverless-operator.html).
 
 ## Available modules for integrations
 
@@ -36,15 +39,20 @@ create any custom type managed by the operator.
 To use it, simply run:
 
 ```shell
-go get github.com/kiegroup/kogito-serverless-workflow/api
+go get github.com/kubesmarts/logic-operator/api
 ```
 
 Then you can create any type programmatically, for example:
 
 ```go
+import (
+    "github.com/kubesmarts/logic-operator/api/v1alpha08"
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
 workflow := &v1alpha08.SonataFlow{
-ObjectMeta: metav1.ObjectMeta{Name: w.name, Namespace: w.namespace},
-Spec:       v1alpha08.SonataFlowSpec{Flow: *myWorkflowDef>}
+    ObjectMeta: metav1.ObjectMeta{Name: w.name, Namespace: w.namespace},
+    Spec:       v1alpha08.SonataFlowSpec{Flow: *myWorkflowDef},
 }
 ```
 
@@ -66,32 +74,28 @@ Please see the module's [README file](container-builder/README.md).
 
 Please see the module's [README file](workflowproj/README.md).
 
+## Build Requirements
+
+To build and develop the Logic Operator, you need:
+
+- **Go** 1.25.0 or later
+- **Make**
+- **Python 3** with `ruamel.yaml` package
+- **Node.js** (for `replace-in-file` utility used in version bumping)
+- **Docker** or **Podman** (for container builds)
+- Optional: **kubectl**, **kind** (for local testing)
+
+### Configuration
+
+The operator uses a `.env` file for build configuration. Copy the example file:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` to customize version numbers, registry locations, and image references.
+All values can be overridden by environment variables.
+
 ## Development and Contributions
 
-Contributing is easy, just take a look at our [contributors](docs/CONTRIBUTING.md)'guide.
-
----
-
-Apache KIE (incubating) is an effort undergoing incubation at The Apache Software
-Foundation (ASF), sponsored by the name of Apache Incubator. Incubation is
-required of all newly accepted projects until a further review indicates that
-the infrastructure, communications, and decision making process have stabilized
-in a manner consistent with other successful ASF projects. While incubation
-status is not necessarily a reflection of the completeness or stability of the
-code, it does indicate that the project has yet to be fully endorsed by the ASF.
-
-Some of the incubating project’s releases may not be fully compliant with ASF
-policy. For example, releases may have incomplete or un-reviewed licensing
-conditions. What follows is a list of known issues the project is currently
-aware of (note that this list, by definition, is likely to be incomplete):
-
-- Hibernate, an LGPL project, is being used. Hibernate is in the process of
-  relicensing to ASL v2
-- Some files, particularly test files, and those not supporting comments, may
-  be missing the ASF Licensing Header
-
-If you are planning to incorporate this work into your product/project, please
-be aware that you will need to conduct a thorough licensing review to determine
-the overall implications of including this work. For the current status of this
-project through the Apache Incubator visit:
-https://incubator.apache.org/projects/kie.html
+Contributing is easy, just take a look at our [contributors](https://github.com/kubesmarts/logic-operator/blob/main/docs/CONTRIBUTING.md) guide.
