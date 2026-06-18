@@ -531,7 +531,7 @@ delete-cluster: install-kind
 	kind delete cluster && $(BUILDER) rm -f kind-registry
 
 # Updates the manager_env_patch.yaml file with the images used by the operator.
-# These params come from the package.json file processing the env vars at ./env/index.js
+# These params come from the .env file or environment variables
 .PHONY: update-patch
 update-patch:
 	@echo "🔧 Updating Kustomize patch file..."
