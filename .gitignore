@@ -41,3 +41,10 @@ config/crd/bases/*.yaml
 
 # Local environment configuration
 .env
+
+# Coverage output
+cover.out
+
+# Vim swap files
+*.swp
+*.swo
