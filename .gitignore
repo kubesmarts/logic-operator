@@ -48,3 +48,6 @@ cover.out
 # Vim swap files
 *.swp
 *.swo
+
+# Python virtual environment
+venv/
