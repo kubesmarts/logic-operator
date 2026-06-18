@@ -1,0 +1,72 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Copy .env configuration
+        run: cp .env.example .env
+
+      - name: Run go fmt check
+        run: |
+          if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+            echo "The following files need formatting:"
+            gofmt -s -l .
+            exit 1
+          fi
+
+      - name: Run go vet
+        run: make vet
+
+      - name: Run unit tests
+        run: make test
+
+      - name: Build operator binary
+        run: make build
+
+      - name: Check Go modules
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
+  verify-manifests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Copy .env configuration
+        run: cp .env.example .env
+
+      - name: Verify generated manifests are up to date
+        run: |
+          make manifests
+          git diff --exit-code config/
+
+      - name: Verify CRD bundle
+        run: |
+          make bundle
+          git diff --exit-code bundle/

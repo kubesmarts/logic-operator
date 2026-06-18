@@ -17,6 +17,9 @@
 
 # Logic Operator
 
+[![E2E Tests](https://github.com/kubesmarts/logic-operator/actions/workflows/e2e.yaml/badge.svg)](https://github.com/kubesmarts/logic-operator/actions/workflows/e2e.yaml)
+[![PR Checks](https://github.com/kubesmarts/logic-operator/actions/workflows/pr-checks.yaml/badge.svg)](https://github.com/kubesmarts/logic-operator/actions/workflows/pr-checks.yaml)
+
 The Logic Operator is a Kubernetes operator for deploying and managing serverless workflow applications.
 It defines a set of [Kubernetes Custom Resources](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/)
 to help users deploy workflow projects on Kubernetes and OpenShift.
