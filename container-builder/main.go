@@ -24,14 +24,14 @@ import (
 	"os"
 	"time"
 
-	builder "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/builder/kubernetes"
+	builder "github.com/kubesmarts/logic-operator/container-builder/builder/kubernetes"
 
 	v1 "k8s.io/api/core/v1"
 	resource2 "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/api"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/client"
+	"github.com/kubesmarts/logic-operator/container-builder/api"
+	"github.com/kubesmarts/logic-operator/container-builder/client"
 )
 
 /*

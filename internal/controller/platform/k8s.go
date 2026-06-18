@@ -26,11 +26,11 @@ import (
 	v2 "k8s.io/api/autoscaling/v2"
 	policyv1 "k8s.io/api/policy/v1"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/version"
+	"github.com/kubesmarts/logic-operator/api/version"
 
 	"k8s.io/klog/v2"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/metadata"
+	"github.com/kubesmarts/logic-operator/api/metadata"
 
 	"github.com/imdario/mergo"
 	appsv1 "k8s.io/api/apps/v1"
@@ -40,16 +40,16 @@ import (
 	sourcesv1 "knative.dev/eventing/pkg/apis/sources/v1"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/client"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/knative"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/platform/services"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common/constants"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common/variables"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/log"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils"
-	kubeutil "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils/kubernetes"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/workflowproj"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/container-builder/client"
+	"github.com/kubesmarts/logic-operator/internal/controller/knative"
+	"github.com/kubesmarts/logic-operator/internal/controller/platform/services"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common/constants"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common/variables"
+	"github.com/kubesmarts/logic-operator/log"
+	"github.com/kubesmarts/logic-operator/utils"
+	kubeutil "github.com/kubesmarts/logic-operator/utils/kubernetes"
+	"github.com/kubesmarts/logic-operator/workflowproj"
 )
 
 // NewServiceAction returns an action that deploys the services.

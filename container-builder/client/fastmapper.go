@@ -29,7 +29,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/util/log"
+	"github.com/kubesmarts/logic-operator/container-builder/util/log"
 )
 
 // FastMapperAllowedAPIGroups contains a set of API groups that are allowed when using the fastmapper.

@@ -26,8 +26,8 @@ import (
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/log"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils"
+	"github.com/kubesmarts/logic-operator/log"
+	"github.com/kubesmarts/logic-operator/utils"
 )
 
 func GetSecretKeyValueString(ctx context.Context, secretName string, secretKey string, nameSpace string) (string, error) {

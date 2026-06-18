@@ -24,7 +24,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/api"
+	"github.com/kubesmarts/logic-operator/container-builder/api"
 )
 
 var _ Scheduler = &kanikoScheduler{}

@@ -30,9 +30,9 @@ import (
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/api"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/test"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/container-builder/api"
+	"github.com/kubesmarts/logic-operator/test"
 )
 
 func TestSonataFlowBuildController(t *testing.T) {

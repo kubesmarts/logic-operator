@@ -24,7 +24,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/api"
+	"github.com/kubesmarts/logic-operator/container-builder/api"
 )
 
 func newInitializePodAction() Action {

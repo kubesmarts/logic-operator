@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
 )
 
 func TestMergeContainerSpec(t *testing.T) {

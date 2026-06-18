@@ -22,12 +22,12 @@ import (
 
 	"k8s.io/klog/v2"
 
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/knative"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/log"
+	"github.com/kubesmarts/logic-operator/internal/controller/knative"
+	"github.com/kubesmarts/logic-operator/log"
 )
 
 var _ KnativeEventingHandler = &knativeObjectManager{}

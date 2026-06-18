@@ -23,22 +23,22 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/workflowproj"
+	"github.com/kubesmarts/logic-operator/workflowproj"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/workflowdef"
+	"github.com/kubesmarts/logic-operator/internal/controller/workflowdef"
 
 	"k8s.io/klog/v2"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/log"
+	"github.com/kubesmarts/logic-operator/log"
 
 	policyv1 "k8s.io/api/policy/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils/kubernetes"
+	"github.com/kubesmarts/logic-operator/utils/kubernetes"
 
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common"
 )
 
 type podDisruptionBudgetHandler struct {

@@ -31,11 +31,11 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/client"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils"
+	"github.com/kubesmarts/logic-operator/container-builder/client"
+	"github.com/kubesmarts/logic-operator/utils"
 
-	v08 "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils/kubernetes"
+	v08 "github.com/kubesmarts/logic-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/utils/kubernetes"
 )
 
 var builderResourcesPath = utils.GetEnv("BUILDER_RESOURCES_PATH", "/usr/local/etc/serverless-operator")

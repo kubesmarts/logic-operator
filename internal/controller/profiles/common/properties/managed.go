@@ -24,24 +24,24 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/cfg"
+	"github.com/kubesmarts/logic-operator/internal/controller/cfg"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common/persistence"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common/persistence"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils"
+	"github.com/kubesmarts/logic-operator/utils"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/discovery"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/platform/services"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common/constants"
+	"github.com/kubesmarts/logic-operator/internal/controller/discovery"
+	"github.com/kubesmarts/logic-operator/internal/controller/platform/services"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common/constants"
 
 	"github.com/magiconair/properties"
 
 	"k8s.io/klog/v2"
 
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/log"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/log"
 )
 
 var (

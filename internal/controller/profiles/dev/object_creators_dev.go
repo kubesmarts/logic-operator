@@ -27,14 +27,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/cfg"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles"
+	"github.com/kubesmarts/logic-operator/internal/controller/cfg"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles"
 
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/workflowdef"
-	kubeutil "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils/kubernetes"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/workflowproj"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common"
+	"github.com/kubesmarts/logic-operator/internal/controller/workflowdef"
+	kubeutil "github.com/kubesmarts/logic-operator/utils/kubernetes"
+	"github.com/kubesmarts/logic-operator/workflowproj"
 )
 
 // serviceCreator is an objectCreator for a basic Service for a workflow using dev profile

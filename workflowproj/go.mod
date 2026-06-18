@@ -1,12 +1,12 @@
-module github.com/apache/incubator-kie-tools/packages/sonataflow-operator/workflowproj
+module github.com/kubesmarts/logic-operator/workflowproj
 
 go 1.26.0
 
 // Internal dependencies
-replace github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api => ../api
+replace github.com/kubesmarts/logic-operator/api => ../api
 
 require (
-	github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api v0.0.0
+	github.com/kubesmarts/logic-operator/api v0.0.0
 	github.com/magiconair/properties v1.8.7
 	github.com/pb33f/libopenapi v0.8.4
 	github.com/pkg/errors v0.9.1

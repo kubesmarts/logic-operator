@@ -22,14 +22,14 @@ package workflowproj
 import (
 	"fmt"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/version"
+	"github.com/kubesmarts/logic-operator/api/version"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/metadata"
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/api/metadata"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
 )
 
 const (

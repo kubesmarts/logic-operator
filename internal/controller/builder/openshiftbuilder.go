@@ -23,7 +23,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/openshift"
+	"github.com/kubesmarts/logic-operator/internal/controller/openshift"
 
 	buildv1 "github.com/openshift/api/build/v1"
 	imgv1 "github.com/openshift/api/image/v1"
@@ -36,15 +36,15 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/platform"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/workflowproj"
+	"github.com/kubesmarts/logic-operator/internal/controller/platform"
+	"github.com/kubesmarts/logic-operator/workflowproj"
 
-	kubeutil "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils/kubernetes"
+	kubeutil "github.com/kubesmarts/logic-operator/utils/kubernetes"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/workflowdef"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils"
+	"github.com/kubesmarts/logic-operator/internal/controller/workflowdef"
+	"github.com/kubesmarts/logic-operator/utils"
 
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
 )
 
 const (

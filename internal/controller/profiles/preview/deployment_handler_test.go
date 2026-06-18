@@ -21,7 +21,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/manager"
+	"github.com/kubesmarts/logic-operator/internal/manager"
 
 	"github.com/magiconair/properties"
 	"github.com/stretchr/testify/assert"
@@ -31,11 +31,11 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	servingv1 "knative.dev/serving/pkg/apis/serving/v1"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/metadata"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/test"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/workflowproj"
+	"github.com/kubesmarts/logic-operator/api/metadata"
+	"github.com/kubesmarts/logic-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/test"
+	"github.com/kubesmarts/logic-operator/utils"
+	"github.com/kubesmarts/logic-operator/workflowproj"
 )
 
 type fakeDeploymentReconciler struct {

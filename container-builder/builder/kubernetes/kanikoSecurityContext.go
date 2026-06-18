@@ -21,7 +21,7 @@ package kubernetes
 import (
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/util"
+	"github.com/kubesmarts/logic-operator/container-builder/util"
 )
 
 func KanikoSecurityDefaults() *corev1.SecurityContext {

@@ -26,10 +26,10 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/api"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/client"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/util/minikube"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/util/registry"
+	"github.com/kubesmarts/logic-operator/container-builder/api"
+	"github.com/kubesmarts/logic-operator/container-builder/client"
+	"github.com/kubesmarts/logic-operator/container-builder/util/minikube"
+	"github.com/kubesmarts/logic-operator/container-builder/util/registry"
 )
 
 var (

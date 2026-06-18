@@ -25,13 +25,13 @@ import (
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/metadata"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/discovery"
+	"github.com/kubesmarts/logic-operator/api/metadata"
+	"github.com/kubesmarts/logic-operator/internal/controller/discovery"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/log"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common"
+	"github.com/kubesmarts/logic-operator/log"
+	"github.com/kubesmarts/logic-operator/utils"
 )
 
 var _ profiles.ProfileReconciler = &developmentProfile{}

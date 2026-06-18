@@ -28,10 +28,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"knative.dev/pkg/apis"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common"
 
-	apiv08 "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/test"
+	apiv08 "github.com/kubesmarts/logic-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/test"
 )
 
 func Test_enrichmentStatusOnK8s(t *testing.T) {

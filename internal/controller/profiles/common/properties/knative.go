@@ -21,10 +21,10 @@ import (
 	"github.com/magiconair/properties"
 	cncfmodel "github.com/serverlessworkflow/sdk-go/v2/model"
 
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/knative"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common/constants"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/workflowdef"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/internal/controller/knative"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common/constants"
+	"github.com/kubesmarts/logic-operator/internal/controller/workflowdef"
 )
 
 // generateKnativeEventingWorkflowProperties returns the set of application properties required for the workflow to produce or consume

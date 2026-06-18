@@ -1,4 +1,4 @@
-module github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api
+module github.com/kubesmarts/logic-operator/api
 
 go 1.26.0
 

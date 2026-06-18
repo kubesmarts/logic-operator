@@ -26,8 +26,8 @@ import (
 	"hash/fnv"
 	"strconv"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/version"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils/kubernetes"
+	"github.com/kubesmarts/logic-operator/api/version"
+	"github.com/kubesmarts/logic-operator/utils/kubernetes"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -36,13 +36,13 @@ import (
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/client"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/cfg"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/platform/services"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common/constants"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common/persistence"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/log"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/container-builder/client"
+	"github.com/kubesmarts/logic-operator/internal/controller/cfg"
+	"github.com/kubesmarts/logic-operator/internal/controller/platform/services"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common/constants"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common/persistence"
+	"github.com/kubesmarts/logic-operator/log"
 )
 
 type QuarkusDataSource struct {

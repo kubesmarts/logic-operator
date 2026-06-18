@@ -24,7 +24,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/test"
+	"github.com/kubesmarts/logic-operator/test"
 )
 
 func Test_workflowIsDevProfile(t *testing.T) {

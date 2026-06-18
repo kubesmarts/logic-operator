@@ -27,10 +27,10 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/cfg"
+	"github.com/kubesmarts/logic-operator/internal/controller/cfg"
 
-	v08 "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/client"
+	v08 "github.com/kubesmarts/logic-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/container-builder/client"
 )
 
 // kanikoCacheDir is the cache directory for Kaniko builds (mounted into the Kaniko pod).

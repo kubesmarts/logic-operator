@@ -23,7 +23,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/version"
+	"github.com/kubesmarts/logic-operator/api/version"
 
 	"github.com/magiconair/properties"
 	prometheus "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -37,14 +37,14 @@ import (
 	"knative.dev/pkg/kmeta"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/metadata"
+	"github.com/kubesmarts/logic-operator/api/metadata"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils"
-	kubeutil "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils/kubernetes"
+	"github.com/kubesmarts/logic-operator/utils"
+	kubeutil "github.com/kubesmarts/logic-operator/utils/kubernetes"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/test"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/workflowproj"
+	"github.com/kubesmarts/logic-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/test"
+	"github.com/kubesmarts/logic-operator/workflowproj"
 )
 
 const platformName = "test-platform"

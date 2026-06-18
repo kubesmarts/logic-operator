@@ -24,8 +24,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api"
-	v08 "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/api"
+	v08 "github.com/kubesmarts/logic-operator/api/v1alpha08"
 )
 
 // NewCreateAction returns an action that creates resources needed by the platform.

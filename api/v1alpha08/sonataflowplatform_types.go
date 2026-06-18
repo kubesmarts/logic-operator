@@ -23,7 +23,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	duckv1 "knative.dev/pkg/apis/duck/v1"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api"
+	"github.com/kubesmarts/logic-operator/api"
 )
 
 const (

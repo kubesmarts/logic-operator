@@ -26,12 +26,12 @@ import (
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/knative"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/platform"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/platform/services"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common/constants"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/log"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/internal/controller/knative"
+	"github.com/kubesmarts/logic-operator/internal/controller/platform"
+	"github.com/kubesmarts/logic-operator/internal/controller/platform/services"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common/constants"
+	"github.com/kubesmarts/logic-operator/log"
 )
 
 // GetWorkflowDefinitionEventsTargetURL returns the target url that must be used to send the workflow definition events.

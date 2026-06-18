@@ -22,28 +22,28 @@ package builder
 import (
 	"time"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/workflowproj"
+	"github.com/kubesmarts/logic-operator/workflowproj"
 
 	corev1 "k8s.io/api/core/v1"
 
 	"k8s.io/klog/v2"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/cfg"
+	"github.com/kubesmarts/logic-operator/internal/controller/cfg"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/workflowdef"
+	"github.com/kubesmarts/logic-operator/internal/controller/workflowdef"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	clientr "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/client"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/platform"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
+	clientr "github.com/kubesmarts/logic-operator/container-builder/client"
+	"github.com/kubesmarts/logic-operator/internal/controller/platform"
+	"github.com/kubesmarts/logic-operator/utils"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/api"
-	builder "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/builder/kubernetes"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/client"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/log"
+	"github.com/kubesmarts/logic-operator/container-builder/api"
+	builder "github.com/kubesmarts/logic-operator/container-builder/builder/kubernetes"
+	"github.com/kubesmarts/logic-operator/container-builder/client"
+	"github.com/kubesmarts/logic-operator/log"
 )
 
 const (

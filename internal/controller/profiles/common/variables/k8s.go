@@ -20,7 +20,7 @@ package variables
 import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common/constants"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common/constants"
 )
 
 var (

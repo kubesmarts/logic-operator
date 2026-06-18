@@ -28,8 +28,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/api/v1alpha08"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
 )
 
 func Test_generateDiscoveryProperties(t *testing.T) {

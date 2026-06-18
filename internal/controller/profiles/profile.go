@@ -25,10 +25,10 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/metadata"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/workflowproj"
+	"github.com/kubesmarts/logic-operator/api/metadata"
+	"github.com/kubesmarts/logic-operator/workflowproj"
 
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
 )
 
 // ProfileReconciler is the public interface to have access to this package and perform the actual reconciliation flow.

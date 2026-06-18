@@ -27,12 +27,12 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/cfg"
+	"github.com/kubesmarts/logic-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/internal/controller/cfg"
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/test"
+	"github.com/kubesmarts/logic-operator/test"
 )
 
 const dockerFile = "FROM host/namespace/default-test-kie-sonataflow-builder:main AS builder\n\n# ETC, \n\n# ETC, \n\n# ETC"

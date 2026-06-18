@@ -24,8 +24,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	v08 "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/client"
+	v08 "github.com/kubesmarts/logic-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/container-builder/client"
 )
 
 // Action --.

@@ -27,10 +27,10 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/metadata"
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/log"
+	"github.com/kubesmarts/logic-operator/api"
+	"github.com/kubesmarts/logic-operator/api/metadata"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/log"
 )
 
 // NewInitializeAction returns an action that initializes the platform configuration when not provided by the user.

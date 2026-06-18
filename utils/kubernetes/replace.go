@@ -23,7 +23,7 @@ import (
 	"context"
 	"fmt"
 
-	client "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/client"
+	client "github.com/kubesmarts/logic-operator/container-builder/client"
 
 	"github.com/pkg/errors"
 

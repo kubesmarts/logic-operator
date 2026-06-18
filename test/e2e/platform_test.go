@@ -28,12 +28,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/metadata"
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/api/metadata"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common/constants"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/test"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/test/utils"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common/constants"
+	"github.com/kubesmarts/logic-operator/test"
+	"github.com/kubesmarts/logic-operator/test/utils"
 
 	//nolint:golint
 	//nolint:revive

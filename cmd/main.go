@@ -26,11 +26,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/version"
+	"github.com/kubesmarts/logic-operator/api/version"
 
 	"k8s.io/client-go/dynamic"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/manager"
+	"github.com/kubesmarts/logic-operator/internal/manager"
 
 	prometheus "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"k8s.io/klog/v2/klogr"
@@ -39,14 +39,14 @@ import (
 	servingv1 "knative.dev/serving/pkg/apis/serving/v1"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/cfg"
+	"github.com/kubesmarts/logic-operator/internal/controller"
+	"github.com/kubesmarts/logic-operator/internal/controller/cfg"
 
 	"k8s.io/klog/v2"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils"
+	"github.com/kubesmarts/logic-operator/utils"
 
-	ocputil "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils/openshift"
+	ocputil "github.com/kubesmarts/logic-operator/utils/openshift"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -58,8 +58,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/log"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/log"
 	//+kubebuilder:scaffold:imports
 )
 

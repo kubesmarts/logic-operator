@@ -22,7 +22,7 @@ package discovery
 import (
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils/kubernetes"
+	"github.com/kubesmarts/logic-operator/utils/kubernetes"
 )
 
 func isSecurePort(port int) bool {

@@ -32,8 +32,8 @@ import (
 
 	sourcesv1 "knative.dev/eventing/pkg/apis/sources/v1"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/knative"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/monitoring"
+	"github.com/kubesmarts/logic-operator/internal/controller/knative"
+	"github.com/kubesmarts/logic-operator/internal/controller/monitoring"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -52,16 +52,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api"
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	clientr "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/client"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/clusterplatform"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/platform"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/platform/services"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common/constants"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/log"
+	"github.com/kubesmarts/logic-operator/api"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
+	clientr "github.com/kubesmarts/logic-operator/container-builder/client"
+	"github.com/kubesmarts/logic-operator/internal/controller/clusterplatform"
+	"github.com/kubesmarts/logic-operator/internal/controller/platform"
+	"github.com/kubesmarts/logic-operator/internal/controller/platform/services"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common/constants"
+	"github.com/kubesmarts/logic-operator/log"
 
-	kubeutil "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils/kubernetes"
+	kubeutil "github.com/kubesmarts/logic-operator/utils/kubernetes"
 )
 
 // SonataFlowPlatformReconciler reconciles a SonataFlowPlatform object

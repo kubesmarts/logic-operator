@@ -17,7 +17,7 @@
 
 package gitops
 
-import "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/preview"
+import "github.com/kubesmarts/logic-operator/internal/controller/profiles/preview"
 
 // Aliases to preview profile package to avoid cluttering this package with references to preview profile.
 // It makes easier to maintain and understand where it comes the references.

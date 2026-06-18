@@ -30,11 +30,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api"
+	"github.com/kubesmarts/logic-operator/api"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/test"
+	"github.com/kubesmarts/logic-operator/test"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/api/v1alpha08"
 )
 
 func TestSonataFlowControllerAddsFinalizerReplicasAndSelector(t *testing.T) {

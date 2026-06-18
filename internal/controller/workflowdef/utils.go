@@ -23,8 +23,8 @@ import (
 	"github.com/serverlessworkflow/sdk-go/v2/model"
 	"k8s.io/apimachinery/pkg/labels"
 
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/workflowproj"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/workflowproj"
 )
 
 // HasTimeouts returns true if current workflow has configured any of the SonataFlow supported timeouts, false

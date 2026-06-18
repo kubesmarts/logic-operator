@@ -1,23 +1,23 @@
-module github.com/apache/incubator-kie-tools/packages/sonataflow-operator
+module github.com/kubesmarts/logic-operator
 
 go 1.26.0
 
 // Internal dependencies
 replace (
-	github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api => ./api
-	github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder => ./container-builder
-	github.com/apache/incubator-kie-tools/packages/sonataflow-operator/workflowproj => ./workflowproj
+	github.com/kubesmarts/logic-operator/api => ./api
+	github.com/kubesmarts/logic-operator/container-builder => ./container-builder
+	github.com/kubesmarts/logic-operator/workflowproj => ./workflowproj
 )
 
 // Direct dependencies (please keep organized, no indirects)
 require (
-	github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api v0.0.0
-	github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder v0.0.0
-	github.com/apache/incubator-kie-tools/packages/sonataflow-operator/workflowproj v0.0.0
 	github.com/cloudevents/sdk-go/v2 v2.15.2
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/imdario/mergo v0.3.16
+	github.com/kubesmarts/logic-operator/api v0.0.0
+	github.com/kubesmarts/logic-operator/container-builder v0.0.0
+	github.com/kubesmarts/logic-operator/workflowproj v0.0.0
 	github.com/magiconair/properties v1.8.7
 	github.com/onsi/ginkgo/v2 v2.19.0
 	github.com/onsi/gomega v1.33.1

@@ -28,8 +28,8 @@ import (
 	"github.com/stretchr/testify/suite"
 	"k8s.io/klog/v2"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/common"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/util/log"
+	"github.com/kubesmarts/logic-operator/container-builder/common"
+	"github.com/kubesmarts/logic-operator/container-builder/util/log"
 )
 
 type KanikoDockerTestSuite struct {

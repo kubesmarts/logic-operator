@@ -23,7 +23,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/metadata"
+	"github.com/kubesmarts/logic-operator/api/metadata"
 
 	openshiftv1 "github.com/openshift/api/route/v1"
 	v1 "k8s.io/api/core/v1"
@@ -32,9 +32,9 @@ import (
 	duckv1 "knative.dev/pkg/apis/duck/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils/kubernetes"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/workflowproj"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/utils/kubernetes"
+	"github.com/kubesmarts/logic-operator/workflowproj"
 )
 
 func statusEnricher(ctx context.Context, c client.Client, workflow *operatorapi.SonataFlow) (client.Object, error) {

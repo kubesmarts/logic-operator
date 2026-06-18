@@ -38,8 +38,8 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/metadata"
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/api/metadata"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
 )
 
 var _ WorkflowProjectHandler = &workflowProjectHandler{}

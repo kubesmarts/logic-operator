@@ -30,7 +30,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/util/log"
+	"github.com/kubesmarts/logic-operator/container-builder/util/log"
 )
 
 type KanikoVanillaConfig struct {

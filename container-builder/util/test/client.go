@@ -40,7 +40,7 @@ import (
 	controller "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/client"
+	"github.com/kubesmarts/logic-operator/container-builder/client"
 )
 
 // NewFakeClient ---.

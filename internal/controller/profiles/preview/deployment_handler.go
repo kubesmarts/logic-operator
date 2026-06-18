@@ -21,11 +21,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/manager"
+	"github.com/kubesmarts/logic-operator/internal/manager"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/eventing"
+	"github.com/kubesmarts/logic-operator/internal/controller/eventing"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common/constants"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common/constants"
 
 	"k8s.io/client-go/util/retry"
 
@@ -33,26 +33,26 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common/properties"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common/properties"
 
 	"k8s.io/klog/v2"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/workflowdef"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/log"
+	"github.com/kubesmarts/logic-operator/internal/controller/workflowdef"
+	"github.com/kubesmarts/logic-operator/log"
 
 	v1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/knative"
+	"github.com/kubesmarts/logic-operator/internal/controller/knative"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api"
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/monitoring"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/platform"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils"
+	"github.com/kubesmarts/logic-operator/api"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/internal/controller/monitoring"
+	"github.com/kubesmarts/logic-operator/internal/controller/platform"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common"
+	"github.com/kubesmarts/logic-operator/utils"
 )
 
 type DeploymentReconciler struct {

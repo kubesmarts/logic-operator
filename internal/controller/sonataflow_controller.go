@@ -24,7 +24,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils/kubernetes"
+	"github.com/kubesmarts/logic-operator/utils/kubernetes"
 
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	pkgbuilder "sigs.k8s.io/controller-runtime/pkg/builder"
@@ -32,30 +32,30 @@ import (
 
 	v1 "k8s.io/api/policy/v1"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/manager"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles"
+	"github.com/kubesmarts/logic-operator/internal/manager"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/eventing"
+	"github.com/kubesmarts/logic-operator/internal/controller/eventing"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils"
+	"github.com/kubesmarts/logic-operator/utils"
 
 	"k8s.io/client-go/util/retry"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common/properties"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/workflowdef"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common/properties"
+	"github.com/kubesmarts/logic-operator/internal/controller/workflowdef"
 
 	sourcesv1 "knative.dev/eventing/pkg/apis/sources/v1"
 	servingv1 "knative.dev/serving/pkg/apis/serving/v1"
 
 	"k8s.io/klog/v2"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/knative"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/monitoring"
+	"github.com/kubesmarts/logic-operator/internal/controller/knative"
+	"github.com/kubesmarts/logic-operator/internal/controller/monitoring"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/metadata"
-	profilescommon "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common/constants"
-	profilesfactory "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/factory"
+	"github.com/kubesmarts/logic-operator/api/metadata"
+	profilescommon "github.com/kubesmarts/logic-operator/internal/controller/profiles/common"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common/constants"
+	profilesfactory "github.com/kubesmarts/logic-operator/internal/controller/profiles/factory"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -75,11 +75,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/log"
+	"github.com/kubesmarts/logic-operator/api"
+	"github.com/kubesmarts/logic-operator/log"
 
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/platform"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/internal/controller/platform"
 
 	ctrlevent "sigs.k8s.io/controller-runtime/pkg/event"
 )
@@ -175,7 +175,7 @@ func (r *SonataFlowReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	return profilesfactory.NewReconciler(r.Client, r.Config, r.Recorder, workflow).Reconcile(ctx, workflow)
 }
 
-// TODO: move to webhook see https://github.com/apache/incubator-kie-tools/packages/sonataflow-operator/pull/239
+// TODO: move to webhook see https://github.com/kubesmarts/logic-operator/pull/239
 func (r *SonataFlowReconciler) setDefaults(workflow *operatorapi.SonataFlow) {
 	if workflow.Annotations == nil {
 		workflow.Annotations = map[string]string{}

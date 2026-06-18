@@ -23,11 +23,11 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/log"
+	"github.com/kubesmarts/logic-operator/log"
 
 	"k8s.io/klog/v2"
 
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
 )
 
 // GetJSONWorkflow return a Kogito compliant JSON format workflow as bytearray give a specific workflow CR

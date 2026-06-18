@@ -20,13 +20,13 @@ package preview
 import (
 	"testing"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils"
+	"github.com/kubesmarts/logic-operator/utils"
 
 	"github.com/serverlessworkflow/sdk-go/v2/model"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/test"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common"
+	"github.com/kubesmarts/logic-operator/test"
 )
 
 func Test_deployWithBuildWorkflowState_isWorkflowChanged(t *testing.T) {

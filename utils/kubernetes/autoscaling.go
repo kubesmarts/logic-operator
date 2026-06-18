@@ -29,7 +29,7 @@ import (
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/log"
+	"github.com/kubesmarts/logic-operator/log"
 )
 
 // FindHPAForDeployment returns the HorizontalPodAutoscaler targeting a deployment in a given namespace, or nil if it

@@ -29,8 +29,8 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/test"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/test/utils"
+	"github.com/kubesmarts/logic-operator/test"
+	"github.com/kubesmarts/logic-operator/test/utils"
 
 	//nolint:golint
 	//nolint:revive

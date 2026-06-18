@@ -20,19 +20,19 @@
 package factory
 
 import (
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/gitops"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/preview"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/log"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/gitops"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/preview"
+	"github.com/kubesmarts/logic-operator/log"
 
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/metadata"
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/dev"
+	"github.com/kubesmarts/logic-operator/api/metadata"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/dev"
 )
 
 type reconcilerBuilder func(client client.Client, cfg *rest.Config, recorder record.EventRecorder) profiles.ProfileReconciler

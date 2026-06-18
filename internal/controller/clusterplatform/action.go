@@ -22,9 +22,9 @@ package clusterplatform
 import (
 	"context"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/client"
+	"github.com/kubesmarts/logic-operator/container-builder/client"
 
-	v08 "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
+	v08 "github.com/kubesmarts/logic-operator/api/v1alpha08"
 )
 
 // Action --.

@@ -31,8 +31,8 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/api"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/util/test"
+	"github.com/kubesmarts/logic-operator/container-builder/api"
+	"github.com/kubesmarts/logic-operator/container-builder/util/test"
 )
 
 func TestNewBuild(t *testing.T) {

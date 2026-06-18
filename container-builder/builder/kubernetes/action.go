@@ -22,8 +22,8 @@ package kubernetes
 import (
 	"context"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/api"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/client"
+	"github.com/kubesmarts/logic-operator/container-builder/api"
+	"github.com/kubesmarts/logic-operator/container-builder/client"
 )
 
 type Action interface {

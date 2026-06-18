@@ -1,4 +1,4 @@
-module github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder
+module github.com/kubesmarts/logic-operator/container-builder
 
 go 1.26.0
 

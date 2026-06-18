@@ -31,7 +31,7 @@ import (
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/yaml"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/metadata"
+	"github.com/kubesmarts/logic-operator/api/metadata"
 )
 
 var namingRegexp = regexp.MustCompile("^[a-z0-9](-?[a-z0-9])*$")

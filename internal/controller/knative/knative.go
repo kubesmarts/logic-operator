@@ -29,7 +29,7 @@ import (
 	"k8s.io/klog/v2"
 	servingv1 "knative.dev/serving/pkg/apis/serving/v1"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/log"
+	"github.com/kubesmarts/logic-operator/log"
 
 	"knative.dev/pkg/resolver"
 
@@ -53,10 +53,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils"
-	kubeutil "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils/kubernetes"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/workflowproj"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/utils"
+	kubeutil "github.com/kubesmarts/logic-operator/utils/kubernetes"
+	"github.com/kubesmarts/logic-operator/workflowproj"
 )
 
 var servingClient clientservingv1.ServingV1Interface

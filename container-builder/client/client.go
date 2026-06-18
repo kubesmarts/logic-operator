@@ -35,7 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/util/log"
+	"github.com/kubesmarts/logic-operator/container-builder/util/log"
 )
 
 const (

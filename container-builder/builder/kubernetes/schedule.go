@@ -24,7 +24,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/api"
+	"github.com/kubesmarts/logic-operator/container-builder/api"
 )
 
 func newScheduleAction() Action {

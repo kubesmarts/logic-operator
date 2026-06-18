@@ -22,10 +22,10 @@ import (
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/metadata"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/discovery"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common"
+	"github.com/kubesmarts/logic-operator/api/metadata"
+	"github.com/kubesmarts/logic-operator/internal/controller/discovery"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common"
 )
 
 var _ profiles.ProfileReconciler = &gitOpsProfile{}

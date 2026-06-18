@@ -32,7 +32,7 @@ import (
 	"k8s.io/client-go/tools/remotecommand"
 	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/api"
+	"github.com/kubesmarts/logic-operator/container-builder/api"
 )
 
 const timeoutAnnotation = "sonataflow.org/timeout"

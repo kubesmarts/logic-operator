@@ -32,7 +32,7 @@ import (
 	"github.com/docker/go-connections/nat"
 	"golang.org/x/net/context"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/util/log"
+	"github.com/kubesmarts/logic-operator/container-builder/util/log"
 )
 
 func GetDockerConnection() (*client.Client, error) {

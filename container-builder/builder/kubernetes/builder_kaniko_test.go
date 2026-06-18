@@ -31,9 +31,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/api"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/util"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/util/test"
+	"github.com/kubesmarts/logic-operator/container-builder/api"
+	"github.com/kubesmarts/logic-operator/container-builder/util"
+	"github.com/kubesmarts/logic-operator/container-builder/util/test"
 )
 
 // Test that verify we are able to create a Kaniko build with cache enabled, a specific set of resources and additional flags

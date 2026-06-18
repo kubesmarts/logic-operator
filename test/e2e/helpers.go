@@ -34,8 +34,8 @@ import (
 
 	"sigs.k8s.io/yaml"
 
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/test/utils"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/test/utils"
 
 	//nolint:golint
 	//nolint:revive

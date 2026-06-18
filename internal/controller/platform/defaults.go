@@ -29,16 +29,16 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/yaml"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/workflowdef"
+	"github.com/kubesmarts/logic-operator/internal/controller/workflowdef"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/log"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils"
+	"github.com/kubesmarts/logic-operator/log"
+	"github.com/kubesmarts/logic-operator/utils"
 
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
 )
 
 const defaultSonataFlowPlatformName = "sonataflow-platform"
@@ -192,14 +192,14 @@ func createPlatformIfNotExists(ctx context.Context, p *operatorapi.SonataFlowPla
 	}
 
 	// FIXME: We should never update the object within methods like this, but let the actual reconciler to do it
-	// https://github.com/apache/incubator-kie-tools/packages/sonataflow-operator/issues/538
+	// https://github.com/kubesmarts/logic-operator/issues/538
 	if err = SafeUpdatePlatformStatus(ctx, p); err != nil {
 		klog.V(log.E).ErrorS(err, "Error updating the platform status")
 		return err
 	}
 
 	// FIXME: We should never update the object within methods like this, but let the actual reconciler to do it
-	// https://github.com/apache/incubator-kie-tools/packages/sonataflow-operator/issues/538
+	// https://github.com/kubesmarts/logic-operator/issues/538
 	if err = SafeUpdatePlatform(ctx, p); err != nil {
 		klog.V(log.E).ErrorS(err, "Error updating the platform")
 		return err

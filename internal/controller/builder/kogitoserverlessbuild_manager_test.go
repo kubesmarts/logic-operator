@@ -24,10 +24,10 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/cfg"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common/persistence"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/test"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/internal/controller/cfg"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common/persistence"
+	"github.com/kubesmarts/logic-operator/test"
 )
 
 func TestSonataFlowBuildManager_GetOrCreateBuildWithWorkflowPersistence(t *testing.T) {

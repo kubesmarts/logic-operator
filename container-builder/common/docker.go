@@ -34,8 +34,8 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/util"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/util/log"
+	"github.com/kubesmarts/logic-operator/container-builder/util"
+	"github.com/kubesmarts/logic-operator/container-builder/util/log"
 )
 
 type Docker struct {

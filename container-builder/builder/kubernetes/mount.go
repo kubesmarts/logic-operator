@@ -33,7 +33,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/container-builder/api"
+	"github.com/kubesmarts/logic-operator/container-builder/api"
 )
 
 type configMapVolumeBuildContext struct {

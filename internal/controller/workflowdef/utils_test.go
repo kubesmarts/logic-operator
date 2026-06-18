@@ -24,7 +24,7 @@ import (
 	. "github.com/onsi/gomega"
 	cncfmodel "github.com/serverlessworkflow/sdk-go/v2/model"
 
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
 )
 
 var (

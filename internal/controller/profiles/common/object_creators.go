@@ -26,7 +26,7 @@ import (
 
 	policyv1 "k8s.io/api/policy/v1"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles"
 
 	servingv1 "knative.dev/serving/pkg/apis/serving/v1"
 
@@ -46,16 +46,16 @@ import (
 	"knative.dev/pkg/tracker"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/knative"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common/constants"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common/persistence"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common/properties"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/internal/controller/profiles/common/variables"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils"
-	kubeutil "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils/kubernetes"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/utils/openshift"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/workflowproj"
+	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/internal/controller/knative"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common/constants"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common/persistence"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common/properties"
+	"github.com/kubesmarts/logic-operator/internal/controller/profiles/common/variables"
+	"github.com/kubesmarts/logic-operator/utils"
+	kubeutil "github.com/kubesmarts/logic-operator/utils/kubernetes"
+	"github.com/kubesmarts/logic-operator/utils/openshift"
+	"github.com/kubesmarts/logic-operator/workflowproj"
 )
 
 const (
