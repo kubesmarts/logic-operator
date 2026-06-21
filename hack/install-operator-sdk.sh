@@ -49,8 +49,38 @@ if [ "${should_install}" = "true" ]; then
   os=$(uname | awk '{print tolower($0)}')
   echo "---> Installing operator-sdk (OS ${os} Architecture ${arch} in \$GOPATH/bin/"
   mkdir -p "$GOPATH"/bin
-  curl -L https://github.com/operator-framework/operator-sdk/releases/download/"${OPERATOR_SDK_VERSION}"/operator-sdk_"${os}"_"${arch}" -o "$GOPATH"/bin/operator-sdk
-  chmod +x "$GOPATH"/bin/operator-sdk
+
+  # Download with retry logic (GitHub can be flaky)
+  download_url="https://github.com/operator-framework/operator-sdk/releases/download/${OPERATOR_SDK_VERSION}/operator-sdk_${os}_${arch}"
+  download_path="$GOPATH/bin/operator-sdk"
+  max_retries=3
+  retry_count=0
+
+  while [ $retry_count -lt $max_retries ]; do
+    echo "---> Downloading from ${download_url} (attempt $((retry_count + 1))/${max_retries})"
+    if curl -sSL --fail --show-error "${download_url}" -o "${download_path}"; then
+      # Verify it's actually a binary (ELF for Linux, Mach-O for macOS)
+      if file "${download_path}" | grep -qE "ELF.*executable|Mach-O.*executable"; then
+        echo "---> Download successful"
+        chmod +x "${download_path}"
+        break
+      else
+        echo "---> Downloaded file is not a valid binary, retrying..."
+        rm -f "${download_path}"
+      fi
+    else
+      echo "---> Download failed, retrying..."
+    fi
+    retry_count=$((retry_count + 1))
+    if [ $retry_count -lt $max_retries ]; then
+      sleep 2
+    fi
+  done
+
+  if [ $retry_count -eq $max_retries ]; then
+    echo "ERROR: Failed to download operator-sdk after ${max_retries} attempts"
+    exit 1
+  fi
 fi
 
 ##For verification

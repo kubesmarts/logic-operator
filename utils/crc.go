@@ -23,11 +23,12 @@ import (
 	"hash/crc32"
 )
 
-func Crc32Checksum(v interface{}) (uint32, error) {
+func Crc32Checksum(v interface{}) (int32, error) {
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
 	if err := enc.Encode(v); err != nil {
 		return 0, err
 	}
-	return crc32.ChecksumIEEE(buf.Bytes()), nil
+	// Cast uint32 to int32 for Kubernetes CRD compatibility
+	return int32(crc32.ChecksumIEEE(buf.Bytes())), nil
 }

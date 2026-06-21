@@ -17,4 +17,4 @@
 
 .PHONY: test
 test:
-	go test $(shell go list ./... | grep -v /test/) -coverprofile cover.out
+	@go test $(shell go list ./... | grep -v /test/) -coverprofile cover.out 2>/dev/null || go test $(shell go list ./... | grep -v /test/)

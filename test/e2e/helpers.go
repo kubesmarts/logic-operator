@@ -191,12 +191,12 @@ func getHealthStatusInContainer(podName string, containerName string, ns string)
 	} else {
 		stringOutput = stringOutput[startIndex-1 : endIndex+1]
 	}
-	fmt.Printf("Parsed following JSON object from health Endpoint response: %v\n", stringOutput)
 	err = json.Unmarshal([]byte(stringOutput), &h)
 	if err != nil {
+		GinkgoWriter.Printf("Failed to parse health JSON from %s/%s: %v\nRaw output: %s\n", ns, podName, err, stringOutput)
 		return nil, fmt.Errorf("failed to execute curl command against health endpoint in container %s:%v with output %s", containerName, err, output)
 	}
-	GinkgoWriter.Println(fmt.Sprintf("Health status:\n%s", string(output)))
+	GinkgoWriter.Printf("Health check %s/%s container %s: status=%s\n", ns, podName, containerName, h.Status)
 	return &h, nil
 }
 
@@ -204,19 +204,30 @@ func verifyWorkflowIsInRunningState(workflowName string, ns string) bool {
 	cmd := exec.Command("kubectl", "get", "workflow", workflowName, "-n", ns, "-o", "jsonpath={.status.conditions[?(@.type=='Running')].status}")
 	response, err := utils.Run(cmd)
 	if err != nil {
-		GinkgoWriter.Println(fmt.Errorf("failed to check if greeting workflow is running: %v", err))
+		GinkgoWriter.Println(fmt.Errorf("failed to check if workflow is running: %v", err))
 		return false
 	}
-	GinkgoWriter.Println(fmt.Sprintf("Got response %s", response))
 
 	if len(strings.TrimSpace(string(response))) == 0 {
-		GinkgoWriter.Println(fmt.Errorf("empty response %v", err))
+		// Only log debug info occasionally to avoid spam - check the full status
+		cmd = exec.Command("kubectl", "get", "workflow", workflowName, "-n", ns, "-o", "jsonpath={.status}")
+		statusOutput, _ := utils.Run(cmd)
+		if len(statusOutput) == 0 {
+			GinkgoWriter.Printf("Workflow %s/%s: status not yet set by controller\n", ns, workflowName)
+		} else {
+			GinkgoWriter.Printf("Workflow %s/%s: Running condition not found. Status: %s\n", ns, workflowName, string(statusOutput))
+		}
 		return false
 	}
+
 	status, err := strconv.ParseBool(string(response))
 	if err != nil {
-		GinkgoWriter.Println(fmt.Errorf("failed to parse result %v", err))
+		GinkgoWriter.Printf("Workflow %s/%s: failed to parse Running condition value '%s': %v\n", ns, workflowName, string(response), err)
 		return false
+	}
+
+	if status {
+		GinkgoWriter.Printf("Workflow %s/%s: Running condition is True\n", ns, workflowName)
 	}
 	return status
 }
@@ -245,19 +256,22 @@ func verifyObjectReplicasFromPath(name string, ns string, objetType string, subR
 		cmd = exec.Command("kubectl", "get", objetType, name, "-n", ns, "-o", replicasPath)
 	}
 
-	fmt.Printf("verifyObjectReplicasFromPath for object: %s -> %s/%s, subResource: %s, and replicasPath: %s\n", objetType, ns, name, subResource, replicasPath)
 	response, err := utils.Run(cmd)
 	if err != nil {
-		GinkgoWriter.Println(fmt.Errorf("failed to get replicas for object: %s -> %s/%s, subResource: %s, and replicasPath: %s, command failed: %v", objetType, ns, name, subResource, replicasPath, err))
+		GinkgoWriter.Printf("Failed to get %s %s/%s replicas: %v\n", objetType, ns, name, err)
 		return false
 	}
-	GinkgoWriter.Println(fmt.Sprintf("Got response %s", response))
 	replicas, err := extractInt32FromResponse(response)
 	if err != nil {
-		GinkgoWriter.Println(fmt.Errorf("failed to get scale replicas from response for object: %s -> %s/%s, subResource: %s, and replicasPath: %s, %v", objetType, ns, name, subResource, replicasPath, err))
+		GinkgoWriter.Printf("%s %s/%s: failed to parse replicas from '%s': %v\n", objetType, ns, name, string(response), err)
 		return false
 	}
-	return replicas == expectedReplicas
+	if replicas != expectedReplicas {
+		GinkgoWriter.Printf("%s %s/%s: replicas=%d, waiting for %d\n", objetType, ns, name, replicas, expectedReplicas)
+		return false
+	}
+	GinkgoWriter.Printf("%s %s/%s: replicas=%d (expected)\n", objetType, ns, name, replicas)
+	return true
 }
 
 func extractInt32FromResponse(response []byte) (int32, error) {
@@ -413,22 +427,25 @@ func applyWorkflowTransform(workflowFile string, transform func(flow *operatorap
 
 func verifyWorkflowIsAddressable(workflowName string, targetNamespace string) bool {
 	cmd := exec.Command("kubectl", "get", "workflow", workflowName, "-n", targetNamespace, "-ojsonpath={.status.address.url}")
-	if response, err := utils.Run(cmd); err != nil {
-		GinkgoWriter.Println(fmt.Errorf("failed to check if greeting workflow is running: %v", err))
-		return false
-	} else {
-		GinkgoWriter.Println(fmt.Sprintf("Got response %s", response))
-		if len(strings.TrimSpace(string(response))) > 0 {
-			_, err := url.ParseRequestURI(string(response))
-			if err != nil {
-				GinkgoWriter.Println(fmt.Errorf("failed to parse result %v", err))
-				return false
-			}
-			// The response is a valid URL so the test is passed
-			return true
-		}
+	response, err := utils.Run(cmd)
+	if err != nil {
+		GinkgoWriter.Printf("Workflow %s/%s: failed to get address: %v\n", targetNamespace, workflowName, err)
 		return false
 	}
+
+	if len(strings.TrimSpace(string(response))) == 0 {
+		GinkgoWriter.Printf("Workflow %s/%s: address.url not yet set\n", targetNamespace, workflowName)
+		return false
+	}
+
+	_, err = url.ParseRequestURI(string(response))
+	if err != nil {
+		GinkgoWriter.Printf("Workflow %s/%s: invalid URL '%s': %v\n", targetNamespace, workflowName, string(response), err)
+		return false
+	}
+
+	GinkgoWriter.Printf("Workflow %s/%s: addressable at %s\n", targetNamespace, workflowName, string(response))
+	return true
 }
 
 func verifySchemaMigration(data, name string) bool {

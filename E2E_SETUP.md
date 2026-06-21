@@ -10,9 +10,25 @@ The Logic Operator e2e tests verify the complete operator functionality includin
 - `kubectl`
 - `kind` (v0.20.0+) OR `minikube`
 - `docker` or `podman`
-- `go` (1.25.0+)
+- `go` (1.26.0+)
 - `python3` with `cekit` (see hack/setup-cekit.sh)
 - `make`
+
+### System Dependencies (for CEKit)
+Ubuntu/Debian:
+```bash
+sudo apt-get install libxml2-dev libxslt-dev python3-dev libkrb5-dev
+```
+
+macOS:
+```bash
+brew install libxml2 libxslt krb5
+```
+
+Fedora/RHEL:
+```bash
+sudo dnf install libxml2-devel libxslt-devel python3-devel krb5-devel
+```
 
 ### Required Images
 All images are hosted at `quay.io/kubesmarts` with tag `main`:

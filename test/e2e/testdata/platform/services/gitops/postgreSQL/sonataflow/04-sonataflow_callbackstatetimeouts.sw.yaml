@@ -28,6 +28,13 @@ spec:
     replicas: 0
     container:
       image: replaceme
+  persistence:
+    postgresql:
+      jdbcUrl: jdbc:postgresql://postgres:5432/sonataflow?currentSchema=callbackstatetimeouts-persistence
+      secretRef:
+        name: postgres-secrets
+        userKey: POSTGRES_USER
+        passwordKey: POSTGRES_PASSWORD
   flow:
     start: PrintStartMessage
     events:

@@ -39,7 +39,7 @@ kind: Kustomization
   # Changed during "make build", do not attempt to modify it manually!
 images:
 - name: controller
-  newName: quay.io/kiegroup/logic-operator
+  newName: quay.io/kubesmarts/logic-operator
   newTag: 2.0.0
 # Patching the manager deployment file to add an env var with the operator namespace in
 patches:

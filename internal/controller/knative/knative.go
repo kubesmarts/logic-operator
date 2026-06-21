@@ -313,7 +313,7 @@ func MapTriggerToPlatformRequests(ctx context.Context, object client.Object) []r
 			}
 		}
 		if len(nameFound) > 0 && len(namespaceFound) > 0 && namespaceFound != trigger.Namespace {
-			return []reconcile.Request{reconcile.Request{NamespacedName: types.NamespacedName{Name: nameFound, Namespace: namespaceFound}}}
+			return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: nameFound, Namespace: namespaceFound}}}
 		}
 	}
 	return nil
