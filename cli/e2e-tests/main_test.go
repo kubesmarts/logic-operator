@@ -55,11 +55,17 @@ func TestMain(m *testing.M) {
 
 	checkAndBuildExecutable()
 
-	InstallOperator()
+	// Skip operator installation if running without OLM
+	skipOperator := os.Getenv("SKIP_OPERATOR_INSTALL")
+	if skipOperator != "true" {
+		InstallOperator()
+	}
 	// Run tests
 	exitCode := m.Run()
 
-	UninstallOperator()
+	if skipOperator != "true" {
+		UninstallOperator()
+	}
 
 	// Cleanup after tests
 	cleanUpTemp(workingPath, tempDirName)

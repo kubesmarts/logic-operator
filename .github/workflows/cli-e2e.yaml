@@ -87,17 +87,45 @@ jobs:
           # Test that CLI can see the cluster
           kubectl get crds | grep sonataflow || echo "CRDs installed"
 
-      - name: Run e2e tests
+      - name: Run non-operator e2e tests
         working-directory: cli
+        env:
+          SKIP_OPERATOR_INSTALL: "true"
         run: |
           mkdir -p dist-tests-e2e
-          # Run CLI e2e tests
-          # Note: These tests use the operator install command which expects OLM
-          # For now, we'll verify the CLI builds and can talk to the cluster
-          # Full e2e tests will be added once we adapt them for direct operator deployment
-          echo "CLI e2e tests with local operator deployment - to be implemented"
-          echo "Operator is deployed and ready for CLI testing"
-        continue-on-error: true
+          # Run tests that don't require operator deployment
+          # These tests verify CLI functionality: create, convert, gen-manifest
+          # Deploy tests are skipped (require OLM-based operator installation)
+          go test -v ./e2e-tests/... -tags e2e_tests \
+            -run "TestCreateProject|TestQuarkusCreateProject|TestQuarkusConvertProject|TestGenManifestProject" \
+            -timeout 15m 2>&1 | tee ./dist-tests-e2e/go-test-output-e2e.txt
+
+      - name: Generate JUnit report
+        if: always()
+        working-directory: cli
+        run: |
+          if [ -f ./dist-tests-e2e/go-test-output-e2e.txt ]; then
+            go run github.com/jstemmer/go-junit-report/v2 \
+              -in ./dist-tests-e2e/go-test-output-e2e.txt \
+              -out ./dist-tests-e2e/junit-report.xml || true
+          fi
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-e2e-test-results
+          path: cli/dist-tests-e2e/
+          retention-days: 7
+
+      - name: Display test summary
+        if: always()
+        working-directory: cli
+        run: |
+          if [ -f ./dist-tests-e2e/go-test-output-e2e.txt ]; then
+            echo "=== Test Output Summary ==="
+            grep -E "PASS|FAIL|RUN" ./dist-tests-e2e/go-test-output-e2e.txt | tail -20
+          fi
 
       - name: Show operator logs on failure
         if: failure()
