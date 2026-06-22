@@ -5,26 +5,18 @@ on:
     branches: [main, master]
     paths:
       - 'cli/**'
-      - 'api/**'
-      - 'workflowproj/**'
-      - 'cmd/**'
-      - 'controllers/**'
       - '.github/workflows/cli-e2e.yaml'
   pull_request:
     branches: [main, master]
     paths:
       - 'cli/**'
-      - 'api/**'
-      - 'workflowproj/**'
-      - 'cmd/**'
-      - 'controllers/**'
       - '.github/workflows/cli-e2e.yaml'
   workflow_dispatch:
 
 jobs:
   e2e-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -38,54 +30,9 @@ jobs:
       - name: Copy .env configuration
         run: cp .env.example .env
 
-      - name: Install KIND
-        run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
-          chmod +x ./kind
-          sudo mv ./kind /usr/local/bin/kind
-
-      - name: Create KIND cluster
-        run: kind create cluster --wait 5m
-
-      - name: Verify cluster
-        run: |
-          kubectl cluster-info
-          kubectl get nodes
-
-      - name: Install operator-sdk
-        run: |
-          export OPERATOR_SDK_VERSION=v1.35.0
-          curl -sSLo /tmp/operator-sdk "https://github.com/operator-framework/operator-sdk/releases/download/${OPERATOR_SDK_VERSION}/operator-sdk_linux_amd64"
-          chmod +x /tmp/operator-sdk
-          sudo mv /tmp/operator-sdk /usr/local/bin/operator-sdk
-          operator-sdk version
-
-      - name: Build operator image
-        run: make docker-build IMG=localhost:5000/logic-operator:test
-
-      - name: Load operator image into KIND
-        run: kind load docker-image localhost:5000/logic-operator:test
-
-      - name: Install CRDs
-        run: make install
-
-      - name: Deploy operator to KIND
-        run: make deploy IMG=localhost:5000/logic-operator:test
-
-      - name: Wait for operator to be ready
-        run: |
-          kubectl wait --for=condition=available deployment/logic-operator-controller-manager -n logic-operator-system --timeout=300s
-          kubectl get pods -n logic-operator-system
-
       - name: Build CLI
         working-directory: cli
         run: make build
-
-      - name: Verify CLI can communicate with operator
-        working-directory: cli
-        run: |
-          # Test that CLI can see the cluster
-          kubectl get crds | grep sonataflow || echo "CRDs installed"
 
       - name: Run non-operator e2e tests
         working-directory: cli
@@ -93,12 +40,25 @@ jobs:
           SKIP_OPERATOR_INSTALL: "true"
         run: |
           mkdir -p dist-tests-e2e
-          # Run tests that don't require operator deployment
-          # These tests verify CLI functionality: create, convert, gen-manifest
-          # Deploy tests are skipped (require OLM-based operator installation)
+          # Run CLI e2e tests that don't require Kubernetes/operator
+          # These tests verify local CLI functionality: create, convert, gen-manifest
+          #
+          # Tests running (8 total):
+          # - TestCreateProjectSuccess (create workflow project)
+          # - TestCreateProjectFail (validate errors)
+          # - TestGenManifestProjectSuccess (generate K8s manifests)
+          # - TestQuarkusCreateProjectSuccess (create Quarkus project)
+          # - TestQuarkusCreateProjectFail (validate errors)
+          # - TestQuarkusConvertProjectSuccess (convert to Quarkus)
+          # - TestQuarkusConvertProjectFailed (validate errors)
+          # - TestQuarkusConvertProjectFailedAlreadyQuarkus (validate already converted)
+          #
+          # Tests skipped:
+          # - Deploy tests (require OLM-based operator installation)
+          # - Build/run tests (require Docker)
           go test -v ./e2e-tests/... -tags e2e_tests \
             -run "TestCreateProject|TestQuarkusCreateProject|TestQuarkusConvertProject|TestGenManifestProject" \
-            -timeout 15m 2>&1 | tee ./dist-tests-e2e/go-test-output-e2e.txt
+            -timeout 10m 2>&1 | tee ./dist-tests-e2e/go-test-output-e2e.txt
 
       - name: Generate JUnit report
         if: always()
@@ -126,13 +86,3 @@ jobs:
             echo "=== Test Output Summary ==="
             grep -E "PASS|FAIL|RUN" ./dist-tests-e2e/go-test-output-e2e.txt | tail -20
           fi
-
-      - name: Show operator logs on failure
-        if: failure()
-        run: |
-          echo "=== Operator logs ==="
-          kubectl logs -n logic-operator-system deployment/logic-operator-controller-manager --tail=100 || true
-
-      - name: Cleanup KIND cluster
-        if: always()
-        run: kind delete cluster
