@@ -15,6 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
+# Include parent .env file for build metadata
+-include ../.env
+
 BIN              := kn-workflow
 BIN_DARWIN_AMD64 ?= $(BIN)-darwin-amd64
 BIN_DARWIN_ARM64 ?= $(BIN)-darwin-arm64
@@ -25,14 +28,16 @@ BIN_PATH         := ./dist
 TEST_PATH        := ./dist-tests
 MAIN_PATH        := cmd/main.go
 
-METADATA_PATH                 := github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/metadata
-SET_QUARKUS_PLATFORM_GROUP_ID := $(METADATA_PATH).QuarkusPlatformGroupId=$(QUARKUS_PLATFORM_GROUP_ID)
-SET_QUARKUS_VERSION           := $(METADATA_PATH).QuarkusVersion=$(QUARKUS_VERSION)
-SET_DEV_MODE_IMAGE            := $(METADATA_PATH).DevModeImage=$(DEV_MODE_IMAGE_URL)
-SET_BUILDER_IMAGE             := $(METADATA_PATH).BuilderImage=$(BUILD_IMAGE_URL)
-SET_VERSION                   := $(METADATA_PATH).PluginVersion=$(PLUGIN_VERSION)
-SET_KOGITO_VERSION            := $(METADATA_PATH).KogitoVersion=$(KOGITO_VERSION)
-LDFLAGS                       := "-X $(SET_QUARKUS_PLATFORM_GROUP_ID) -X $(SET_QUARKUS_VERSION) -X $(SET_VERSION) -X $(SET_DEV_MODE_IMAGE) -X $(SET_KOGITO_VERSION) -X $(SET_BUILDER_IMAGE)"
+# Version from git tag or VERSION env var
+CLI_VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "$(VERSION)")
+
+# Build-time metadata injection via ldflags
+METADATA_PATH := github.com/kubesmarts/logic-operator/cli/pkg/metadata
+LDFLAGS := -X $(METADATA_PATH).PluginVersion=$(CLI_VERSION) \
+           -X $(METADATA_PATH).QuarkusVersion=$(QUARKUS_VERSION) \
+           -X $(METADATA_PATH).QuarkusPlatformGroupId=$(QUARKUS_PLATFORM_GROUP_ID) \
+           -X $(METADATA_PATH).BuilderImage=$(RELATED_IMAGE_BASE_BUILDER) \
+           -X $(METADATA_PATH).DevModeImage=$(RELATED_IMAGE_DEVMODE)
 
 KIND_VERSION ?= v0.20.0
 OLM_VERSION = v0.31.0
@@ -49,26 +54,41 @@ else
 	BIN_BUILD_DARWIN=$(BIN_DARWIN_AMD64)
 endif
 
+.PHONY: build
+build:
+	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN_PATH)/$(BIN) $(MAIN_PATH)
+
+.PHONY: build-all
 build-all: build-linux-amd64 build-darwin-amd64 build-darwin-arm64 build-win32-amd64
 
+.PHONY: build-darwin
 build-darwin:
-	CGO_ENABLED=0 GOOS=darwin GOARCH=$(GOARCH) go build -ldflags $(LDFLAGS) -o $(BIN_PATH)/$(BIN_BUILD_DARWIN) $(MAIN_PATH)
+	CGO_ENABLED=0 GOOS=darwin GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o $(BIN_PATH)/$(BIN_BUILD_DARWIN) $(MAIN_PATH)
 
+.PHONY: build-darwin-amd64
 build-darwin-amd64:
-	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags $(LDFLAGS) -o $(BIN_PATH)/$(BIN_DARWIN_AMD64) $(MAIN_PATH)
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BIN_PATH)/$(BIN_DARWIN_AMD64) $(MAIN_PATH)
 
+.PHONY: build-darwin-arm64
 build-darwin-arm64:
-	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags $(LDFLAGS) -o $(BIN_PATH)/$(BIN_DARWIN_ARM64) $(MAIN_PATH)
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o $(BIN_PATH)/$(BIN_DARWIN_ARM64) $(MAIN_PATH)
 
+.PHONY: build-linux-amd64
 build-linux-amd64:
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags $(LDFLAGS) -o $(BIN_PATH)/$(BIN_LINUX) $(MAIN_PATH)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BIN_PATH)/$(BIN_LINUX) $(MAIN_PATH)
 
+.PHONY: build-win32-amd64
 build-win32-amd64:
-	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags $(LDFLAGS) -o $(BIN_PATH)/$(BIN_WINDOWS) $(MAIN_PATH)
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BIN_PATH)/$(BIN_WINDOWS) $(MAIN_PATH)
 
+.PHONY: clean
 clean:
 	go clean
 	rm -rf $(BIN_PATH) $(TEST_PATH)
+
+.PHONY: test
+test:
+	go test -v ./...
 
 .PHONY: test-e2e
 test-e2e:
@@ -78,7 +98,6 @@ test-e2e:
 	@$(MAKE) kind-preload-images
 	@$(MAKE) go-test-e2e
 	@$(MAKE) go-test-e2e-report
-
 
 .PHONY: install-kind
 install-kind:

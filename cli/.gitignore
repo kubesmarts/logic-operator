@@ -21,3 +21,5 @@ sonataflow-operator/
 TODO.txt
 e2e-tests/temp-tests/
 dist-it-tests/
+dist/
+dist-tests/
