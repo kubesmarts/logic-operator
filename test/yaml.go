@@ -175,18 +175,38 @@ func GetLocalSucceedSonataFlowBuild(name, namespace string) *operatorapi.SonataF
 }
 
 func GetSonataFlowBuilderConfig(namespace string) *corev1.ConfigMap {
+	// Try bundle manifest first (if it exists)
 	cm := &corev1.ConfigMap{}
 	yamlFile, err := os.ReadFile(path.Join(getBundleDir(), sonataFlowBuilderConfig))
+	if err == nil {
+		// Bundle manifest exists, decode it
+		err = yaml.NewYAMLOrJSONDecoder(bytes.NewReader(yamlFile), 100).Decode(cm)
+		if err != nil {
+			klog.V(log.E).ErrorS(err, "Unmarshal bundle manifest")
+			panic(err)
+		}
+		cm.Namespace = namespace
+		return cm
+	}
+
+	// Bundle manifest doesn't exist, create ConfigMap from source config
+	klog.V(log.I).InfoS("Bundle manifest not found, creating ConfigMap from source config", "file", sonataFlowBuilderConfig)
+
+	sourceConfig, err := os.ReadFile(path.Join(getConfigDir(), "manager", "controllers_cfg.yaml"))
 	if err != nil {
-		klog.V(log.E).ErrorS(err, "yamlFile.Get")
+		klog.V(log.E).ErrorS(err, "Failed to read source config")
 		panic(err)
 	}
-	err = yaml.NewYAMLOrJSONDecoder(bytes.NewReader(yamlFile), 100).Decode(cm)
-	if err != nil {
-		klog.V(log.E).ErrorS(err, "Unmarshal")
-		panic(err)
+
+	cm = &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "sonataflow-operator-builder-config",
+			Namespace: namespace,
+		},
+		Data: map[string]string{
+			"controllers_cfg.yaml": string(sourceConfig),
+		},
 	}
-	cm.Namespace = namespace
 	return cm
 }
 
@@ -291,6 +311,10 @@ func getTestDataDir() string {
 
 func getBundleDir() string {
 	return path.Join(getProjectDir(), manifestsPath)
+}
+
+func getConfigDir() string {
+	return path.Join(getProjectDir(), "config")
 }
 
 func getProjectDir() string {

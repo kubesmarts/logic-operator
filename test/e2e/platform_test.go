@@ -186,7 +186,7 @@ var _ = Describe("Platform Use Cases :: ", Label("platform"), Ordered, func() {
 				Expect(sf).NotTo(BeEmpty(), "sonataflow name is empty")
 				EventuallyWithOffset(1, func() bool {
 					return verifyWorkflowIsInRunningState(sf, targetNamespace)
-				}, 10*time.Minute, 5*time.Second).Should(BeTrue())
+				}, 3*time.Minute, 5*time.Second).Should(BeTrue())
 			}
 
 			if profile != metadata.DevProfile {
@@ -196,9 +196,15 @@ var _ = Describe("Platform Use Cases :: ", Label("platform"), Ordered, func() {
 				Expect(err).NotTo(HaveOccurred())
 				dataIndexPod := string(output)
 
+				// Workflow ID varies by persistence type
+				workflowId := "callbackstatetimeouts"
+				if persistenceType == postgreSQL {
+					workflowId = "callbackstatetimeouts-persistence"
+				}
+
 				EventuallyWithOffset(1, func() bool {
-					return verifyWorkflowDefinitionIsInStatus(dataIndexPod, "data-index-service", targetNamespace, "sonataflow-platform-data-index-service", "callbackstatetimeouts", "available")
-				}, 10*time.Minute, 5*time.Second).Should(BeTrue())
+					return verifyWorkflowDefinitionIsInStatus(dataIndexPod, "data-index-service", targetNamespace, "sonataflow-platform-data-index-service", workflowId, "available")
+				}, 3*time.Minute, 5*time.Second).Should(BeTrue())
 
 				By("Undeploy the SonataFlow CR")
 				cmd = exec.Command("kubectl", "delete", "-n", targetNamespace, "-f", filepath.Join(projectDir,
@@ -208,8 +214,8 @@ var _ = Describe("Platform Use Cases :: ", Label("platform"), Ordered, func() {
 
 				By("Verify that the workflow definition is unavailable")
 				EventuallyWithOffset(1, func() bool {
-					return verifyWorkflowDefinitionIsInStatus(dataIndexPod, "data-index-service", targetNamespace, "sonataflow-platform-data-index-service", "callbackstatetimeouts", "unavailable")
-				}, 10*time.Minute, 5*time.Second).Should(BeTrue())
+					return verifyWorkflowDefinitionIsInStatus(dataIndexPod, "data-index-service", targetNamespace, "sonataflow-platform-data-index-service", workflowId, "unavailable")
+				}, 3*time.Minute, 5*time.Second).Should(BeTrue())
 			}
 		},
 			Entry("with both Job Service and Data Index and ephemeral persistence and the workflow in a dev profile", test.GetPathFromE2EDirectory("platform", "services"), metadata.DevProfile, ephemeral),

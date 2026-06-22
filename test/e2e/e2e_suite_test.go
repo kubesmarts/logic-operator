@@ -22,7 +22,9 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -86,10 +88,32 @@ var _ = BeforeSuite(func() {
 	namespaceExists, err := kubectlNamespaceExists(resourcesNamespace)
 	Expect(err).NotTo(HaveOccurred())
 
+	// Read PREBUILT_WORKFLOWS env var to control which workflows to build
+	// Format: comma-separated list of workflow names (e.g., "callbackstatetimeouts,callbackstatetimeouts-persistence")
+	// Default: build all 3 workflows if not specified
+	prebuiltWorkflowsEnv := os.Getenv("PREBUILT_WORKFLOWS")
+	var enabledWorkflows map[string]bool
+	if prebuiltWorkflowsEnv != "" {
+		enabledWorkflows = make(map[string]bool)
+		for _, name := range strings.Split(prebuiltWorkflowsEnv, ",") {
+			enabledWorkflows[strings.TrimSpace(name)] = true
+		}
+		GinkgoWriter.Printf("Building only selected workflows: %s\n", prebuiltWorkflowsEnv)
+	} else {
+		GinkgoWriter.Println("Building all workflows (default)")
+	}
+
 	workflows := make(map[string]*DeployedWorkflow, 3)
-	workflows[flowCallbackName] = &DeployedWorkflow{YAMLFile: test.GetPathFromE2EDirectory("before-suite", "sonataflow.org_v1alpha08_sonataflow-callbackstatetimeouts.yaml")}
-	workflows[flowCallbackPersistenceName] = &DeployedWorkflow{YAMLFile: test.GetPathFromE2EDirectory("before-suite", "sonataflow.org_v1alpha08_sonataflow-callbackstatetimeouts-persistence.yaml")}
-	workflows[flowGreetingsName] = &DeployedWorkflow{YAMLFile: test.GetPathFromE2EDirectory("before-suite", "sonataflow.org_v1alpha08_sonataflow-greetings.yaml")}
+	// Only add workflows that are enabled (or all if env var not set)
+	if enabledWorkflows == nil || enabledWorkflows[flowCallbackName] {
+		workflows[flowCallbackName] = &DeployedWorkflow{YAMLFile: test.GetPathFromE2EDirectory("before-suite", "sonataflow.org_v1alpha08_sonataflow-callbackstatetimeouts.yaml")}
+	}
+	if enabledWorkflows == nil || enabledWorkflows[flowCallbackPersistenceName] {
+		workflows[flowCallbackPersistenceName] = &DeployedWorkflow{YAMLFile: test.GetPathFromE2EDirectory("before-suite", "sonataflow.org_v1alpha08_sonataflow-callbackstatetimeouts-persistence.yaml")}
+	}
+	if enabledWorkflows == nil || enabledWorkflows[flowGreetingsName] {
+		workflows[flowGreetingsName] = &DeployedWorkflow{YAMLFile: test.GetPathFromE2EDirectory("before-suite", "sonataflow.org_v1alpha08_sonataflow-greetings.yaml")}
+	}
 	if !namespaceExists {
 		GinkgoWriter.Println("Creating the resources namespace")
 		err = kubectlCreateNamespace(resourcesNamespace)
@@ -109,12 +133,18 @@ var _ = BeforeSuite(func() {
 	}
 
 	// Convert to a simpler structure
-	prebuiltWorkflows.CallBack.Tag = workflows[flowCallbackName].ImageTag
-	prebuiltWorkflows.CallBack.Name = flowCallbackName
-	prebuiltWorkflows.CallBackPersistence.Tag = workflows[flowCallbackPersistenceName].ImageTag
-	prebuiltWorkflows.CallBackPersistence.Name = flowCallbackPersistenceName
-	prebuiltWorkflows.Greetings.Tag = workflows[flowGreetingsName].ImageTag
-	prebuiltWorkflows.Greetings.Name = flowGreetingsName
+	if workflow, exists := workflows[flowCallbackName]; exists {
+		prebuiltWorkflows.CallBack.Tag = workflow.ImageTag
+		prebuiltWorkflows.CallBack.Name = flowCallbackName
+	}
+	if workflow, exists := workflows[flowCallbackPersistenceName]; exists {
+		prebuiltWorkflows.CallBackPersistence.Tag = workflow.ImageTag
+		prebuiltWorkflows.CallBackPersistence.Name = flowCallbackPersistenceName
+	}
+	if workflow, exists := workflows[flowGreetingsName]; exists {
+		prebuiltWorkflows.Greetings.Tag = workflow.ImageTag
+		prebuiltWorkflows.Greetings.Name = flowGreetingsName
+	}
 	GinkgoWriter.Println("Images are ready for upcoming tests")
 
 	// Delete the workflows since we already have the images in the internal registry, all gucci

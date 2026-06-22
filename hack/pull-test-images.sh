@@ -27,11 +27,27 @@ fi
 # Use environment variables or defaults
 BUILDER_IMAGE=${RELATED_IMAGE_BASE_BUILDER:-quay.io/kubesmarts/incubator-kie-sonataflow-builder:main}
 DEVMODE_IMAGE=${RELATED_IMAGE_DEVMODE:-quay.io/kubesmarts/incubator-kie-sonataflow-devmode:main}
+DATA_INDEX_EPHEMERAL=${RELATED_IMAGE_DATA_INDEX_EPHEMERAL:-quay.io/kubesmarts/incubator-kie-kogito-data-index-ephemeral:main}
+DATA_INDEX_POSTGRESQL=${RELATED_IMAGE_DATA_INDEX_POSTGRESQL:-quay.io/kubesmarts/incubator-kie-kogito-data-index-postgresql:main}
+JOBS_SERVICE_EPHEMERAL=${RELATED_IMAGE_JOBS_SERVICE_EPHEMERAL:-quay.io/kubesmarts/incubator-kie-kogito-jobs-service-ephemeral:main}
+JOBS_SERVICE_POSTGRESQL=${RELATED_IMAGE_JOBS_SERVICE_POSTGRESQL:-quay.io/kubesmarts/incubator-kie-kogito-jobs-service-postgresql:main}
 
 echo "🔄 Pulling builder image: ${BUILDER_IMAGE}"
 docker pull "${BUILDER_IMAGE}"
 
 echo "🔄 Pulling devmode image: ${DEVMODE_IMAGE}"
 docker pull "${DEVMODE_IMAGE}"
+
+echo "🔄 Pulling data-index (ephemeral): ${DATA_INDEX_EPHEMERAL}"
+docker pull "${DATA_INDEX_EPHEMERAL}"
+
+echo "🔄 Pulling data-index (postgresql): ${DATA_INDEX_POSTGRESQL}"
+docker pull "${DATA_INDEX_POSTGRESQL}"
+
+echo "🔄 Pulling jobs-service (ephemeral): ${JOBS_SERVICE_EPHEMERAL}"
+docker pull "${JOBS_SERVICE_EPHEMERAL}"
+
+echo "🔄 Pulling jobs-service (postgresql): ${JOBS_SERVICE_POSTGRESQL}"
+docker pull "${JOBS_SERVICE_POSTGRESQL}"
 
 echo "✅ All required images pulled successfully"

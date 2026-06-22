@@ -85,13 +85,13 @@ IMG ?= $(IMAGE_TAG_BASE)$(IMG_TAG_SEP)$(IMAGE_TAG)
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.26
 
-OPERATOR_SDK_VERSION ?= 1.35.0
+OPERATOR_SDK_VERSION ?= v1.35.0
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
-ifeq (,$(shell go env GOBIN))
-GOBIN=$(shell go env GOPATH)/bin
+ifeq (,$(shell go env GOBIN 2>/dev/null))
+GOBIN=$(shell go env GOPATH 2>/dev/null || echo $(HOME)/go)/bin
 else
-GOBIN=$(shell go env GOBIN)
+GOBIN=$(shell go env GOBIN 2>/dev/null)
 endif
 
 # Setting SHELL to bash allows bash commands to be executed by recipes.
@@ -99,6 +99,9 @@ endif
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
+
+# Export all variables to subprocesses (needed for controller-gen to find go)
+.EXPORT_ALL_VARIABLES:
 
 .PHONY: all
 all: build
@@ -130,7 +133,9 @@ manifests: generate ## Generate WebhookConfiguration, ClusterRole and CustomReso
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	@echo "🔄 Generating DeepCopy methods for APIs..."
-	@$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..." paths="./container-builder/api/..." > /dev/null 2>&1
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..." paths="./container-builder/api/..."
+	@echo "🧹 Formatting generated files..."
+	@gofmt -s -w api/zz_generated.deepcopy.go container-builder/api/zz_generated.deepcopy.go
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
@@ -151,8 +156,10 @@ test: manifests generate test-api ## Run tests.
 	@$(MAKE) vet
 	@$(MAKE) fmt
 	@echo "🔍 Running controller tests..."
-	go test $(shell go list ./... | grep -v /test/) -coverprofile cover.out
-	@echo "✅  Tests completed successfully. Coverage report generated: cover.out."
+	@# Only run coverage on packages that have test files to avoid Go 1.26 covdata tool issue
+	@go test $(shell go list -f '{{if .TestGoFiles}}{{.ImportPath}}{{end}}' ./... | grep -v /test/) -coverprofile cover.out || \
+		go test $(shell go list ./... | grep -v /test/)
+	@echo "✅  Tests completed successfully."
 
 .PHONY: test-api
 test-api:
@@ -256,6 +263,11 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/default | kubectl create -f -
 
+.PHONY: deploy-only
+deploy-only: kustomize ## Deploy controller without regenerating manifests (use when manifests are already generated)
+	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	$(KUSTOMIZE) build config/default | kubectl create -f -
+
 .PHONY: generate-deploy
 generate-deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	@echo "🚀 Updating controller image to ${IMG}..."
@@ -338,7 +350,7 @@ endef
 
 .PHONY: bundle
 PACKAGE_NAME = "sonataflow-operator"
-bundle: kustomize install-operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
+bundle: manifests kustomize install-operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
 	@echo "📦 Generating bundle manifests and metadata..."
 	@operator-sdk generate kustomize manifests --package=$(PACKAGE_NAME) -q > /dev/null 2>&1
 	@echo "🔧 Setting controller image in Kustomize..."
@@ -417,7 +429,7 @@ bump-version:
 .PHONY: install-operator-sdk
 install-operator-sdk:
 	@echo "📦 Installing Operator SDK..."
-	@./hack/install-operator-sdk.sh > /dev/null 2>&1
+	@./hack/install-operator-sdk.sh
 
 
 .PHONY: addheaders
@@ -495,8 +507,6 @@ before-pr: generate-all test ## Run generate-all before executing tests.
 .PHONY: load-docker-image
 load-docker-image: install-kind
 	kind load docker-image $(IMG)
-	kind load docker-image $(RELATED_IMAGE_BASE_BUILDER)
-	kind load docker-image $(RELATED_IMAGE_DEVMODE)
 
 .PHONY: install-kind
 install-kind:

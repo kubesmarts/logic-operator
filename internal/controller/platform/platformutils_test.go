@@ -35,7 +35,7 @@ import (
 	"github.com/kubesmarts/logic-operator/test"
 )
 
-const dockerFile = "FROM host/namespace/default-test-kie-sonataflow-builder:main AS builder\n\n# ETC, \n\n# ETC, \n\n# ETC"
+const dockerFile = "FROM quay.io/kubesmarts/incubator-kie-sonataflow-builder:main AS builder\n\n# ETC, \n\n# ETC, \n\n# ETC"
 
 func TestSonataFlowBuildController(t *testing.T) {
 	platform := test.GetBasePlatform()
@@ -44,18 +44,20 @@ func TestSonataFlowBuildController(t *testing.T) {
 		assert.Fail(t, "Unable to read base Dockerfile")
 	}
 	dockerfile := string(dockerfileBytes)
-	// 1 - Let's verify that the default image is used
+
+	// Test 1: Verify that platform base image is used when set
+	platform.Spec.Build.Config.BaseImage = test.CommonImageTag
 	resDefault := GetCustomizedBuilderDockerfile(dockerfile, *platform)
 	foundDefault, err := regexp.MatchString(fmt.Sprintf("FROM %s AS builder", test.CommonImageTag), resDefault)
 	assert.NoError(t, err)
-	assert.True(t, foundDefault)
+	assert.True(t, foundDefault, "Expected platform base image to be used in Dockerfile")
 
-	// 2 - Let's try to override using the productized image
+	// Test 2: Verify override with different productized image
 	platform.Spec.Build.Config.BaseImage = "host2.org/namespace2/builder2:main"
 	resProductized := GetCustomizedBuilderDockerfile(dockerfile, *platform)
 	foundProductized, err := regexp.MatchString(fmt.Sprintf("FROM %s AS builder", platform.Spec.Build.Config.BaseImage), resProductized)
 	assert.NoError(t, err)
-	assert.True(t, foundProductized)
+	assert.True(t, foundProductized, "Expected override base image to be used in Dockerfile")
 }
 
 func TestGetCustomizedBuilderDockerfile_NoBaseImageCustomization(t *testing.T) {
@@ -99,6 +101,7 @@ func TestGetCustomizedBuilderDockerfile_BaseImageCustomizationFromControllersCon
 
 	_, err := cfg.InitializeControllersCfgAt("../cfg/testdata/controllers-cfg-test.yaml")
 	assert.NoError(t, err)
+
 	expectedDockerFile := "FROM local/sonataflow-builder:1.0.0 AS builder\n\n# ETC, \n\n# ETC, \n\n# ETC"
 	customizedDockerfile := GetCustomizedBuilderDockerfile(dockerFile, sfp)
 	assert.Equal(t, expectedDockerFile, customizedDockerfile)

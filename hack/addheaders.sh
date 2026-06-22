@@ -24,4 +24,4 @@ if ! hash addlicense 2>/dev/null; then
 fi
 
 # shellcheck disable=SC2035
-addlicense -f=hack/license-header.txt -ignore=test/samples/*.yaml -ignore=container-builder/examples/**/*.yaml api bundle cmd config container-builder env hack images internal log test utils version workflowproj ./operator.yaml
+addlicense -f=hack/license-header.txt -ignore=test/samples/*.yaml -ignore=container-builder/examples/**/*.yaml api bundle cmd config container-builder env hack images internal log test utils workflowproj ./operator.yaml

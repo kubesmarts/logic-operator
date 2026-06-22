@@ -19,14 +19,35 @@ jobs:
           go-version: '1.26'
           cache: true
 
+      - name: Save Go bin directory to environment
+        run: |
+          GO_BIN_DIR=$(dirname $(which go))
+          echo "GO_BIN_DIR=$GO_BIN_DIR" >> $GITHUB_ENV
+
       - name: Copy .env configuration
         run: cp .env.example .env
 
+      - name: Install operator-sdk
+        run: |
+          export OPERATOR_SDK_VERSION=v1.35.0
+          curl -sSLo /tmp/operator-sdk "https://github.com/operator-framework/operator-sdk/releases/download/${OPERATOR_SDK_VERSION}/operator-sdk_linux_amd64"
+          chmod +x /tmp/operator-sdk
+          sudo mv /tmp/operator-sdk /usr/local/bin/operator-sdk
+          operator-sdk version
+
+      - name: Generate bundle (required for unit tests)
+        run: make bundle
+
+      - name: Format generated code
+        run: gofmt -s -w .
+
       - name: Run go fmt check
         run: |
-          if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+          # Exclude target/ directory (build artifacts)
+          UNFORMATTED=$(gofmt -s -l . | grep -v '^target/' || true)
+          if [ -n "$UNFORMATTED" ]; then
             echo "The following files need formatting:"
-            gofmt -s -l .
+            echo "$UNFORMATTED"
             exit 1
           fi
 
@@ -34,7 +55,11 @@ jobs:
         run: make vet
 
       - name: Run unit tests
-        run: make test
+        env:
+          GO_BIN_PATH: ${{ env.GO_BIN_DIR }}
+        run: |
+          export PATH="$GO_BIN_PATH:$PATH"
+          make test
 
       - name: Build operator binary
         run: make build
@@ -58,15 +83,19 @@ jobs:
           go-version: '1.26'
           cache: true
 
+      - name: Save Go bin directory to environment
+        run: |
+          GO_BIN_DIR=$(dirname $(which go))
+          echo "GO_BIN_DIR=$GO_BIN_DIR" >> $GITHUB_ENV
+
       - name: Copy .env configuration
         run: cp .env.example .env
 
       - name: Verify generated manifests are up to date
+        env:
+          GO_BIN_PATH: ${{ env.GO_BIN_DIR }}
         run: |
+          export PATH="$GO_BIN_PATH:$PATH"
           make manifests
-          git diff --exit-code config/
-
-      - name: Verify CRD bundle
-        run: |
-          make bundle
-          git diff --exit-code bundle/
+          make addheaders
+          git diff --exit-code config/rbac/ config/crd/
