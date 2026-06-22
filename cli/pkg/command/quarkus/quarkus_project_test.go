@@ -23,6 +23,7 @@ import (
 	"bufio"
 	"os"
 	"path"
+	"strings"
 	"testing"
 
 	"github.com/kubesmarts/logic-operator/cli/pkg/metadata"
@@ -69,7 +70,12 @@ func TestManipulatePom(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error reading expected XML: %v", err)
 	}
-	if string(modifiedData) != string(expectedData) {
+
+	// Normalize line endings for cross-platform compatibility
+	modifiedStr := normalizeLineEndings(string(modifiedData))
+	expectedStr := normalizeLineEndings(string(expectedData))
+
+	if modifiedStr != expectedStr {
 		t.Errorf("Manipulated XML does not match expected XML")
 	}
 }
@@ -161,4 +167,9 @@ func checkFileContainsText(filePath, text string) (bool, error) {
 		}
 	}
 	return contains, nil
+}
+
+// normalizeLineEndings normalizes line endings to \n for cross-platform comparison
+func normalizeLineEndings(s string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
 }
