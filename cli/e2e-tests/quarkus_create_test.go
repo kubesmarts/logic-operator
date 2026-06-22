@@ -29,9 +29,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/command/quarkus"
-	"github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/common"
-	"github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/metadata"
+	"github.com/kubesmarts/logic-operator/cli/pkg/command/quarkus"
+	"github.com/kubesmarts/logic-operator/cli/pkg/common"
+	"github.com/kubesmarts/logic-operator/cli/pkg/metadata"
 )
 
 type CfgTestInputQuarkusCreate struct {

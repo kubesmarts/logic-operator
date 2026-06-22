@@ -21,13 +21,13 @@ package quarkus
 
 import (
 	"fmt"
-	fsutils "github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/common/fs"
+	fsutils "github.com/kubesmarts/logic-operator/cli/pkg/common/fs"
 	"io"
 	"os"
 	"path/filepath"
 
-	"github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/common"
-	"github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/metadata"
+	"github.com/kubesmarts/logic-operator/cli/pkg/common"
+	"github.com/kubesmarts/logic-operator/cli/pkg/metadata"
 	"github.com/ory/viper"
 	"github.com/spf13/cobra"
 )

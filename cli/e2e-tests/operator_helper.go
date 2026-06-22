@@ -26,8 +26,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/command/operator"
-	"github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/common"
+	"github.com/kubesmarts/logic-operator/cli/pkg/command/operator"
+	"github.com/kubesmarts/logic-operator/cli/pkg/common"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 

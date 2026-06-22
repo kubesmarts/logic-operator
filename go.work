@@ -3,6 +3,7 @@ go 1.26.0
 use (
 	.
 	./api
+	./cli
 	./container-builder
 	./workflowproj
 )

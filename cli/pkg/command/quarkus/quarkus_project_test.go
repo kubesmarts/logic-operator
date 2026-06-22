@@ -25,7 +25,7 @@ import (
 	"path"
 	"testing"
 
-	"github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/metadata"
+	"github.com/kubesmarts/logic-operator/cli/pkg/metadata"
 )
 
 func TestManipulatePom(t *testing.T) {

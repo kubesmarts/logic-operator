@@ -20,7 +20,7 @@
 package operator
 
 import (
-	"github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/common"
+	"github.com/kubesmarts/logic-operator/cli/pkg/common"
 	"github.com/ory/viper"
 	"github.com/spf13/cobra"
 )

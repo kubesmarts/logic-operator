@@ -26,7 +26,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/command"
+	"github.com/kubesmarts/logic-operator/cli/pkg/command"
 )
 
 type GenManifestTestInputCreate struct {

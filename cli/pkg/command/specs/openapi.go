@@ -21,8 +21,8 @@ package specs
 
 import (
 	"fmt"
-	"github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/common"
-	"github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/specs"
+	"github.com/kubesmarts/logic-operator/cli/pkg/common"
+	"github.com/kubesmarts/logic-operator/cli/pkg/specs"
 	"github.com/ory/viper"
 	"github.com/spf13/cobra"
 	"os"

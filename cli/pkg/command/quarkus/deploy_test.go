@@ -22,9 +22,9 @@ package quarkus
 import (
 	"context"
 	"fmt"
-	"github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/common"
-	"github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/common/k8sclient"
-	"github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/metadata"
+	"github.com/kubesmarts/logic-operator/cli/pkg/common"
+	"github.com/kubesmarts/logic-operator/cli/pkg/common/k8sclient"
+	"github.com/kubesmarts/logic-operator/cli/pkg/metadata"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"k8s.io/apimachinery/pkg/api/errors"

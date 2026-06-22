@@ -35,9 +35,9 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/command"
-	"github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/command/quarkus"
-	"github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/metadata"
+	"github.com/kubesmarts/logic-operator/cli/pkg/command"
+	"github.com/kubesmarts/logic-operator/cli/pkg/command/quarkus"
+	"github.com/kubesmarts/logic-operator/cli/pkg/metadata"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )

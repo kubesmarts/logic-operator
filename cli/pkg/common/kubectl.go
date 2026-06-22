@@ -20,7 +20,7 @@
 package common
 
 import (
-	"github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/common/k8sclient"
+	"github.com/kubesmarts/logic-operator/cli/pkg/common/k8sclient"
 	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"

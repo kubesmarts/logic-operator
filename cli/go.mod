@@ -1,20 +1,22 @@
-module github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow
+module github.com/kubesmarts/logic-operator/cli
 
 go 1.26.0
 
-replace github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api v0.0.0 => ./node_modules/@kie-tools/sonataflow-operator/api
-
-replace github.com/apache/incubator-kie-tools/packages/sonataflow-operator/workflowproj v0.0.0 => ./node_modules/@kie-tools/sonataflow-operator/workflowproj
+// Use local modules via go.work
+replace (
+	github.com/kubesmarts/logic-operator/api => ../api
+	github.com/kubesmarts/logic-operator/workflowproj => ../workflowproj
+)
 
 require (
-	github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api v0.0.0
-	github.com/apache/incubator-kie-tools/packages/sonataflow-operator/workflowproj v0.0.0
 	github.com/beevik/etree v1.5.0
 	github.com/distribution/reference v0.6.0
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/go-connections v0.5.0
 	github.com/getkin/kin-openapi v0.131.0
 	github.com/jstemmer/go-junit-report/v2 v2.1.0
+	github.com/kubesmarts/logic-operator/api v0.0.0
+	github.com/kubesmarts/logic-operator/workflowproj v0.0.0
 	github.com/ory/viper v1.7.5
 	github.com/spf13/afero v1.12.0
 	github.com/spf13/cobra v1.9.1
@@ -85,7 +87,7 @@ require (
 	github.com/oasdiff/yaml v0.0.0-20250309154309-f31be36b4037 // indirect
 	github.com/oasdiff/yaml3 v0.0.0-20250309153720-d2182401db90 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
-	github.com/opencontainers/image-spec v1.0.2 // indirect
+	github.com/opencontainers/image-spec v1.1.0 // indirect
 	github.com/pb33f/libopenapi v0.10.1 // indirect
 	github.com/pelletier/go-toml v1.9.5 // indirect
 	github.com/perimeterx/marshmallow v1.1.5 // indirect
@@ -115,7 +117,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.34.0 // indirect
 	go.opentelemetry.io/otel/trace v1.34.0 // indirect
 	golang.org/x/crypto v0.51.0 // indirect
-	golang.org/x/exp v0.0.0-20230905200255-921286631fa9 // indirect
+	golang.org/x/exp v0.0.0-20231006140011-7918f672742d // indirect
 	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/oauth2 v0.35.0 // indirect
@@ -129,7 +131,7 @@ require (
 	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
-	gotest.tools/v3 v3.3.0 // indirect
+	gotest.tools/v3 v3.5.1 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20240228011516-70dd3763d340 // indirect
 	k8s.io/utils v0.0.0-20240711033017-18e509b52bc8 // indirect

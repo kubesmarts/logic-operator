@@ -24,11 +24,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/common"
-	"github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/metadata"
-	"github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/specs"
-	apimetadata "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/metadata"
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/workflowproj"
+	"github.com/kubesmarts/logic-operator/cli/pkg/common"
+	"github.com/kubesmarts/logic-operator/cli/pkg/metadata"
+	"github.com/kubesmarts/logic-operator/cli/pkg/specs"
+	apimetadata "github.com/kubesmarts/logic-operator/api/metadata"
+	"github.com/kubesmarts/logic-operator/workflowproj"
 )
 
 type DeployUndeployCmdConfig struct {

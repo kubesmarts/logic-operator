@@ -28,7 +28,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
+	"github.com/kubesmarts/logic-operator/api/v1alpha08"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/stretchr/testify/assert"
 	"k8s.io/apimachinery/pkg/util/sets"

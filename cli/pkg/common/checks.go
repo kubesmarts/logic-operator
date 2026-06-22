@@ -29,8 +29,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/metadata"
-	apiMetadata "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/metadata"
+	"github.com/kubesmarts/logic-operator/cli/pkg/metadata"
+	apiMetadata "github.com/kubesmarts/logic-operator/api/metadata"
 	"github.com/docker/docker/client"
 )
 

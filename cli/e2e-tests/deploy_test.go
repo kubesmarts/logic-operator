@@ -29,8 +29,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/command"
-	"github.com/apache/incubator-kie-tools/packages/kn-plugin-workflow/pkg/common"
+	"github.com/kubesmarts/logic-operator/cli/pkg/command"
+	"github.com/kubesmarts/logic-operator/cli/pkg/common"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 )
