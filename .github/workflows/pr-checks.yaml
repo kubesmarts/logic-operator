@@ -99,3 +99,32 @@ jobs:
           make manifests
           make addheaders
           git diff --exit-code config/rbac/ config/crd/
+
+  cli-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Copy .env configuration
+        run: cp .env.example .env
+
+      - name: Run CLI unit tests
+        working-directory: cli
+        run: go test -v ./...
+
+      - name: Build CLI
+        working-directory: cli
+        run: make build
+
+      - name: Verify CLI binary works
+        working-directory: cli
+        run: ./dist/kn-workflow version
