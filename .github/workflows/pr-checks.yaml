@@ -3,6 +3,12 @@ name: PR Checks
 on:
   pull_request:
     branches: [main, master]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'adr/**'
+      - 'LICENSE'
+      - '.gitignore'
 
 jobs:
   lint-and-test:
