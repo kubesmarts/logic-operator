@@ -1,0 +1,9 @@
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicPlatform
+metadata:
+  labels:
+    app.kubernetes.io/name: logic-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: logicplatform-sample
+spec:
+  # TODO(user): Add fields here

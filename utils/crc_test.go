@@ -92,7 +92,7 @@ func TestCrc32Checksum_ReturnType(t *testing.T) {
 	}
 
 	// The result should be assignable to int32
-	var _ int32 = result
+	_ = result
 
 	// Verify zero value case
 	zeroResult, _ := Crc32Checksum("")

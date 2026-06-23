@@ -39,11 +39,11 @@ func FindHPAForDeployment(ctx context.Context, c client.Client, namespace string
 	return findHPAForTarget(ctx, c, namespace, "apps/v1", "Deployment", name)
 }
 
-// FindHPAForWorkflow returns the HorizontalPodAutoscaler targeting a workflow in a given namespace, or nil if it
+// FindHPAForLogicFlowRuntime returns the HorizontalPodAutoscaler targeting a LogicFlowRuntime in a given namespace, or nil if it
 // doesn't exist.
-// Note: By k8s definition, the HorizontalPodAutoscaler must belong to the same namespace as the managed workflow.
-func FindHPAForWorkflow(ctx context.Context, c client.Client, namespace string, name string) (*autoscalingv2.HorizontalPodAutoscaler, error) {
-	return findHPAForTarget(ctx, c, namespace, "sonataflow.org/v1alpha08", "SonataFlow", name)
+// Note: By k8s definition, the HorizontalPodAutoscaler must belong to the same namespace as the managed runtime.
+func FindHPAForLogicFlowRuntime(ctx context.Context, c client.Client, namespace string, name string) (*autoscalingv2.HorizontalPodAutoscaler, error) {
+	return findHPAForTarget(ctx, c, namespace, "logic.kubesmarts.org/v1", "LogicFlowRuntime", name)
 }
 
 func findHPAForTarget(ctx context.Context, c client.Client, namespace string, apiVersion string, kind string, name string) (*autoscalingv2.HorizontalPodAutoscaler, error) {
@@ -114,16 +114,16 @@ func IsHPAndTargetsADeployment(obj client.Object) (*autoscalingv2.HorizontalPodA
 	return IsHPAndTargetsAKind(obj, "Deployment")
 }
 
-// IsHPAndTargetsASonataFlow returns (*autoscalingv2.HorizontalPodAutoscaler, true) if the object is a HorizontalPodAutoscaler
-// and targets a SonataFlow, (nil, false) in other cases.
-func IsHPAndTargetsASonataFlow(obj client.Object) (*autoscalingv2.HorizontalPodAutoscaler, bool) {
-	return IsHPAndTargetsAKind(obj, "SonataFlow")
+// IsHPAndTargetsALogicFlowRuntime returns (*autoscalingv2.HorizontalPodAutoscaler, true) if the object is a HorizontalPodAutoscaler
+// and targets a LogicFlowRuntime, (nil, false) in other cases.
+func IsHPAndTargetsALogicFlowRuntime(obj client.Object) (*autoscalingv2.HorizontalPodAutoscaler, bool) {
+	return IsHPAndTargetsAKind(obj, "LogicFlowRuntime")
 }
 
-// IsHPAndTargetsASonataFlowAsBool returns true if the object is a HorizontalPodAutoscaler and targets a SonataFlow,
+// IsHPAndTargetsALogicFlowRuntimeAsBool returns true if the object is a HorizontalPodAutoscaler and targets a LogicFlowRuntime,
 // false in other cases.
-func IsHPAndTargetsASonataFlowAsBool(obj client.Object) bool {
-	_, ok := IsHPAndTargetsAKind(obj, "SonataFlow")
+func IsHPAndTargetsALogicFlowRuntimeAsBool(obj client.Object) bool {
+	_, ok := IsHPAndTargetsAKind(obj, "LogicFlowRuntime")
 	return ok
 }
 

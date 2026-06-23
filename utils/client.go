@@ -37,8 +37,8 @@ func GetClient() client.Client {
 }
 
 // SetClient is meant for internal use only. Don't call it!
-func SetClient(client client.Client) {
-	k8sClient = client
+func SetClient(c client.Client) {
+	k8sClient = c
 }
 
 // GetDynamicClient default dynamic client created by the main operator's thread.

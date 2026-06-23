@@ -26,10 +26,12 @@ import (
 	v1 "k8s.io/api/core/v1"
 )
 
+const testWorkflowName = "workflow"
+
 func Test_retrievingKubernetesServiceHost(t *testing.T) {
 	t.Run("verify that the service host is returned with the default cluster name on default namespace", func(t *testing.T) {
 		svc := &v1.Service{}
-		svc.Name = "workflow"
+		svc.Name = testWorkflowName
 		host := retrieveServiceHost(svc)
 
 		assert.NotNil(t, host)
@@ -39,7 +41,7 @@ func Test_retrievingKubernetesServiceHost(t *testing.T) {
 
 	t.Run("verify that the service host is returned with the default cluster name on non-default namespace", func(t *testing.T) {
 		svc := &v1.Service{}
-		svc.Name = "workflow"
+		svc.Name = testWorkflowName
 		svc.Namespace = "ns"
 		host := retrieveServiceHost(svc)
 
@@ -52,8 +54,8 @@ func Test_retrievingKubernetesServiceHost(t *testing.T) {
 func Test_retrievingKubernetesServiceURL(t *testing.T) {
 	t.Run("verify that the service URL is returned with the default cluster name on default namespace", func(t *testing.T) {
 		svc := &v1.Service{}
-		svc.Name = "workflow"
-		RetrieveServiceURL(svc)
+		svc.Name = testWorkflowName
+		_, _ = RetrieveServiceURL(svc) //nolint:errcheck
 
 		url, err := RetrieveServiceURL(svc)
 
@@ -65,9 +67,9 @@ func Test_retrievingKubernetesServiceURL(t *testing.T) {
 
 	t.Run("verify that the service URL is returned with the default cluster name on non-default namespace", func(t *testing.T) {
 		svc := &v1.Service{}
-		svc.Name = "workflow"
+		svc.Name = testWorkflowName
 		svc.Namespace = "ns"
-		RetrieveServiceURL(svc)
+		_, _ = RetrieveServiceURL(svc) //nolint:errcheck
 
 		url, err := RetrieveServiceURL(svc)
 

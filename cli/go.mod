@@ -4,8 +4,6 @@ go 1.26.0
 
 // Use local modules via go.work
 replace (
-	github.com/kubesmarts/logic-operator/api => ../api
-	github.com/kubesmarts/logic-operator/workflowproj => ../workflowproj
 )
 
 require (
@@ -15,8 +13,6 @@ require (
 	github.com/docker/go-connections v0.5.0
 	github.com/getkin/kin-openapi v0.131.0
 	github.com/jstemmer/go-junit-report/v2 v2.1.0
-	github.com/kubesmarts/logic-operator/api v0.0.0
-	github.com/kubesmarts/logic-operator/workflowproj v0.0.0
 	github.com/ory/viper v1.7.5
 	github.com/spf13/afero v1.12.0
 	github.com/spf13/cobra v1.9.1

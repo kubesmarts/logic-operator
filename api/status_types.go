@@ -205,50 +205,6 @@ func (s *conditionManager) MarkTrueWithReasonf(t ConditionType, reason, messageF
 	})
 }
 
-func (s *conditionManager) findUnreadyDependent() *Condition {
-	// Do not modify the accessors condition order.
-	conditions := s.reader.GetConditions().DeepCopy()
-
-	// Filter based on terminal status.
-	n := 0
-	for _, c := range conditions {
-		if c.Type != s.ready {
-			conditions[n] = c
-			n++
-		}
-	}
-	conditions = conditions[:n]
-
-	// Sort set conditions by time.
-	sort.Slice(conditions, func(i, j int) bool {
-		return conditions[i].LastUpdateTime.Time.After(conditions[j].LastUpdateTime.Time)
-	})
-
-	// First check the conditions with Status == False.
-	for _, c := range conditions {
-		// False conditions trump Unknown.
-		if c.IsFalse() {
-			return &c
-		}
-	}
-	// Second check for conditions with Status == Unknown.
-	for _, c := range conditions {
-		if c.IsUnknown() {
-			return &c
-		}
-	}
-
-	// If something was not initialized.
-	if len(s.dependents) > len(conditions) {
-		return &Condition{
-			Status: corev1.ConditionUnknown,
-		}
-	}
-
-	// All dependents are fine.
-	return nil
-}
-
 // MarkUnknown sets the status of t to Unknown and also sets the ready condition
 // to Unknown if no other dependent condition is in an error state.
 func (s *conditionManager) MarkUnknown(t ConditionType, reason, message string) {

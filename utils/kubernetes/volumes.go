@@ -121,9 +121,7 @@ func AddOrReplaceVolume(podSpec *corev1.PodSpec, volumes ...corev1.Volume) {
 			volumesToAdd = append(volumesToAdd, volume)
 		}
 	}
-	for _, volume := range volumesToAdd {
-		podSpec.Volumes = append(podSpec.Volumes, volume)
-	}
+	podSpec.Volumes = append(podSpec.Volumes, volumesToAdd...)
 }
 
 // AddOrReplaceVolumeMount same as AddOrReplaceVolume, but with VolumeMounts in a specific container

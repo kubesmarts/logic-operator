@@ -1,52 +1,26 @@
 /*
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
- */
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 
 package main
 
 import (
 	"crypto/tls"
 	"flag"
-	"fmt"
 	"os"
-	"time"
-
-	"github.com/kubesmarts/logic-operator/api/version"
-
-	"k8s.io/client-go/dynamic"
-
-	"github.com/kubesmarts/logic-operator/internal/manager"
-
-	prometheus "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	"k8s.io/klog/v2/klogr"
-	eventingv1 "knative.dev/eventing/pkg/apis/eventing/v1"
-	sourcesv1 "knative.dev/eventing/pkg/apis/sources/v1"
-	servingv1 "knative.dev/serving/pkg/apis/serving/v1"
-	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
-
-	"github.com/kubesmarts/logic-operator/internal/controller"
-	"github.com/kubesmarts/logic-operator/internal/controller/cfg"
-
-	"k8s.io/klog/v2"
-
-	"github.com/kubesmarts/logic-operator/utils"
-
-	ocputil "github.com/kubesmarts/logic-operator/utils/openshift"
+	"path/filepath"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -56,108 +30,161 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	operatorapi "github.com/kubesmarts/logic-operator/api/v1alpha08"
-	"github.com/kubesmarts/logic-operator/log"
-	//+kubebuilder:scaffold:imports
+	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
+	"github.com/kubesmarts/logic-operator/internal/controller"
+	// +kubebuilder:scaffold:imports
 )
 
 var (
-	scheme = runtime.NewScheme()
+	scheme   = runtime.NewScheme()
+	setupLog = ctrl.Log.WithName("setup")
 )
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(operatorapi.AddToScheme(scheme))
-	utilruntime.Must(sourcesv1.AddToScheme(scheme))
-	utilruntime.Must(eventingv1.AddToScheme(scheme))
-	utilruntime.Must(servingv1.AddToScheme(scheme))
-	utilruntime.Must(prometheus.AddToScheme(scheme))
-	//+kubebuilder:scaffold:scheme
+
+	utilruntime.Must(logicv1.AddToScheme(scheme))
+	// +kubebuilder:scaffold:scheme
 }
 
+// nolint:gocyclo
 func main() {
 	var metricsAddr string
+	var metricsCertPath, metricsCertName, metricsCertKey string
+	var webhookCertPath, webhookCertName, webhookCertKey string
 	var enableLeaderElection bool
-	var leaseDuration *time.Duration
-	var renewDeadline *time.Duration
-	var retryPeriod *time.Duration
-	var qps *float64
-	var burst *int
 	var probeAddr string
 	var secureMetrics bool
 	var enableHTTP2 bool
-	var controllerCfgPath string
-	klog.InitFlags(nil)
-	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
+	var tlsOpts []func(*tls.Config)
+	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
+		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
-	// Flags for leader election tuning, resilient default values for production.
-	leaseDuration = flag.Duration("lease-duration", 60*time.Second, "Leader election lease duration")
-	renewDeadline = flag.Duration("renew-deadline", 40*time.Second, "Leader election renew deadline")
-	retryPeriod = flag.Duration("retry-period", 15*time.Second, "Leader election retry period")
-
-	// Flags for tuning client-go throttling
-	// 20 / 50	Very light operators
-	// 50 / 100	General-purpose OLM operators
-	// 100 / 200	Operators managing many CRDs or watching many namespaces
-	// 200 / 400	Extremely chatty operators (cluster-wide + many controllers)
-	qps = flag.Float64("qps", 50, "Maximum average QPS for Kubernetes client-go")
-	burst = flag.Int("burst", 100, "Maximum burst for Kubernetes client-go")
-
-	flag.BoolVar(&secureMetrics, "metrics-secure", false,
-		"If set the metrics endpoint is served securely")
+	flag.BoolVar(&secureMetrics, "metrics-secure", true,
+		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
+	flag.StringVar(&webhookCertPath, "webhook-cert-path", "", "The directory that contains the webhook certificate.")
+	flag.StringVar(&webhookCertName, "webhook-cert-name", "tls.crt", "The name of the webhook certificate file.")
+	flag.StringVar(&webhookCertKey, "webhook-cert-key", "tls.key", "The name of the webhook key file.")
+	flag.StringVar(&metricsCertPath, "metrics-cert-path", "",
+		"The directory that contains the metrics server certificate.")
+	flag.StringVar(&metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
+	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
-	flag.StringVar(&controllerCfgPath, "controller-cfg-path", "", "The controller config file path.")
+	opts := zap.Options{
+		Development: true,
+	}
+	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
-	klog.InfoS("leader election configuration",
-		"leader-elect", enableLeaderElection,
-		"lease-duration", leaseDuration,
-		"renew-deadline", renewDeadline,
-		"retry-period", retryPeriod)
-
-	klog.InfoS("client-go throttling configuration",
-		"qps", qps,
-		"burst", burst)
-
-	manager.SetOperatorStartTime()
-
-	ctrl.SetLogger(klogr.New().WithName(controller.ComponentName))
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
 	// prevent from being vulnerable to the HTTP/2 Stream Cancellation and
-	// Rapid Reset CVEs. For development information see:
+	// Rapid Reset CVEs. For more information see:
 	// - https://github.com/advisories/GHSA-qppj-fm5r-hxr3
 	// - https://github.com/advisories/GHSA-4374-p667-p6c8
 	disableHTTP2 := func(c *tls.Config) {
-		klog.V(log.I).Info("disabling http/2")
+		setupLog.Info("disabling http/2")
 		c.NextProtos = []string{"http/1.1"}
 	}
 
-	tlsOpts := []func(*tls.Config){}
 	if !enableHTTP2 {
 		tlsOpts = append(tlsOpts, disableHTTP2)
 	}
 
-	config := ctrl.GetConfigOrDie()
-	config.QPS = float32(*qps)
-	config.Burst = *burst
-	mgr, err := ctrl.NewManager(config, ctrl.Options{
-		Scheme: scheme,
-		Metrics: metricsserver.Options{
-			BindAddress:   metricsAddr,
-			SecureServing: secureMetrics,
-			TLSOpts:       tlsOpts,
-		},
+	// Create watchers for metrics and webhooks certificates
+	var metricsCertWatcher, webhookCertWatcher *certwatcher.CertWatcher
+
+	// Initial webhook TLS options
+	webhookTLSOpts := tlsOpts
+
+	if len(webhookCertPath) > 0 {
+		setupLog.Info("Initializing webhook certificate watcher using provided certificates",
+			"webhook-cert-path", webhookCertPath, "webhook-cert-name", webhookCertName, "webhook-cert-key", webhookCertKey)
+
+		var err error
+		webhookCertWatcher, err = certwatcher.New(
+			filepath.Join(webhookCertPath, webhookCertName),
+			filepath.Join(webhookCertPath, webhookCertKey),
+		)
+		if err != nil {
+			setupLog.Error(err, "Failed to initialize webhook certificate watcher")
+			os.Exit(1)
+		}
+
+		webhookTLSOpts = append(webhookTLSOpts, func(config *tls.Config) {
+			config.GetCertificate = webhookCertWatcher.GetCertificate
+		})
+	}
+
+	webhookServer := webhook.NewServer(webhook.Options{
+		TLSOpts: webhookTLSOpts,
+	})
+
+	// Metrics endpoint is enabled in 'config/default/kustomization.yaml'. The Metrics options configure the server.
+	// More info:
+	// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/metrics/server
+	// - https://book.kubebuilder.io/reference/metrics.html
+	metricsServerOptions := metricsserver.Options{
+		BindAddress:   metricsAddr,
+		SecureServing: secureMetrics,
+		TLSOpts:       tlsOpts,
+	}
+
+	if secureMetrics {
+		// FilterProvider is used to protect the metrics endpoint with authn/authz.
+		// These configurations ensure that only authorized users and service accounts
+		// can access the metrics endpoint. The RBAC are configured in 'config/rbac/kustomization.yaml'. More info:
+		// https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/metrics/filters#WithAuthenticationAndAuthorization
+		metricsServerOptions.FilterProvider = filters.WithAuthenticationAndAuthorization
+	}
+
+	// If the certificate is not specified, controller-runtime will automatically
+	// generate self-signed certificates for the metrics server. While convenient for development and testing,
+	// this setup is not recommended for production.
+	//
+	// TODO(user): If you enable certManager, uncomment the following lines:
+	// - [METRICS-WITH-CERTS] at config/default/kustomization.yaml to generate and use certificates
+	// managed by cert-manager for the metrics server.
+	// - [PROMETHEUS-WITH-CERTS] at config/prometheus/kustomization.yaml for TLS certification.
+	if len(metricsCertPath) > 0 {
+		setupLog.Info("Initializing metrics certificate watcher using provided certificates",
+			"metrics-cert-path", metricsCertPath, "metrics-cert-name", metricsCertName, "metrics-cert-key", metricsCertKey)
+
+		var err error
+		metricsCertWatcher, err = certwatcher.New(
+			filepath.Join(metricsCertPath, metricsCertName),
+			filepath.Join(metricsCertPath, metricsCertKey),
+		)
+		if err != nil {
+			setupLog.Error(err, "to initialize metrics certificate watcher", "error", err)
+			os.Exit(1)
+		}
+
+		metricsServerOptions.TLSOpts = append(metricsServerOptions.TLSOpts, func(config *tls.Config) {
+			config.GetCertificate = metricsCertWatcher.GetCertificate
+		})
+	}
+
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		Scheme:                 scheme,
+		Metrics:                metricsServerOptions,
+		WebhookServer:          webhookServer,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "1be5e57d.kie.org",
+		LeaderElectionID:       "07e8f64f.kubesmarts.org",
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
 		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
@@ -169,92 +196,70 @@ func main() {
 		// if you are doing or is intended to do any operation such as perform cleanups
 		// after the manager stops then its usage might be unsafe.
 		// LeaderElectionReleaseOnCancel: true,
-		LeaseDuration: leaseDuration,
-		RenewDeadline: renewDeadline,
-		RetryPeriod:   retryPeriod,
 	})
 	if err != nil {
-		klog.V(log.E).ErrorS(err, "unable to start manager")
+		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
 
-	// Set global assessors
-	utils.SetIsOpenShift(mgr.GetConfig())
-	utils.SetClient(mgr.GetClient())
-	cli, err := dynamic.NewForConfig(mgr.GetConfig())
-	if err != nil {
-		// shouldn't fail, since config is provided by the cluster, if fails, SetIsOpenShift should probably fail before.
-		panic(fmt.Sprintf("Impossible to get new dynamic client for config to support controller operations: %s", err))
-	}
-	utils.SetDynamicClient(cli)
-
-	// Fail fast, we can change this behavior in the future to read from defaults instead.
-	if _, err = cfg.InitializeControllersCfgAt(controllerCfgPath); err != nil {
-		klog.V(log.E).ErrorS(err, "unable to read controllers configuration file")
-		os.Exit(1)
-	}
-
-	// Initialize the worker used by the SonataFlow reconciliations to execute auxiliary async operations.
-	manager.InitializeSFCWorker(manager.SonataFlowControllerWorkerSize)
-
-	if err = (&controller.SonataFlowReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Config:   mgr.GetConfig(),
-		Recorder: mgr.GetEventRecorderFor("workflow-controller"),
+	if err := (&controller.LogicPlatformReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		klog.V(log.E).ErrorS(err, "unable to create controller", "controller", "SonataFlow")
+		setupLog.Error(err, "unable to create controller", "controller", "LogicPlatform")
 		os.Exit(1)
 	}
-	if err = (&controller.SonataFlowBuildReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Config:   mgr.GetConfig(),
-		Recorder: mgr.GetEventRecorderFor("build-controller"),
+	if err := (&controller.LogicFlowServiceReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		klog.V(log.E).ErrorS(err, "unable to create controller", "controller", "SonataFlowBuild")
+		setupLog.Error(err, "unable to create controller", "controller", "LogicFlowService")
 		os.Exit(1)
+	}
+	if err := (&controller.LogicFlowDefinitionReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "LogicFlowDefinition")
+		os.Exit(1)
+	}
+	if err := (&controller.LogicFlowRuntimeReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "LogicFlowRuntime")
+		os.Exit(1)
+	}
+	// +kubebuilder:scaffold:builder
+
+	if metricsCertWatcher != nil {
+		setupLog.Info("Adding metrics certificate watcher to manager")
+		if err := mgr.Add(metricsCertWatcher); err != nil {
+			setupLog.Error(err, "unable to add metrics certificate watcher to manager")
+			os.Exit(1)
+		}
 	}
 
-	if err = (&controller.SonataFlowPlatformReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Reader:   mgr.GetAPIReader(),
-		Config:   mgr.GetConfig(),
-		Recorder: mgr.GetEventRecorderFor("platform-controller"),
-	}).SetupWithManager(mgr); err != nil {
-		klog.V(log.E).ErrorS(err, "unable to create controller", "controller", "SonataFlowPlatform")
-		os.Exit(1)
-	}
-	if err = (&controller.SonataFlowClusterPlatformReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Reader:   mgr.GetAPIReader(),
-		Config:   mgr.GetConfig(),
-		Recorder: mgr.GetEventRecorderFor("cluster-platform-controller"),
-	}).SetupWithManager(mgr); err != nil {
-		klog.V(log.E).ErrorS(err, "unable to create controller", "controller", "SonataFlowClusterPlatform")
-		os.Exit(1)
-	}
-	//+kubebuilder:scaffold:builder
-
-	if utils.IsOpenShift() {
-		ocputil.MustAddToScheme(mgr.GetScheme())
+	if webhookCertWatcher != nil {
+		setupLog.Info("Adding webhook certificate watcher to manager")
+		if err := mgr.Add(webhookCertWatcher); err != nil {
+			setupLog.Error(err, "unable to add webhook certificate watcher to manager")
+			os.Exit(1)
+		}
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-		klog.V(log.E).ErrorS(err, "unable to set up health check")
+		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-		klog.V(log.E).ErrorS(err, "unable to set up ready check")
+		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
 	}
 
-	klog.V(log.I).InfoS("starting manager", "version:", version.GetOperatorVersion())
+	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		klog.V(log.E).ErrorS(err, "problem running manager")
+		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
-
 }

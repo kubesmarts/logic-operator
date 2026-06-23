@@ -42,9 +42,9 @@ type DeploymentUnavailabilityReader interface {
 }
 
 // DeploymentTroubleshooter creates a new DeploymentUnavailabilityReader for finding out why a deployment failed
-func DeploymentTroubleshooter(client client.Client, deployment *v1.Deployment, container string) DeploymentUnavailabilityReader {
+func DeploymentTroubleshooter(c client.Client, deployment *v1.Deployment, container string) DeploymentUnavailabilityReader {
 	return &deploymentUnavailabilityReader{
-		c:          client,
+		c:          c,
 		deployment: deployment,
 		container:  container,
 	}
