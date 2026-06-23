@@ -3,6 +3,13 @@ name: E2E Tests (Quick - PR Only)
 on:
   pull_request:
     branches: [main, master]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'adr/**'
+      - 'cli/**'
+      - 'LICENSE'
+      - '.gitignore'
   workflow_dispatch:
 
 jobs:
