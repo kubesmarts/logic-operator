@@ -1,33 +1,9 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-#
-#  http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-
-# Load .env file if it exists, allowing environment variables to override
-ifneq (,$(wildcard .env))
-    include .env
-    export
-endif
-
 # VERSION defines the project version for the bundle.
 # Update this value when you upgrade the version of your project.
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
-VERSION ?= 2.0.0-snapshot
-IMAGE_TAG ?= 2.0.0
+VERSION ?= 0.0.1
 
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
@@ -48,60 +24,51 @@ BUNDLE_DEFAULT_CHANNEL := --default-channel=$(DEFAULT_CHANNEL)
 endif
 BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 
-# IMAGE_TAG_BASE defines the image namespace and part of the image name for remote images.
+# IMAGE_TAG_BASE defines the docker.io namespace and part of the image name for remote images.
 # This variable is used to construct full image tags for bundle and catalog images.
 #
 # For example, running 'make bundle-build bundle-push catalog-build catalog-push' will build and push both
-# apache/sonataflow-operator-bundle:$VERSION and apache/sonataflow-operator-catalog:$VERSION.
-REGISTRY ?= quay.io
-ACCOUNT ?= kiegroup
-OPERATOR_NAME ?= logic-operator
-IMAGE_TAG_BASE ?= $(REGISTRY)/$(ACCOUNT)/$(OPERATOR_NAME)
+# kubesmarts.org/logic-operator-bundle:$VERSION and kubesmarts.org/logic-operator-catalog:$VERSION.
+IMAGE_TAG_BASE ?= kubesmarts.org/logic-operator
 
 # BUNDLE_IMG defines the image:tag used for the bundle.
 # You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)
-BUNDLE_IMG ?= $(IMAGE_TAG_BASE)-bundle:$(IMAGE_TAG)
+BUNDLE_IMG ?= $(IMAGE_TAG_BASE)-bundle:v$(VERSION)
 
 # BUNDLE_GEN_FLAGS are the flags passed to the operator-sdk generate bundle command
-# TODO: review this flag once we upgrade https://github.com/operator-framework/operator-sdk/issues/4992 (https://issues.redhat.com/browse/KOGITO-9428)
-# TODO: It is preventing us from adding new annotations to bundle/metadata/annotations.yaml
-BUNDLE_GEN_FLAGS ?= -q --overwrite=false --version $(VERSION) $(BUNDLE_METADATA_OPTS)
-
-# Container runtime engine used for building the images
-BUILDER ?= docker
+BUNDLE_GEN_FLAGS ?= -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 
 # USE_IMAGE_DIGESTS defines if images are resolved via tags or digests
 # You can enable this value if you would like to use SHA Based Digests
 # To enable set flag to true
-IMG_TAG_SEP = :
 USE_IMAGE_DIGESTS ?= false
 ifeq ($(USE_IMAGE_DIGESTS), true)
 	BUNDLE_GEN_FLAGS += --use-image-digests
-	IMG_TAG_SEP = @
 endif
 
+# Set the Operator SDK version to use. By default, what is installed on the system is used.
+# This is useful for CI or a project to utilize a specific version of the operator-sdk toolkit.
+OPERATOR_SDK_VERSION ?= v1.42.2
 # Image URL to use all building/pushing image targets
-IMG ?= $(IMAGE_TAG_BASE)$(IMG_TAG_SEP)$(IMAGE_TAG)
-# ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.26
-
-OPERATOR_SDK_VERSION ?= v1.35.0
+IMG ?= controller:latest
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
-ifeq (,$(shell go env GOBIN 2>/dev/null))
-GOBIN=$(shell go env GOPATH 2>/dev/null || echo $(HOME)/go)/bin
+ifeq (,$(shell go env GOBIN))
+GOBIN=$(shell go env GOPATH)/bin
 else
-GOBIN=$(shell go env GOBIN 2>/dev/null)
+GOBIN=$(shell go env GOBIN)
 endif
 
+# CONTAINER_TOOL defines the container tool to be used for building images.
+# Be aware that the target commands are only tested with Docker which is
+# scaffolded by default. However, you might want to replace it to use other
+# tools. (i.e. podman)
+CONTAINER_TOOL ?= docker
+
 # Setting SHELL to bash allows bash commands to be executed by recipes.
-# This is a requirement for 'setup-envtest.sh' in the test target.
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
-
-# Export all variables to subprocesses (needed for controller-gen to find go)
-.EXPORT_ALL_VARIABLES:
 
 .PHONY: all
 all: build
@@ -110,7 +77,7 @@ all: build
 
 # The help target prints out all targets with their descriptions organized
 # beneath their categories. The categories are represented by '##@' and the
-# target descriptions by '##'. The awk commands is responsible for reading the
+# target descriptions by '##'. The awk command is responsible for reading the
 # entire set of makefiles included in this invocation, looking for lines of the
 # file as xyz: ## something, and then pretty-format the target and help. Then,
 # if there's a line with ##@ something, that gets pretty-printed as a category.
@@ -126,47 +93,53 @@ help: ## Display this help.
 ##@ Development
 
 .PHONY: manifests
-manifests: generate ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	@echo "📄 Generating WebhookConfiguration, ClusterRole, and CRD objects..."
-	@$(CONTROLLER_GEN) rbac:roleName=manager-role crd:allowDangerousTypes=true webhook paths="./api/..." paths="./internal/controller/..." output:crd:artifacts:config=config/crd/bases
+manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./api/..." paths="./cmd/..." paths="./internal/..." output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	@echo "🔄 Generating DeepCopy methods for APIs..."
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..." paths="./container-builder/api/..."
-	@echo "🧹 Formatting generated files..."
-	@gofmt -s -w api/zz_generated.deepcopy.go container-builder/api/zz_generated.deepcopy.go
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..." paths="./cmd/..." paths="./internal/..."
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
-	@echo "🧹 Running go fmt and goimports..."
-	@./hack/goimports.sh > /dev/null 2>&1
-	@go work sync > /dev/null 2>&1
-	@go mod tidy > /dev/null 2>&1
-	@go fmt ./... > /dev/null 2>&1
+	go fmt ./...
 
 .PHONY: vet
 vet: ## Run go vet against code.
-	@echo "🔍 Running go vet..."
-	@go vet ./...
+	go vet ./...
 
 .PHONY: test
-test: manifests generate test-api ## Run tests.
-	@$(MAKE) addheaders
-	@$(MAKE) vet
-	@$(MAKE) fmt
-	@echo "🔍 Running controller tests..."
-	@# Only run coverage on packages that have test files to avoid Go 1.26 covdata tool issue
-	@go test $(shell go list -f '{{if .TestGoFiles}}{{.ImportPath}}{{end}}' ./... | grep -v /test/) -coverprofile cover.out || \
-		go test $(shell go list ./... | grep -v /test/)
-	@echo "✅  Tests completed successfully."
+test: manifests generate fmt vet setup-envtest ## Run tests.
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
-.PHONY: test-api
-test-api:
-	@echo "🔄 Running API tests..."
-	@cd api && make test > /dev/null 2>&1
-	@echo "✅  API tests completed successfully."
+# TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
+# The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
+# CertManager is installed by default; skip with:
+# - CERT_MANAGER_INSTALL_SKIP=true
+KIND_CLUSTER ?= logic-operator-test-e2e
 
+.PHONY: setup-test-e2e
+setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
+	@command -v $(KIND) >/dev/null 2>&1 || { \
+		echo "Kind is not installed. Please install Kind manually."; \
+		exit 1; \
+	}
+	@case "$$($(KIND) get clusters)" in \
+		*"$(KIND_CLUSTER)"*) \
+			echo "Kind cluster '$(KIND_CLUSTER)' already exists. Skipping creation." ;; \
+		*) \
+			echo "Creating Kind cluster '$(KIND_CLUSTER)'..."; \
+			$(KIND) create cluster --name $(KIND_CLUSTER) ;; \
+	esac
+
+.PHONY: test-e2e
+test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
+	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v
+	$(MAKE) cleanup-test-e2e
+
+.PHONY: cleanup-test-e2e
+cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
+	@$(KIND) delete cluster --name $(KIND_CLUSTER)
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
@@ -176,73 +149,53 @@ lint: golangci-lint ## Run golangci-lint linter
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 	$(GOLANGCI_LINT) run --fix
 
-######
-# Test proxy commands
-
-TEST_DIR=testbdd
-
-.PHONY: run-tests
-run-tests: generate-all
-	@(cd $(TEST_DIR) && $(MAKE) $@)
-
-.PHONY: run-smoke-tests
-run-smoke-tests: generate-all
-	@(cd $(TEST_DIR) && $(MAKE) $@)
-
-.PHONY: test-container-builder
-test-container-builder:
-	cd container-builder && make test
-
-.PHONY: test-workflowproj
-test-workflowproj:
-	cd workflowproj && make test
+.PHONY: lint-config
+lint-config: golangci-lint ## Verify golangci-lint linter configuration
+	$(GOLANGCI_LINT) config verify
 
 ##@ Build
 
 .PHONY: build
-build: ## Build manager binary.
-	CGO_ENABLED=0 go build -trimpath -ldflags=-buildid= -o bin/manager cmd/main.go
-
-.PHONY: build-4-debug
-build-4-debug: generate ## Build manager binary with debug options.
-	go build -gcflags="all=-N -l" -o bin/manager cmd/main.go
+build: manifests generate fmt vet ## Build manager binary.
+	go build -o bin/manager cmd/main.go
 
 .PHONY: run
-run: manifests generate ## Run a controller from your host.
-	go run ./cmd/main.go -v=2 -controller-cfg-path=$(CURDIR)/config/manager/controllers_cfg.yaml
+run: manifests generate fmt vet ## Run a controller from your host.
+	go run ./cmd/main.go
 
-.PHONY: debug
-debug: build-4-debug ## Run a controller from your host from binary
-	./bin/manager -v=2 -controller-cfg-path=$(CURDIR)/config/manager/controllers_cfg.yaml
+# If you wish to build the manager image targeting other platforms you can use the --platform flag.
+# (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
+# More info: https://docs.docker.com/develop/develop-images/build_enhancements/
+.PHONY: docker-build
+docker-build: ## Build docker image with the manager.
+	$(CONTAINER_TOOL) build -t ${IMG} .
 
-# This is currently done directly into the CI
-# PLATFORMS defines the target platforms for the manager image be build to provide support to multiple
+.PHONY: docker-push
+docker-push: ## Push docker image with the manager.
+	$(CONTAINER_TOOL) push ${IMG}
+
+# PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
-# - able to use docker buildx . More info: https://docs.docker.com/build/buildx/
-# - have enable BuildKit, More info: https://docs.docker.com/develop/develop-images/build_enhancements/
-# - be able to push the image for your registry (i.e. if you do not inform a valid value via IMG=<myregistry/image:<tag>> than the export will fail)
-# To properly provided solutions that supports more than one platform you should use this option.
+# - be able to use docker buildx. More info: https://docs.docker.com/build/buildx/
+# - have enabled BuildKit. More info: https://docs.docker.com/develop/develop-images/build_enhancements/
+# - be able to push the image to your registry (i.e. if you do not set a valid value via IMG=<myregistry/image:<tag>> then the export will fail)
+# To adequately provide solutions that are compatible with multiple platforms, you should consider using this option.
 PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 .PHONY: docker-buildx
-docker-buildx: generate ## Build and push docker image for the manager for cross-platform support
+docker-buildx: ## Build and push docker image for the manager for cross-platform support
 	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
-	- docker buildx create --name project-v3-builder
-	docker buildx use project-v3-builder
-	- docker buildx build --build-arg SOURCE_DATE_EPOCH=$(shell git log -1 --pretty=%ct) --push . --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross
-	- docker buildx rm project-v3-builder
+	- $(CONTAINER_TOOL) buildx create --name logic-operator-builder
+	$(CONTAINER_TOOL) buildx use logic-operator-builder
+	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
+	- $(CONTAINER_TOOL) buildx rm logic-operator-builder
 	rm Dockerfile.cross
 
-.PHONY: container-build
-container-build: ## Build the container image
-	cekit -v --descriptor images/manager.yaml build ${build_options} $(BUILDER) --no-squash --build-arg SOURCE_DATE_EPOCH="$(shell git log -1 --pretty=%ct)"
-ifneq ($(ignore_tag),true)
-	$(BUILDER) tag sonataflow-operator:latest ${IMG}
-endif
-
-.PHONY: container-push
-container-push: ## Push the container image
-	$(BUILDER) push ${CONTAINER_PUSH_PARAMS} ${IMG}
+.PHONY: build-installer
+build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
+	mkdir -p dist
+	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	$(KUSTOMIZE) build config/default > dist/install.yaml
 
 ##@ Deployment
 
@@ -252,35 +205,22 @@ endif
 
 .PHONY: install
 install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build config/crd | kubectl create -f -
+	$(KUSTOMIZE) build config/crd | $(KUBECTL) apply -f -
 
 .PHONY: uninstall
 uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/crd | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
+	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default | kubectl create -f -
-
-.PHONY: deploy-only
-deploy-only: kustomize ## Deploy controller without regenerating manifests (use when manifests are already generated)
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default | kubectl create -f -
-
-.PHONY: generate-deploy
-generate-deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	@echo "🚀 Updating controller image to ${IMG}..."
-	@cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG} > /dev/null 2>&1
-	@echo "📄 Building deployment YAML..."
-	@$(KUSTOMIZE) build config/default > operator.yaml
-
+	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
 
 .PHONY: undeploy
-undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/default | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
+undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
+	$(KUSTOMIZE) build config/default | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
 
-##@ Build Dependencies
+##@ Dependencies
 
 ## Location to install dependencies to
 LOCALBIN ?= $(shell pwd)/bin
@@ -289,26 +229,20 @@ $(LOCALBIN):
 
 ## Tool Binaries
 KUBECTL ?= kubectl
-KUSTOMIZE ?= $(LOCALBIN)/kustomize-$(KUSTOMIZE_VERSION)
+KIND ?= kind
+KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
-ENVTEST ?= $(LOCALBIN)/setup-envtest-$(ENVTEST_VERSION)
-GOLANGCI_LINT = $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)
+ENVTEST ?= $(LOCALBIN)/setup-envtest
+GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
 
 ## Tool Versions
-KUSTOMIZE_VERSION ?= v5.4.1
-CONTROLLER_TOOLS_VERSION ?= v0.16.4
-ENVTEST_VERSION ?= release-0.18
-GOLANGCI_LINT_VERSION ?= v1.57.2
-
-KIND_VERSION ?= v0.20.0
-KNATIVE_VERSION ?= v1.13.2
-TIMEOUT_SECS ?= 180s
-PROMETHEUS_VERSION ?= v0.70.0
-GRAFANA_VERSION ?= v5.13.0
-
-KNATIVE_SERVING_PREFIX ?= "https://github.com/knative/serving/releases/download/knative-$(KNATIVE_VERSION)"
-KNATIVE_EVENTING_PREFIX ?= "https://github.com/knative/eventing/releases/download/knative-$(KNATIVE_VERSION)"
-KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
+KUSTOMIZE_VERSION ?= v5.6.0
+CONTROLLER_TOOLS_VERSION ?= v0.18.0
+#ENVTEST_VERSION is the version of controller-runtime release branch to fetch the envtest setup script (i.e. release-0.20)
+ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
+#ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31)
+ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
+GOLANGCI_LINT_VERSION ?= v2.1.0
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -317,11 +251,16 @@ $(KUSTOMIZE): $(LOCALBIN)
 
 .PHONY: controller-gen
 controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary.
-	@echo "⬇️  Ensuring controller-gen is installed..."
-	@test -s $(CONTROLLER_GEN) || (GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION) > /dev/null 2>&1 && echo "✅  controller-gen installed successfully!")
+$(CONTROLLER_GEN): $(LOCALBIN)
+	$(call go-install-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen,$(CONTROLLER_TOOLS_VERSION))
 
-$(CONTROLLER_GEN):
-	@mkdir -p $(LOCALBIN) # Ensure LOCALBIN exists
+.PHONY: setup-envtest
+setup-envtest: envtest ## Download the binaries required for ENVTEST in the local bin directory.
+	@echo "Setting up envtest binaries for Kubernetes version $(ENVTEST_K8S_VERSION)..."
+	@$(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path || { \
+		echo "Error: Failed to set up envtest binaries for version $(ENVTEST_K8S_VERSION)."; \
+		exit 1; \
+	}
 
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download setup-envtest locally if necessary.
@@ -331,49 +270,58 @@ $(ENVTEST): $(LOCALBIN)
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
-	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/cmd/golangci-lint,${GOLANGCI_LINT_VERSION})
+	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
-# $1 - target path with name of binary (ideally with version)
+# $1 - target path with name of binary
 # $2 - package url which can be installed
 # $3 - specific version of package
 define go-install-tool
-@[ -f $(1) ] || { \
+@[ -f "$(1)-$(3)" ] || { \
 set -e; \
 package=$(2)@$(3) ;\
 echo "Downloading $${package}" ;\
+rm -f $(1) || true ;\
 GOBIN=$(LOCALBIN) go install $${package} ;\
-mv "$$(echo "$(1)" | sed "s/-$(3)$$//")" $(1) ;\
-}
+mv $(1) $(1)-$(3) ;\
+} ;\
+ln -sf $(1)-$(3) $(1)
 endef
 
+.PHONY: operator-sdk
+OPERATOR_SDK ?= $(LOCALBIN)/operator-sdk
+operator-sdk: ## Download operator-sdk locally if necessary.
+ifeq (,$(wildcard $(OPERATOR_SDK)))
+ifeq (, $(shell which operator-sdk 2>/dev/null))
+	@{ \
+	set -e ;\
+	mkdir -p $(dir $(OPERATOR_SDK)) ;\
+	OS=$(shell go env GOOS) && ARCH=$(shell go env GOARCH) && \
+	curl -sSLo $(OPERATOR_SDK) https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk_$${OS}_$${ARCH} ;\
+	chmod +x $(OPERATOR_SDK) ;\
+	}
+else
+OPERATOR_SDK = $(shell which operator-sdk)
+endif
+endif
 
 .PHONY: bundle
-PACKAGE_NAME = "sonataflow-operator"
-bundle: manifests kustomize install-operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
-	@echo "📦 Generating bundle manifests and metadata..."
-	@operator-sdk generate kustomize manifests --package=$(PACKAGE_NAME) -q > /dev/null 2>&1
-	@echo "🔧 Setting controller image in Kustomize..."
-	@cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG) > /dev/null 2>&1
-	@echo "🔨 Building Kustomize and generating bundle..."
-	@$(KUSTOMIZE) build config/manifests | operator-sdk generate bundle $(BUNDLE_GEN_FLAGS) --package=$(PACKAGE_NAME) > /dev/null 2>&1
-	@echo "🛠️  Validating generated bundle..."
-	@operator-sdk bundle validate ./bundle > /dev/null 2>&1
+bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
+	$(OPERATOR_SDK) generate kustomize manifests -q
+	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
+	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS)
+	$(OPERATOR_SDK) bundle validate ./bundle
 
 .PHONY: bundle-build
-BUNDLE_DESCRIPTOR = "images/bundle.yaml"
-bundle-build: ## Build the bundle image
-	cekit -v --descriptor $(BUNDLE_DESCRIPTOR) build ${build_options} $(BUILDER) --no-squash --platform=linux/amd64 --build-arg SOURCE_DATE_EPOCH="$(shell git log -1 --pretty=%ct)"
-ifneq ($(ignore_tag),true)
-	$(BUILDER) tag sonataflow-operator-bundle:latest $(BUNDLE_IMG)
-endif
+bundle-build: ## Build the bundle image.
+	$(CONTAINER_TOOL) build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-push
 bundle-push: ## Push the bundle image.
-	$(MAKE) container-push IMG=$(BUNDLE_IMG)
+	$(MAKE) docker-push IMG=$(BUNDLE_IMG)
 
 .PHONY: opm
-OPM = ./bin/opm
+OPM = $(LOCALBIN)/opm
 opm: ## Download opm locally if necessary.
 ifeq (,$(wildcard $(OPM)))
 ifeq (,$(shell which opm 2>/dev/null))
@@ -381,7 +329,7 @@ ifeq (,$(shell which opm 2>/dev/null))
 	set -e ;\
 	mkdir -p $(dir $(OPM)) ;\
 	OS=$(shell go env GOOS) && ARCH=$(shell go env GOARCH) && \
-	curl -sSLo $(OPM) https://github.com/operator-framework/operator-registry/releases/download/v$(OPERATOR_SDK_VERSION)/$${OS}-$${ARCH}-opm ;\
+	curl -sSLo $(OPM) https://github.com/operator-framework/operator-registry/releases/download/v1.55.0/$${OS}-$${ARCH}-opm ;\
 	chmod +x $(OPM) ;\
 	}
 else
@@ -394,169 +342,21 @@ endif
 BUNDLE_IMGS ?= $(BUNDLE_IMG)
 
 # The image tag given to the resulting catalog image (e.g. make catalog-build CATALOG_IMG=example.com/operator-catalog:v0.2.0).
-CATALOG_IMG ?= $(IMAGE_TAG_BASE)-catalog:$(IMAGE_TAG)
+CATALOG_IMG ?= $(IMAGE_TAG_BASE)-catalog:v$(VERSION)
 
 # Set CATALOG_BASE_IMG to an existing catalog image tag to add $BUNDLE_IMGS to that image.
 ifneq ($(origin CATALOG_BASE_IMG), undefined)
 FROM_INDEX_OPT := --from-index $(CATALOG_BASE_IMG)
 endif
 
-PLATFORM ?= linux/amd64
-
 # Build a catalog image by adding bundle images to an empty catalog using the operator package manager tool, 'opm'.
 # This recipe invokes 'opm' in 'semver' bundle add mode. For more information on add modes, see:
 # https://github.com/operator-framework/community-operators/blob/7f1438c/docs/packaging-operator.md#updating-your-existing-operator
 .PHONY: catalog-build
 catalog-build: opm ## Build a catalog image.
-	$(OPM) index add --container-tool $(BUILDER) --mode semver --tag $(CATALOG_IMG) --bundles $(BUNDLE_IMGS) $(FROM_INDEX_OPT) --generate -d ./index.Dockerfile
-	$(BUILDER) build --platform $(PLATFORM) -f ./index.Dockerfile -t $(CATALOG_IMG) .
-	rm ./index.Dockerfile
+	$(OPM) index add --container-tool $(CONTAINER_TOOL) --mode semver --tag $(CATALOG_IMG) --bundles $(BUNDLE_IMGS) $(FROM_INDEX_OPT)
 
 # Push the catalog image.
 .PHONY: catalog-push
 catalog-push: ## Push a catalog image.
-	$(MAKE) container-push IMG=$(CATALOG_IMG)
-
-.PHONY: clean
-clean:
-	rm -rf bin/
-
-.PHONY: bump-version
-new_version = ""
-bump-version:
-	./hack/bump-version.sh $(new_version)
-
-.PHONY: install-operator-sdk
-install-operator-sdk:
-	@echo "📦 Installing Operator SDK..."
-	@./hack/install-operator-sdk.sh
-
-
-.PHONY: addheaders
-addheaders:
-	@echo "📝 Adding headers to files..."
-	@./hack/addheaders.sh > /dev/null 2>&1
-
-.PHONY: generate-all
-generate-all: generate generate-deploy bundle
-	@$(MAKE) addheaders
-	@$(MAKE) vet
-	@$(MAKE) fmt
-
-.PHONY: test-e2e # You will need to have a Minikube/Kind cluster up and running to run this target, and run container-builder before the test
-label = "flows-ephemeral" # possible values are flows-ephemeral, flows-persistence, flows-monitoring, flows-hpa, flows-pdb-with-hpa, flows-pdb, platform, cluster
-test-e2e:
-ifeq ($(label), cluster)
-	@echo "🌐 Running e2e tests for cluster..."
-	go test ./test/e2e/e2e_suite_test.go ./test/e2e/helpers.go ./test/e2e/clusterplatform_test.go \
-	-v -ginkgo.v -ginkgo.no-color -ginkgo.github-output -ginkgo.label-filter=$(label) \
-	-ginkgo.junit-report=./e2e-test-report-clusterplatform_test.xml -timeout 60m KUSTOMIZE=$(KUSTOMIZE);
-else ifeq ($(label), platform)
-	@echo "📦 Running e2e tests for platform..."
-	go test ./test/e2e/e2e_suite_test.go ./test/e2e/helpers.go ./test/e2e/platform_test.go \
-	-v -ginkgo.v -ginkgo.no-color -ginkgo.github-output -ginkgo.label-filter=$(label) \
-	-ginkgo.junit-report=./e2e-test-report-platform_test.xml -timeout 60m KUSTOMIZE=$(KUSTOMIZE);
-else ifeq ($(label), flows-ephemeral)
-	@echo "🔄 Running e2e tests for flows-ephemeral..."
-	go test ./test/e2e/e2e_suite_test.go ./test/e2e/helpers.go ./test/e2e/workflow_test.go \
-	-v -ginkgo.v -ginkgo.no-color -ginkgo.github-output -ginkgo.label-filter=$(label) \
-	-ginkgo.junit-report=./e2e-test-report-workflow_test.xml -timeout 60m KUSTOMIZE=$(KUSTOMIZE);
-else ifeq ($(label), flows-persistence)
-	@echo "🔁 Running e2e tests for flows-persistence..."
-	go test ./test/e2e/e2e_suite_test.go ./test/e2e/helpers.go ./test/e2e/workflow_test.go \
-	-v -ginkgo.v -ginkgo.no-color -ginkgo.github-output -ginkgo.label-filter=$(label) \
-	-ginkgo.junit-report=./e2e-test-report-workflow_test.xml -timeout 60m KUSTOMIZE=$(KUSTOMIZE);
-else ifeq ($(label), flows-monitoring)
-	@echo "🔁 Running e2e tests for flows-monitoring..."
-	go test ./test/e2e/e2e_suite_test.go ./test/e2e/helpers.go ./test/e2e/workflow_test.go \
-	-v -ginkgo.v -ginkgo.no-color -ginkgo.github-output -ginkgo.label-filter=$(label) \
-	-ginkgo.junit-report=./e2e-test-report-workflow_test.xml -timeout 60m KUSTOMIZE=$(KUSTOMIZE);
-else ifeq ($(label), flows-hpa)
-	@echo "🔁 Running e2e tests for flows-hpa..."
-	go test ./test/e2e/e2e_suite_test.go ./test/e2e/helpers.go ./test/e2e/workflow_test.go \
-	-v -ginkgo.v -ginkgo.no-color -ginkgo.github-output -ginkgo.label-filter=$(label) \
-	-ginkgo.junit-report=./e2e-test-report-workflow_test.xml -timeout 60m KUSTOMIZE=$(KUSTOMIZE);
-else ifeq ($(label), flows-pdb)
-	@echo "🔁 Running e2e tests for flows-pdb..."
-	go test ./test/e2e/e2e_suite_test.go ./test/e2e/helpers.go ./test/e2e/workflow_test.go \
-	-v -ginkgo.v -ginkgo.no-color -ginkgo.github-output -ginkgo.label-filter=$(label) \
-	-ginkgo.junit-report=./e2e-test-report-workflow_test.xml -timeout 60m KUSTOMIZE=$(KUSTOMIZE);
-else ifeq ($(label), flows-pdb-with-hpa)
-	@echo "🔁 Running e2e tests for flows-pdb-with-hpa..."
-	go test ./test/e2e/e2e_suite_test.go ./test/e2e/helpers.go ./test/e2e/workflow_test.go \
-	-v -ginkgo.v -ginkgo.no-color -ginkgo.github-output -ginkgo.label-filter=$(label) \
-	-ginkgo.junit-report=./e2e-test-report-workflow_test.xml -timeout 60m KUSTOMIZE=$(KUSTOMIZE);
-else
-	@echo "❌  Invalid label. Please use one of: cluster, platform, flows-ephemeral, flows-persistence, flows-monitoring, flows-hpa, flows-pdb, flows-pdb-with-hpa"
-endif
-
-.PHONY: full-test-e2e
-full-test-e2e: create-cluster load-docker-image deploy deploy-knative deploy-prometheus
-	sleep 30
-	kubectl wait pod -A -l app.kubernetes.io/name=sonataflow-operator --for condition=Ready --timeout 120s
-	@$(MAKE) test-e2e label=platform
-	@$(MAKE) test-e2e label=cluster
-	@$(MAKE) test-e2e label=flows-monitoring
-	@$(MAKE) test-e2e label=flows-persistence
-	@$(MAKE) test-e2e label=flows-ephemeral
-
-.PHONY: before-pr
-before-pr: generate-all test ## Run generate-all before executing tests.
-	@echo "✅  Your working branch is done."
-
-.PHONY: load-docker-image
-load-docker-image: install-kind
-	kind load docker-image $(IMG)
-
-.PHONY: install-kind
-install-kind:
-	command -v kind >/dev/null || go install sigs.k8s.io/kind@$(KIND_VERSION)
-
-.PHONY: create-cluster
-create-cluster: install-kind
-	kind get clusters | grep kind >/dev/null || ./hack/create-kind-cluster-with-registry.sh $(BUILDER)
-
-.PHONY: deploy-knative
-deploy-knative:
-	kubectl apply -f https://github.com/knative/operator/releases/download/knative-$(KNATIVE_VERSION)/operator.yaml
-	kubectl wait  --for=condition=Available=True deploy/knative-operator -n default --timeout=$(TIMEOUT_SECS)
-	kubectl apply -f ./test/testdata/knative_serving_eventing.yaml
-	kubectl wait  --for=condition=Ready=True KnativeServing/knative-serving -n knative-serving --timeout=$(TIMEOUT_SECS)
-	kubectl wait  --for=condition=Ready=True KnativeEventing/knative-eventing -n knative-eventing --timeout=$(TIMEOUT_SECS)
-	
-.PHONY: deploy-prometheus
-deploy-prometheus: create-cluster
-	kubectl create -f https://github.com/prometheus-operator/prometheus-operator/releases/download/$(PROMETHEUS_VERSION)/bundle.yaml
-	kubectl wait  --for=condition=Available=True deploy/prometheus-operator -n default --timeout=$(TIMEOUT_SECS)
-	kubectl apply -f ./test/testdata/prometheus.yaml -n default
-	kubectl wait  --for=condition=Available=True prometheus/prometheus -n default --timeout=$(TIMEOUT_SECS)
-
-.PHONY: deploy-grafana
-deploy-grafana: create-cluster
-	kubectl create -f https://github.com/grafana/grafana-operator/releases/download/$(GRAFANA_VERSION)/kustomize-cluster_scoped.yaml
-	kubectl wait  --for=condition=Available=True deploy/grafana-operator-controller-manager -n grafana --timeout=$(TIMEOUT_SECS)
-
-.PHONY: delete-cluster
-delete-cluster: install-kind
-	kind delete cluster && $(BUILDER) rm -f kind-registry
-
-# Updates the manager_env_patch.yaml file with the images used by the operator.
-# These params come from the .env file or environment variables
-.PHONY: update-patch
-update-patch:
-	@echo "🔧 Updating Kustomize patch file..."
-	$(eval PARAMS := \
-		RELATED_IMAGE_JOBS_SERVICE_POSTGRESQL=$(RELATED_IMAGE_JOBS_SERVICE_POSTGRESQL) \
-		RELATED_IMAGE_JOBS_SERVICE_EPHEMERAL=$(RELATED_IMAGE_JOBS_SERVICE_EPHEMERAL) \
-		RELATED_IMAGE_DATA_INDEX_POSTGRESQL=$(RELATED_IMAGE_DATA_INDEX_POSTGRESQL) \
-		RELATED_IMAGE_DATA_INDEX_EPHEMERAL=$(RELATED_IMAGE_DATA_INDEX_EPHEMERAL) \
-		RELATED_IMAGE_BASE_BUILDER=$(RELATED_IMAGE_BASE_BUILDER) \
-		RELATED_IMAGE_DEVMODE=$(RELATED_IMAGE_DEVMODE) \
-		RELATED_IMAGE_DB_MIGRATOR_TOOL=$(RELATED_IMAGE_DB_MIGRATOR_TOOL))
-	@if [ -z "$(strip $(PARAMS))" ]; then \
-		echo "⚠️  No variables resolved. Skipping updates."; \
-	else \
-		echo "✅ Resolved:"; echo "$(PARAMS)" | tr ' ' '\n'; \
-		python ./hack/update_patch_env.py "$(PIN_IMAGE_SHA_BUNDLE_TOOL)" $(PARAMS); \
-		echo "✅ Patch updated!"; \
-	fi
+	$(MAKE) docker-push IMG=$(CATALOG_IMG)

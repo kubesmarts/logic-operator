@@ -21,10 +21,6 @@ package utils
 
 import (
 	"os"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"github.com/kubesmarts/logic-operator/api/metadata"
 )
 
 const (
@@ -35,34 +31,6 @@ const (
 	DefaultServicePortName = "h2c"
 	LatestImageTag         = "latest"
 )
-
-// GetOperatorIDAnnotation to safely get the operator id annotation value.
-func GetOperatorIDAnnotation(obj metav1.Object) string {
-	if obj == nil || obj.GetAnnotations() == nil {
-		return ""
-	}
-
-	if operatorId, ok := obj.GetAnnotations()[metadata.OperatorIDAnnotation]; ok {
-		return operatorId
-	}
-
-	return ""
-}
-
-func OperatorID() string {
-	// TODO: what's this KAMEL_ ?
-	return envOrDefault("", "KAMEL_OPERATOR_ID", "OPERATOR_ID")
-}
-
-func envOrDefault(def string, envs ...string) string {
-	for i := range envs {
-		if val := os.Getenv(envs[i]); val != "" {
-			return val
-		}
-	}
-
-	return def
-}
 
 // Pbool returns a pointer to a boolean
 func Pbool(b bool) *bool {

@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - feat/**
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  validate:
+    name: Validate Code
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Check go fmt
+        run: |
+          OUTPUT=$(go fmt ./...)
+          if [ -n "$OUTPUT" ]; then
+            echo "The following files are not formatted:"
+            echo "$OUTPUT"
+            echo "Please run 'go fmt ./...' locally and commit the changes"
+            exit 1
+          fi
+
+      - name: Run linter
+        run: make lint
+
+      - name: Run build
+        run: make build
+
+      - name: Run unit tests
+        run: |
+          make manifests generate fmt vet setup-envtest
+          KUBEBUILDER_ASSETS="$(bin/setup-envtest use 1.35.0 --bin-dir $(pwd)/bin -p path)" go test $(go list ./... | grep -v /e2e)

@@ -41,11 +41,11 @@ func retrieveServiceHost(service *v1.Service) string {
 
 // RetrieveServiceURL function that based on the service name, namespace and eventually the nodeport, will provide the service URI
 func RetrieveServiceURL(service *v1.Service) (*apis.URL, error) {
-	url := url.URL{
+	u := url.URL{
 		Scheme: "http",
 		Host:   retrieveServiceHost(service),
 		Path:   service.Name}
-	return apis.ParseURL(url.String())
+	return apis.ParseURL(u.String())
 }
 
 // GetServicePortByName returns a pointer to the ServicePort within the given Service.
