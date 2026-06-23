@@ -1,0 +1,132 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#  http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Include parent .env file for build metadata
+-include ../.env
+
+BIN              := kn-workflow
+BIN_DARWIN_AMD64 ?= $(BIN)-darwin-amd64
+BIN_DARWIN_ARM64 ?= $(BIN)-darwin-arm64
+BIN_LINUX        ?= $(BIN)-linux-amd64
+BIN_WINDOWS      ?= $(BIN)-windows-amd64.exe
+
+BIN_PATH         := ./dist
+TEST_PATH        := ./dist-tests
+MAIN_PATH        := cmd/main.go
+
+# Version from git tag or VERSION env var
+CLI_VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "$(VERSION)")
+
+# Build-time metadata injection via ldflags
+METADATA_PATH := github.com/kubesmarts/logic-operator/cli/pkg/metadata
+LDFLAGS := -X $(METADATA_PATH).PluginVersion=$(CLI_VERSION) \
+           -X $(METADATA_PATH).QuarkusVersion=$(QUARKUS_VERSION) \
+           -X $(METADATA_PATH).QuarkusPlatformGroupId=$(QUARKUS_PLATFORM_GROUP_ID) \
+           -X $(METADATA_PATH).BuilderImage=$(RELATED_IMAGE_BASE_BUILDER) \
+           -X $(METADATA_PATH).DevModeImage=$(RELATED_IMAGE_DEVMODE)
+
+KIND_VERSION ?= v0.20.0
+OLM_VERSION = v0.31.0
+KIND_CLUSTER ?= kind
+KUBE_RBAC_PROXY_SRC := quay.io/brancz/kube-rbac-proxy:v0.13.1
+KUBE_RBAC_PROXY_DST := gcr.io/kubebuilder/kube-rbac-proxy:v0.13.0
+
+ARCH := $(shell uname -m)
+ifeq ($(ARCH),arm64)
+	GOARCH = arm64
+	BIN_BUILD_DARWIN=$(BIN_DARWIN_ARM64)
+else
+	GOARCH = amd64
+	BIN_BUILD_DARWIN=$(BIN_DARWIN_AMD64)
+endif
+
+.PHONY: build
+build:
+	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN_PATH)/$(BIN) $(MAIN_PATH)
+
+.PHONY: build-all
+build-all: build-linux-amd64 build-darwin-amd64 build-darwin-arm64 build-win32-amd64
+
+.PHONY: build-darwin
+build-darwin:
+	CGO_ENABLED=0 GOOS=darwin GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o $(BIN_PATH)/$(BIN_BUILD_DARWIN) $(MAIN_PATH)
+
+.PHONY: build-darwin-amd64
+build-darwin-amd64:
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BIN_PATH)/$(BIN_DARWIN_AMD64) $(MAIN_PATH)
+
+.PHONY: build-darwin-arm64
+build-darwin-arm64:
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o $(BIN_PATH)/$(BIN_DARWIN_ARM64) $(MAIN_PATH)
+
+.PHONY: build-linux-amd64
+build-linux-amd64:
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BIN_PATH)/$(BIN_LINUX) $(MAIN_PATH)
+
+.PHONY: build-win32-amd64
+build-win32-amd64:
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BIN_PATH)/$(BIN_WINDOWS) $(MAIN_PATH)
+
+.PHONY: clean
+clean:
+	go clean
+	rm -rf $(BIN_PATH) $(TEST_PATH)
+
+.PHONY: test
+test:
+	go test -v ./...
+
+.PHONY: test-e2e
+test-e2e:
+	@$(MAKE) install-kind
+	@$(MAKE) create-cluster
+	@$(MAKE) install-operator-framework
+	@$(MAKE) kind-preload-images
+	@$(MAKE) go-test-e2e
+	@$(MAKE) go-test-e2e-report
+
+.PHONY: install-kind
+install-kind:
+	command -v kind >/dev/null || go install sigs.k8s.io/kind@$(KIND_VERSION)
+
+.PHONY: create-cluster
+create-cluster: install-kind
+	kind create cluster
+
+.PHONY: install-operator-framework
+install-operator-framework:
+	curl -sL https://github.com/operator-framework/operator-lifecycle-manager/releases/download/$(OLM_VERSION)/install.sh | bash -s $(OLM_VERSION)
+
+.PHONY: go-test-e2e
+go-test-e2e:
+	rm -rf dist-tests-e2e
+	mkdir dist-tests-e2e
+	go test -v ./e2e-tests/... -tags e2e_tests -run TestQuarkusRunCommand -timeout 20m 2>&1 | tee ./dist-tests-e2e/go-test-output-e2e.txt
+
+.PHONY: go-test-e2e-report
+go-test-e2e-report:
+	go run github.com/jstemmer/go-junit-report/v2 \
+	  -set-exit-code \
+	  -in ./dist-tests-e2e/go-test-output-e2e.txt \
+	  -out ./dist-tests-e2e/junit-report-it.xml
+
+.PHONY: kind-preload-images
+kind-preload-images:
+	@echo "Preloading kube-rbac-proxy image into kind..."
+	docker pull $(KUBE_RBAC_PROXY_SRC)
+	docker tag $(KUBE_RBAC_PROXY_SRC) $(KUBE_RBAC_PROXY_DST)
+	kind load docker-image --name $(KIND_CLUSTER) $(KUBE_RBAC_PROXY_DST)
