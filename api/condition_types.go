@@ -32,30 +32,6 @@ type Conditions []Condition
 
 type ConditionType string
 
-const (
-	// RunningConditionType describes the readiness condition of a "live" resource, like the workflow application
-	RunningConditionType ConditionType = "Running"
-	// SucceedConditionType describes the readiness condition of a static resource, like a platform, a builder, a configuration, etc.
-	SucceedConditionType ConditionType = "Succeed"
-	// BuiltConditionType describes the condition of a resource that needs to be build.
-	BuiltConditionType ConditionType = "Built"
-)
-
-const (
-	WaitingForDeploymentReason      = "WaitingForDeployment"
-	ExternalResourcesNotFoundReason = "ExternalResourcesNotFound"
-	DeploymentFailureReason         = "DeploymentFailure"
-	DeploymentUnavailableReason     = "DeploymentIsUnavailable"
-	RedeploymentExhaustedReason     = "AttemptToRedeployFailed"
-	WaitingForPlatformReason        = "WaitingForPlatform"
-	BuildFailedReason               = "BuildFailedReason"
-	WaitingForBuildReason           = "WaitingForBuild"
-	BuildIsRunningReason            = "BuildIsRunning"
-	BuildSkippedReason              = "BuildSkipped"
-	BuildSuccessfulReason           = "BuildSuccessful"
-	BuildMarkedToRestartReason      = "BuildMarkedToRestart"
-)
-
 // Condition describes the common structure for conditions in our types
 // +kubebuilder:object:generate=true
 type Condition struct {
