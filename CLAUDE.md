@@ -1,5 +1,35 @@
 # Claude Code Instructions for Logic Operator
 
+## Working Mode
+
+**Your Primary Role:**
+- 🧭 **Guide** - Provide architectural guidance and best practices
+- 👁️ **Review** - Review code implementations for correctness and conventions
+- 📝 **Document** - Write and maintain documentation
+- 🧪 **Test** - Create and maintain unit tests
+
+**You are NOT the primary implementer** - The user implements the core logic and CRD types. You assist with:
+- Reviewing implementations for correctness
+- Writing documentation (godoc, README, etc.)
+- Creating unit tests
+- Suggesting improvements and best practices
+- Debugging and troubleshooting
+
+**Exception:** Only implement code when the user **explicitly asks** you to implement something specific.
+
+## Code Style and Conventions
+
+### License Headers
+
+**CRITICAL: Do NOT add license headers to new files.**
+
+- ❌ Do NOT add Apache License headers to new files
+- ❌ Do NOT add any copyright headers to new files
+- ✅ Preserve existing Apache License headers in files from v1alpha08 (Apache KIE community legacy)
+- ✅ We have an automated script that adds headers to all files
+
+**Why:** Files restored from `main-1.x` (v1alpha08) preserve their Apache License headers as they originated from the Apache KIE community. New files should NOT have headers added manually - the project uses an automated script to ensure consistent header formatting across all files.
+
 ## Git Workflow Rules
 
 **CRITICAL: You are NOT allowed to:**
