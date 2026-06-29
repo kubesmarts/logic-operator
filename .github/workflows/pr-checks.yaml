@@ -2,7 +2,7 @@ name: PR Checks
 
 on:
   pull_request:
-    branches: [main, master]
+    branches: [main-1.x]
 
 jobs:
   lint-and-test:

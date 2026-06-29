@@ -2,12 +2,12 @@ name: CLI E2E Tests
 
 on:
   push:
-    branches: [main, master]
+    branches: [main-1.x]
     paths:
       - 'cli/**'
       - '.github/workflows/cli-e2e.yaml'
   pull_request:
-    branches: [main, master]
+    branches: [main-1.x]
     paths:
       - 'cli/**'
       - '.github/workflows/cli-e2e.yaml'

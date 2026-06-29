@@ -2,12 +2,12 @@ name: CLI Build and Test
 
 on:
   push:
-    branches: [main, master]
+    branches: [main-1.x]
     paths:
       - 'cli/**'
       - '.github/workflows/cli-build.yaml'
   pull_request:
-    branches: [main, master]
+    branches: [main-1.x]
     paths:
       - 'cli/**'
       - '.github/workflows/cli-build.yaml'

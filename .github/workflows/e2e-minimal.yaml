@@ -2,7 +2,7 @@ name: E2E Tests (Quick - PR Only)
 
 on:
   pull_request:
-    branches: [main, master]
+    branches: [main-1.x]
   workflow_dispatch:
 
 jobs:
