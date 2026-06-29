@@ -55,7 +55,7 @@ const (
 //
 // The operator resolves the effective configuration by checking in order:
 //  1. Flow/service-specific persistence (most specific)
-//  2. Service-type persistence (e.g., runtimes.persistence)
+//  2. Application-type persistence (e.g., runtimes.persistence)
 //  3. Platform-level persistence (global default)
 //
 // For services, this allows configuring generic database connectivity if the service
@@ -94,7 +94,7 @@ type PersistenceOptionsSpec struct {
 // PersistencePostgreSQL configures a PostgreSQL database connection.
 //
 // There are two ways to configure the connection (mutually exclusive):
-//  1. Service Reference (serviceRef): Points to a Kubernetes Service for PostgreSQL
+//  1. Application Reference (serviceRef): Points to a Kubernetes Application for PostgreSQL
 //  2. JDBC URL (jdbcUrl): Direct connection string
 //
 // The serviceRef approach is recommended as it allows the operator to construct
@@ -126,7 +126,7 @@ type PersistenceOptionsSpec struct {
 type PersistencePostgreSQL struct {
 	// Secret reference to the database user credentials
 	SecretRef PostgreSQLSecretOptions `json:"secretRef"`
-	// Service reference to postgresql datasource. Mutually exclusive to jdbcUrl.
+	// Application reference to postgresql datasource. Mutually exclusive to jdbcUrl.
 	// +optional
 	ServiceRef *PostgreSQLServiceOptions `json:"serviceRef,omitempty"`
 	// PostgreSql JDBC URL. Mutually exclusive to serviceRef.

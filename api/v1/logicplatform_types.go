@@ -18,6 +18,7 @@ package v1
 
 import (
 	"github.com/kubesmarts/logic-operator/api"
+	corev1 "k8s.io/api/core/v1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -30,7 +31,7 @@ type LogicPlatformStatusPhase string
 // and default configurations for Logic flows. It provides:
 //   - Data Index service for workflow indexing and queries
 //   - Default runtime configuration for all LogicFlowRuntime deployments
-//   - Service-specific persistence configuration (isolated per service)
+//   - Application-specific persistence configuration (isolated per service)
 //
 // Example:
 //
@@ -39,9 +40,11 @@ type LogicPlatformStatusPhase string
 //	metadata:
 //	  name: production-platform
 //	spec:
+//	  version: "2.0.0"
 //	  dataIndex:
 //	    enabled: true
-//	    service:
+//	    application:
+//	      image: quay.io/kubesmarts/data-index:2.0.0
 //	      replicas: 2
 //	    persistence:
 //	      postgresql:
@@ -96,8 +99,8 @@ type LogicPlatformSpec struct {
 	//           name: postgres
 	//           databaseSchema: workflows
 	// +optional
-	RuntimeDefaults RuntimeDefaultsSpec `json:"runtimeDefaults,omitempty"`
-	Version         string              `json:"version,omitempty"`
+	RuntimeDefaults RuntimeSpec `json:"runtimeDefaults,omitempty"`
+	Version         string      `json:"version,omitempty"`
 }
 
 // LogicPlatformStatus defines the observed state of LogicPlatform.
@@ -143,12 +146,12 @@ type DataIndexServiceStatus struct {
 	// Ready indicates whether the Data Index service is ready to serve requests.
 	// This is true when the deployment has at least one ready replica.
 	Ready bool `json:"ready"`
-	// DeploymentRef references the Data Index Deployment resource.
+	// DeploymentRef references the Data Index Application resource.
 	// +optional
-	DeploymentRef ObjectReference `json:"deploymentRef,omitempty"`
-	// ServiceRef references the Data Index Service resource.
+	DeploymentRef corev1.LocalObjectReference `json:"deploymentRef,omitempty"`
+	// ServiceRef references the Data Index service resource.
 	// +optional
-	ServiceRef ObjectReference `json:"serviceRef,omitempty"`
+	ServiceRef corev1.LocalObjectReference `json:"serviceRef,omitempty"`
 	// Replicas shows the current replica counts for the Data Index deployment.
 	// This helps users understand the deployment's health and rollout status.
 	// +optional
@@ -190,9 +193,9 @@ type FluentBitStatus struct {
 	Ready bool `json:"ready"`
 	// DaemonSetRef references the Fluent Bit DaemonSet resource.
 	// +optional
-	DaemonSetRef ObjectReference `json:"daemonSetRef,omitempty"`
+	DaemonSetRef corev1.LocalObjectReference `json:"daemonSetRef,omitempty"`
 	// MetricsEndpoint is the internal cluster URL for Prometheus metrics.
-	// This points to the Fluent Bit Service endpoint.
+	// This points to the Fluent Bit Application endpoint.
 	//
 	// Example: http://fluent-bit.default.svc.cluster.local:2020/api/v1/metrics/prometheus
 	// +optional
@@ -222,7 +225,7 @@ type PostgresSQLStatus struct {
 // It provides:
 //   - Centralized configuration for platform services (Data Index)
 //   - Default runtime configuration (image, resources, persistence) for all LogicFlowRuntime deployments
-//   - Service-specific persistence configuration to prevent schema conflicts
+//   - Application-specific persistence configuration to prevent schema conflicts
 //   - Platform-wide service mesh and observability integration
 //
 // Note: Each service (Data Index, Runtimes) configures its own database schema
@@ -256,4 +259,177 @@ type LogicPlatformList struct {
 
 func init() {
 	SchemeBuilder.Register(&LogicPlatform{}, &LogicPlatformList{})
+}
+
+// DataIndexSpec configures the Data Index service for the Logic Platform.
+//
+// The Data Index service provides indexing and query capabilities for workflow instances,
+// storing workflow execution state and metadata in a PostgreSQL database. It exposes
+// GraphQL and REST APIs for querying workflow instances, process definitions, and
+// execution history.
+//
+// The Data Index service is optional but recommended for production deployments as it
+// enables powerful querying capabilities and workflow observability.
+//
+// Example (minimal configuration):
+//
+//	dataIndex:
+//	  enabled: true
+//	  application:
+//	    image: quay.io/kubesmarts/data-index:2.0.0
+//	    replicas: 2
+//	  persistence:
+//	    postgresql:
+//	      secretRef:
+//	        name: postgres-credentials
+//	      serviceRef:
+//	        name: postgres
+//	        databaseSchema: data-index
+//
+// Example (with FluentBit log forwarding):
+//
+//	dataIndex:
+//	  enabled: true
+//	  application:
+//	    image: quay.io/kubesmarts/data-index:2.0.0
+//	    replicas: 2
+//	    resources:
+//	      requests:
+//	        memory: 512Mi
+//	        cpu: 250m
+//	  persistence:
+//	    postgresql:
+//	      secretRef:
+//	        name: postgres-credentials
+//	      serviceRef:
+//	        name: postgres
+//	        databaseSchema: data-index
+//	  fluentBit:
+//	    image: fluent/fluent-bit:2.0
+//	    resources:
+//	      requests:
+//	        memory: 128Mi
+//	        cpu: 100m
+type DataIndexSpec struct {
+	// Enabled determines whether to deploy the Data Index service.
+	// When false, the operator will not create any Data Index resources.
+	//
+	// Disabling Data Index means no workflow querying capabilities, but workflows
+	// can still execute normally. Enable this for production environments where
+	// workflow observability and querying are required.
+	//
+	// Defaults to true.
+	// +optional
+	// +kubebuilder:default=true
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Application configures the Data Index service deployment.
+	//
+	// This controls the Data Index application container image, replicas,
+	// resource limits, and pod/container customization.
+	//
+	// Example:
+	//   application:
+	//     image: quay.io/kubesmarts/data-index:2.0.0
+	//     replicas: 2
+	//     resources:
+	//       requests:
+	//         memory: 512Mi
+	//         cpu: 250m
+	// +optional
+	Application ApplicationSpec `json:"application,omitempty"`
+
+	// Persistence configures database connectivity for the Data Index service.
+	//
+	// Data Index requires PostgreSQL to store workflow instance data, process
+	// definitions, and execution history. The database schema should be isolated
+	// from other services (use a different databaseSchema than runtimes).
+	//
+	// Example:
+	//   persistence:
+	//     postgresql:
+	//       secretRef:
+	//         name: postgres-credentials
+	//       serviceRef:
+	//         name: postgres
+	//         databaseSchema: data-index
+	// +optional
+	Persistence PersistenceOptionsSpec `json:"persistence,omitempty"`
+
+	// FluentBit configures the Fluent Bit DaemonSet for log forwarding.
+	//
+	// When configured, the operator will deploy a Fluent Bit DaemonSet in the namespace
+	// to collect and forward logs from all pods (Data Index and workflow runtimes) to
+	// external log aggregation systems.
+	//
+	// The DaemonSet is deployed 1:1 per LogicPlatform (one DaemonSet coordinates all
+	// event inflow for the platform).
+	//
+	// Example:
+	//   fluentBit:
+	//     image: fluent/fluent-bit:2.0
+	//     resources:
+	//       requests:
+	//         memory: 128Mi
+	//         cpu: 100m
+	// +optional
+	FluentBit *FluentBitSpec `json:"fluentBit,omitempty"`
+}
+
+// FluentBitSpec configures the Fluent Bit log forwarding DaemonSet.
+//
+// Fluent Bit is deployed as a DaemonSet (one pod per node) to collect logs
+// from all pods in the namespace and forward them to external systems
+// (e.g., Elasticsearch, CloudWatch, Kafka, Loki).
+//
+// The DaemonSet runs on every node and mounts the node's /var/log directory
+// to collect container logs. It can be configured to filter, transform, and
+// route logs based on pod labels and namespaces.
+//
+// Configuration precedence:
+//  1. container fields (most specific)
+//  2. Top-level image/resources fields (convenience shortcuts)
+//
+// Example (using shortcuts):
+//
+//	fluentBit:
+//	  image: fluent/fluent-bit:2.0
+//	  resources:
+//	    requests:
+//	      memory: 128Mi
+//	      cpu: 100m
+//
+// Example (using container for full control):
+//
+//	fluentBit:
+//	  container:
+//	    image: fluent/fluent-bit:2.0
+//	    resources:
+//	      requests:
+//	        memory: 128Mi
+//	    volumeMounts:
+//	    - name: fluent-bit-config
+//	      mountPath: /fluent-bit/etc/
+//	    env:
+//	    - name: FLB_OUTPUT
+//	      value: elasticsearch
+//
+// Note: The Replicas field in PodTemplateSpec is ignored for DaemonSet workloads,
+// as DaemonSets automatically run one pod per node.
+type FluentBitSpec struct {
+	// Container configures the Fluent Bit DaemonSet container.
+	// Use this for full control over the Fluent Bit configuration.
+	// +optional
+	Container ContainerSpec `json:"container,omitempty"`
+	// Image specifies the Fluent Bit container image.
+	// This is a convenience field - if container.image is set, it takes precedence.
+	//
+	// Example: fluent/fluent-bit:2.0.8
+	// +optional
+	Image           string            `json:"image,omitempty"`
+	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
+	// Resources specifies compute resource requirements for the Fluent Bit DaemonSet pods.
+	// This is a convenience field - if container.resources is set, it takes precedence.
+	// +optional
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 }
