@@ -7,7 +7,7 @@ A Kubernetes operator for managing serverless logic workflows powered by Quarkus
 The Logic Operator provides a Kubernetes-native way to deploy, manage, and scale serverless logic workflows. Built on top of Quarkus Flow, it offers four core CRDs for defining and orchestrating workflow-based applications:
 
 - **LogicPlatform**: Platform-wide configuration and shared services
-- **LogicFlowService**: Service definitions for workflow deployments
+- **LogicFlowService**: Application definitions for workflow deployments
 - **LogicFlowDefinition**: Workflow definitions and specifications
 - **LogicFlowRuntime**: Runtime instances of deployed workflows
 

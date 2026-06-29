@@ -28,7 +28,7 @@ func (r ObjectReference) ToNamespacedName() types.NamespacedName {
 //
 // Example:
 //
-//	deployment := &appsv1.Deployment{}
+//	deployment := &appsv1.Application{}
 //	_ = r.Get(ctx, types.NamespacedName{Name: "data-index", Namespace: "default"}, deployment)
 //	status.DeploymentRef = ObjectReferenceFrom(types.NamespacedName{
 //	    Name:      deployment.Name,

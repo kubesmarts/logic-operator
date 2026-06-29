@@ -10,7 +10,7 @@
 
 LogicFlowRuntime supports Kubernetes HorizontalPodAutoscaler through the standard scale subresource pattern. This allows users to create HPA resources that automatically scale runtime pods based on CPU, memory, or custom metrics.
 
-**Implementation Pattern:** Same as Deployment, StatefulSet, ReplicaSet  
+**Implementation Pattern:** Same as Application, StatefulSet, ReplicaSet  
 **Previous Implementation:** SonataFlow operator v1 used this pattern successfully
 
 ---
@@ -42,7 +42,7 @@ LogicFlowRuntime supports Kubernetes HorizontalPodAutoscaler through the standar
 ├─────────────────────────────────────────────────────────────┤
 │                                                               │
 │  1. Check if HPA exists (FindHPAForLogicFlowRuntime)         │
-│  2. Create/Update Deployment                                 │
+│  2. Create/Update Application                                 │
 │     - If HPA active: Don't set deployment.spec.replicas     │
 │     - If no HPA: Use spec.replicas                          │
 │  3. Update status.replicas (observed pod count)             │
@@ -88,7 +88,7 @@ type LogicFlowRuntimeStatus struct {
     // This field is required by the HorizontalPodAutoscaler via the scale subresource.
     //
     // The operator updates this field with the count of ready pods from the
-    // underlying Deployment.
+    // underlying Application.
     // +optional
     Replicas int32 `json:"replicas,omitempty"`
     
@@ -153,7 +153,7 @@ func (r *LogicFlowRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Req
     
     hpaActive := hpa != nil && kubernetes.HPAIsWorking(hpa)
     
-    // 3. Build/Update Deployment
+    // 3. Build/Update Application
     deployment := r.buildDeployment(runtime)
     
     if hpaActive {
@@ -173,7 +173,7 @@ func (r *LogicFlowRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Req
         deployment.Spec.Replicas = &replicas
     }
     
-    // 4. Create or update Deployment
+    // 4. Create or update Application
     if err := r.reconcileDeployment(ctx, runtime, deployment); err != nil {
         return ctrl.Result{}, err
     }
@@ -195,10 +195,10 @@ func (r *LogicFlowRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Req
 func (r *LogicFlowRuntimeReconciler) updateScaleStatus(
     ctx context.Context,
     runtime *logicv1.LogicFlowRuntime,
-    deployment *appsv1.Deployment,
+    deployment *appsv1.Application,
 ) error {
     // Get current deployment to read actual replica count
-    currentDeploy := &appsv1.Deployment{}
+    currentDeploy := &appsv1.Application{}
     if err := r.Get(ctx, client.ObjectKeyFromObject(deployment), currentDeploy); err != nil {
         return err
     }
@@ -224,12 +224,12 @@ func (r *LogicFlowRuntimeReconciler) updateScaleStatus(
 }
 ```
 
-#### Build Deployment with Labels
+#### Build Application with Labels
 
 ```go
 func (r *LogicFlowRuntimeReconciler) buildDeployment(
     runtime *logicv1.LogicFlowRuntime,
-) *appsv1.Deployment {
+) *appsv1.Application {
     // Labels used for pod selector (MUST be consistent for HPA)
     labels := map[string]string{
         "app":                              "logic-flow-runtime",
@@ -237,17 +237,17 @@ func (r *LogicFlowRuntimeReconciler) buildDeployment(
         "logic.kubesmarts.org/managed-by":  "logic-operator",
     }
     
-    deployment := &appsv1.Deployment{
+    deployment := &appsv1.Application{
         ObjectMeta: metav1.ObjectMeta{
             Name:      runtime.Name,
             Namespace: runtime.Namespace,
             Labels:    labels,
         },
-        Spec: appsv1.DeploymentSpec{
+        Spec: appsv1.ApplicationSpec{
             Selector: &metav1.LabelSelector{
                 MatchLabels: labels,
             },
-            Template: corev1.PodTemplateSpec{
+            Template: corev1.PodTemplate{
                 ObjectMeta: metav1.ObjectMeta{
                     Labels: labels,
                 },
@@ -431,8 +431,8 @@ kubectl autoscale logicflowruntime my-workflow-runtime \
 - [ ] Create HPA targeting LogicFlowRuntime - HPA takes over
 - [ ] Status.Replicas updates when pods scale
 - [ ] Status.Selector is set correctly
-- [ ] Deployment.Spec.Replicas is nil when HPA active
-- [ ] Deployment.Spec.Replicas uses spec.replicas when no HPA
+- [ ] Application.Spec.Replicas is nil when HPA active
+- [ ] Application.Spec.Replicas uses spec.replicas when no HPA
 - [ ] kubectl scale works on LogicFlowRuntime
 - [ ] kubectl autoscale creates working HPA
 
@@ -448,7 +448,7 @@ kubectl autoscale logicflowruntime my-workflow-runtime \
 
 ## Common Pitfalls
 
-### ❌ Don't Set Deployment Replicas When HPA Exists
+### ❌ Don't Set Application Replicas When HPA Exists
 
 ```go
 // WRONG - Will fight with HPA
@@ -531,7 +531,7 @@ kubectl scale logicflowruntime my-workflow-runtime --replicas=5
 - Check `status.selector` matches actual pod labels
 - Verify HPA metrics are collecting: `kubectl get hpa <name> -o yaml`
 
-**Deployment fights with HPA:**
+**Application fights with HPA:**
 - Controller is setting `deployment.spec.replicas` even when HPA is active
 - Fix: Only set replicas when HPA is NOT active
 

@@ -26,10 +26,10 @@ import (
 	"path"
 	"time"
 
+	apiMetadata "github.com/kubesmarts/logic-operator/api/metadata"
 	"github.com/kubesmarts/logic-operator/cli/pkg/common"
 	"github.com/kubesmarts/logic-operator/cli/pkg/common/k8sclient"
 	"github.com/kubesmarts/logic-operator/cli/pkg/metadata"
-	apiMetadata "github.com/kubesmarts/logic-operator/api/metadata"
 	"github.com/ory/viper"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
@@ -212,11 +212,11 @@ func waitForDeploymentAndOpenDevUi(cfg *DeployUndeployCmdConfig, workflowId stri
 
 	fmt.Println("🕚 Waiting for the deployment to complete...")
 
-	go PollGetDeploymentStatus(cfg.NameSpace, workflowId, 5 * time.Second, 5 * time.Minute, deployed, errCan)
+	go PollGetDeploymentStatus(cfg.NameSpace, workflowId, 5*time.Second, 5*time.Minute, deployed, errCan)
 
 	select {
 	case <-deployed:
-		fmt.Printf(" - ✅ Deployment of %s is completed\n", workflowId)
+		fmt.Printf(" - ✅ Application of %s is completed\n", workflowId)
 	case err := <-errCan:
 		return fmt.Errorf("❌ ERROR: failed to get deployment status: %w", err)
 	}

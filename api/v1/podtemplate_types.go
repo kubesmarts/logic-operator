@@ -91,7 +91,7 @@ type PodSpec struct {
 	//
 	// Common use cases:
 	//   - Log forwarding (fluent-bit, filebeat)
-	//   - Service mesh proxies (Istio, Linkerd)
+	//   - Application mesh proxies (Istio, Linkerd)
 	//   - Monitoring agents (Prometheus exporter)
 	//
 	// Example:
@@ -135,7 +135,7 @@ type PodSpec struct {
 }
 
 // ToPodSpec converts the custom PodSpec to a Kubernetes corev1.PodSpec.
-// This is used internally by the operator when creating Deployment/StatefulSet objects.
+// This is used internally by the operator when creating Application/StatefulSet objects.
 func (f *PodSpec) ToPodSpec() corev1.PodSpec {
 	return corev1.PodSpec{
 		Volumes:                       f.Volumes,
@@ -163,7 +163,7 @@ func (f *PodSpec) ToPodSpec() corev1.PodSpec {
 // The container name is managed by the operator and cannot be customized. This prevents
 // conflicts and ensures consistent naming across deployments.
 //
-// For sidecar containers, use PodTemplateSpec.Containers instead, which allows
+// For sidecar containers, use PodTemplate.Containers instead, which allows
 // full corev1.Container specification including the Name field.
 type ContainerSpec struct {
 	// Image name for the application runtime.

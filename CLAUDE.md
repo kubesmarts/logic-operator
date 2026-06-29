@@ -30,6 +30,42 @@
 
 **Why:** Files restored from `main-1.x` (v1alpha08) preserve their Apache License headers as they originated from the Apache KIE community. New files should NOT have headers added manually - the project uses an automated script to ensure consistent header formatting across all files.
 
+### API Type Documentation
+
+**Keep documentation concise and maintainable:**
+
+**Type-level comments:**
+- 1-2 sentences maximum
+- State purpose, not implementation details
+- Examples only for top-level CRD types (LogicPlatform, LogicFlowRuntime)
+
+**Field-level comments:**
+- One line when possible
+- No redundant "Example:" sections in field docs
+- Keep kubebuilder markers (functional, not docs)
+- Essential warnings only (e.g., "NEVER use NONE in production")
+
+**Good example:**
+```go
+// RuntimeSecuritySpec configures authentication for workflow runtime HTTP endpoints.
+//
+// Modes: NONE (dev only), API_KEY (machine-to-machine), OIDC (enterprise SSO)
+type RuntimeSecuritySpec struct {
+    // Type specifies the authentication mode.
+    // WARNING: NONE mode should only be used in development.
+    // +kubebuilder:default=NONE
+    Type RuntimeSecurityType `json:"type,omitempty"`
+}
+```
+
+**Avoid:**
+- Long paragraphs explaining what fields do
+- Repetitive "This field...", "This is used for..." phrases
+- Example YAML in every field comment
+- Duplicating information from type-level docs
+
+**Why:** Concise docs are easier to maintain and keep in sync with code changes.
+
 ## Git Workflow Rules
 
 **CRITICAL: You are NOT allowed to:**

@@ -36,7 +36,7 @@ import (
 // doesn't exist.
 // Note: By k8s definition, the HorizontalPodAutoscaler must belong to the same namespace as the managed deployment.
 func FindHPAForDeployment(ctx context.Context, c client.Client, namespace string, name string) (*autoscalingv2.HorizontalPodAutoscaler, error) {
-	return findHPAForTarget(ctx, c, namespace, "apps/v1", "Deployment", name)
+	return findHPAForTarget(ctx, c, namespace, "apps/v1", "Application", name)
 }
 
 // FindHPAForLogicFlowRuntime returns the HorizontalPodAutoscaler targeting a LogicFlowRuntime in a given namespace, or nil if it
@@ -109,9 +109,9 @@ func IsHPAndTargetsAKind(obj client.Object, kind string) (*autoscalingv2.Horizon
 }
 
 // IsHPAndTargetsADeployment returns (*autoscalingv2.HorizontalPodAutoscaler, true) if the object is a HorizontalPodAutoscaler
-// and targets a Deployment, (nil, false) in other cases.
+// and targets a Application, (nil, false) in other cases.
 func IsHPAndTargetsADeployment(obj client.Object) (*autoscalingv2.HorizontalPodAutoscaler, bool) {
-	return IsHPAndTargetsAKind(obj, "Deployment")
+	return IsHPAndTargetsAKind(obj, "Application")
 }
 
 // IsHPAndTargetsALogicFlowRuntime returns (*autoscalingv2.HorizontalPodAutoscaler, true) if the object is a HorizontalPodAutoscaler

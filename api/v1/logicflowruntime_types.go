@@ -17,31 +17,88 @@ limitations under the License.
 package v1
 
 import (
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // LogicFlowRuntimeSpec defines the desired state of LogicFlowRuntime.
+//
+// Shared Quarkus Flow runner that executes multiple workflow definitions.
+// Configuration precedence: LogicFlowRuntime.spec > LogicPlatform.spec.runtimeDefaults > operator defaults
 type LogicFlowRuntimeSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// Foo is an example field of LogicFlowRuntime. Edit logicflowruntime_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	RuntimeSpec `json:",inline"`
+	Security    RuntimeSecuritySpec `json:"security,omitempty"`
 }
 
 // LogicFlowRuntimeStatus defines the observed state of LogicFlowRuntime.
 type LogicFlowRuntimeStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Phase is the runtime lifecycle phase (Pending, Provisioning, Ready, Degraded, Failed).
+	// Derived from Conditions.
+	// +optional
+	Phase string `json:"phase,omitempty"`
+
+	// Replicas is the total number of replicas (for HPA scale subresource).
+	// +optional
+	Replicas int32 `json:"replicas,omitempty"`
+
+	// Selector is the label selector for pods (for HPA scale subresource).
+	// +optional
+	Selector string `json:"selector,omitempty"`
+
+	// ReadyReplicas is the number of ready replicas.
+	// +optional
+	ReadyReplicas int32 `json:"readyReplicas,omitempty"`
+
+	// Definitions lists loaded workflow definitions.
+	// +optional
+	Definitions []RuntimeDefinitionStatus `json:"definitions,omitempty"`
+
+	// DeploymentRef references the managed Deployment.
+	// +optional
+	DeploymentRef v1.LocalObjectReference `json:"deploymentRef,omitempty"`
+
+	// ServiceRef references the HTTP Service.
+	// +optional
+	ServiceRef v1.LocalObjectReference `json:"serviceRef,omitempty"`
+
+	// ConfigMapRefs lists source ConfigMaps for loaded workflows.
+	// +optional
+	ConfigMapRefs []v1.LocalObjectReference `json:"configMapRefs,omitempty"`
+
+	// Conditions represent detailed runtime state.
+	// +optional
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
+// RuntimeDefinitionStatus represents a workflow definition loaded by the runtime.
+type RuntimeDefinitionStatus struct {
+	// Name of the workflow.
+	Name string `json:"name"`
+
+	// Service is the HTTP endpoint path.
+	Service string `json:"service"`
+
+	// Version of the workflow.
+	// +optional
+	Version string `json:"version,omitempty"`
+}
+
+// LogicFlowRuntime is a shared Quarkus Flow runner deployment that executes multiple workflow definitions.
+//
+// Architecture: 1 Runtime = N Workflow Definitions (shared runner model)
+// Workflows are loaded from ConfigMaps or embedded in the runtime image.
+//
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-
-// LogicFlowRuntime is the Schema for the logicflowruntimes API.
+// +kubebuilder:subresource:scale:specpath=.spec.replicas,statuspath=.status.replicas,selectorpath=.status.selector
+// +kubebuilder:resource:scope=Namespaced,shortName={lfr,runtime}
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
+// +kubebuilder:printcolumn:name="Replicas",type=string,JSONPath=`.status.replicas`
+// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.readyReplicas`
+// +kubebuilder:printcolumn:name="Workflows",type=integer,JSONPath=`.status.definitions[*].name`,description="Number of loaded workflows"
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 type LogicFlowRuntime struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -61,4 +118,119 @@ type LogicFlowRuntimeList struct {
 
 func init() {
 	SchemeBuilder.Register(&LogicFlowRuntime{}, &LogicFlowRuntimeList{})
+}
+
+// RuntimeSecurityType defines the security mode for workflow runtime HTTP endpoints.
+// +kubebuilder:validation:Enum=NONE;API_KEY;OIDC
+type RuntimeSecurityType string
+
+const (
+	// RuntimeSecurityNone - No authentication required (development/testing only)
+	RuntimeSecurityNone RuntimeSecurityType = "NONE"
+	// RuntimeSecurityAPIKey - API key-based authentication
+	RuntimeSecurityAPIKey RuntimeSecurityType = "API_KEY"
+	// RuntimeSecurityOIDC - OpenID Connect authentication
+	RuntimeSecurityOIDC RuntimeSecurityType = "OIDC"
+)
+
+// RuntimeSecurityRole defines predefined security roles for workflow runtime access.
+// +kubebuilder:validation:Enum=flow-admin;flow-invoker
+type RuntimeSecurityRole string
+
+const (
+	// RuntimeSecurityRoleAdmin - Full access to all workflow operations
+	RuntimeSecurityRoleAdmin RuntimeSecurityRole = "flow-admin"
+	// RuntimeSecurityRoleInvoker - Execute workflows only (read-only on definitions)
+	RuntimeSecurityRoleInvoker RuntimeSecurityRole = "flow-invoker"
+)
+
+// RuntimeSecuritySpec configures authentication for workflow runtime HTTP endpoints.
+//
+// Modes: NONE (dev only), API_KEY (machine-to-machine), OIDC (enterprise SSO)
+// Roles: flow-admin (full access), flow-invoker (execute only)
+// See: https://docs.quarkiverse.io/quarkus-flow/dev/runner.html#_security_in_depth
+type RuntimeSecuritySpec struct {
+	// Type specifies the authentication mode.
+	// WARNING: NONE mode should only be used in development.
+	// +optional
+	// +kubebuilder:default=NONE
+	// +kubebuilder:validation:Enum=NONE;API_KEY;OIDC
+	Type RuntimeSecurityType `json:"type,omitempty"`
+
+	// APIKey configures API key authentication.
+	// +optional
+	APIKey *APIKeyAuthSpec `json:"apiKey,omitempty"`
+
+	// OIDC configures OpenID Connect authentication.
+	// +optional
+	OIDC *OIDCAuthSpec `json:"oidc,omitempty"`
+}
+
+// APIKeyAuthSpec configures API key-based authentication.
+type APIKeyAuthSpec struct {
+	// Keys is a list of API keys with roles.
+	// +required
+	// +kubebuilder:validation:MinItems=1
+	Keys []APIKeySpec `json:"keys"`
+}
+
+// APIKeySpec defines a single API key configuration.
+type APIKeySpec struct {
+	// Name is a unique identifier for this API key.
+	// +required
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:MaxLength=63
+	Name string `json:"name"`
+
+	// SecretRef points to a Secret containing the API key value.
+	// +required
+	SecretRef SecretKeySelector `json:"secretRef"`
+
+	// Roles assigned to this API key.
+	// +required
+	// +kubebuilder:validation:MinItems=1
+	Roles []RuntimeSecurityRole `json:"roles"`
+}
+
+// OIDCAuthSpec configures OpenID Connect authentication.
+type OIDCAuthSpec struct {
+	// AuthServerUrl is the OIDC provider URL.
+	// +required
+	AuthServerUrl string `json:"authServerUrl"`
+
+	// ClientId is the OAuth2 client ID.
+	// +required
+	ClientId string `json:"clientId"`
+
+	// ClientSecret references the OAuth2 client secret.
+	// +required
+	ClientSecret SecretKeySelector `json:"clientSecret"`
+
+	// RolesClaim is the JWT claim path containing user roles.
+	// +optional
+	// +kubebuilder:default=roles
+	RolesClaim string `json:"rolesClaim,omitempty"`
+}
+
+// SecretKeySelector references a specific key within a Secret.
+type SecretKeySelector struct {
+	// Name of the Secret.
+	// +required
+	Name string `json:"name"`
+
+	// Key within the Secret.
+	// +optional
+	// +kubebuilder:default=value
+	Key string `json:"key,omitempty"`
+}
+
+// RuntimeSpec defines configuration for LogicFlowRuntime deployments.
+type RuntimeSpec struct {
+	// Persistence configures database connectivity.
+	// Avoid using the same schema as the Data Index.
+	// +optional
+	Persistence *PersistenceOptionsSpec `json:"persistence,omitempty"`
+
+	// ApplicationSpec embeds deployment configuration (image, replicas, resources, container, podTemplate).
+	ApplicationSpec `json:",inline"`
 }
