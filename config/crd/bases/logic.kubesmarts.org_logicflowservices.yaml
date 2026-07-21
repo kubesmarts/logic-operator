@@ -11,13 +11,33 @@ spec:
     kind: LogicFlowService
     listKind: LogicFlowServiceList
     plural: logicflowservices
+    shortNames:
+    - lfs
+    - flowservice
     singular: logicflowservice
   scope: Namespaced
   versions:
-  - name: v1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.ingress.host
+      name: Host
+      type: string
+    - jsonPath: .spec.runtimeRef.name
+      name: Runtime
+      type: string
+    - jsonPath: .spec.ingress.tls.enabled
+      name: TLS
+      type: boolean
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
     schema:
       openAPIV3Schema:
-        description: LogicFlowService is the Schema for the logicflowservices API.
+        description: |-
+          LogicFlowService provides stable external HTTP access to workflows.
+
+          Forward reference pattern: Service → Definition (no bidirectional references).
+          Supports traffic splitting for canary deployments and gradual rollouts.
         properties:
           apiVersion:
             description: |-
@@ -37,15 +57,275 @@ spec:
           metadata:
             type: object
           spec:
-            description: LogicFlowServiceSpec defines the desired state of LogicFlowService.
+            description: |-
+              LogicFlowServiceSpec defines the desired state of LogicFlowService.
+
+              Provides stable external HTTP access to workflows with traffic splitting and TLS.
+              Forward reference pattern: Service → Definition (no bidirectional references).
+              All referenced resources must be in the same namespace.
             properties:
-              foo:
-                description: Foo is an example field of LogicFlowService. Edit logicflowservice_types.go
-                  to remove/update
+              defaultVersion:
+                description: |-
+                  DefaultVersion auto-routes 100% traffic to a single workflow version.
+                  Mutually exclusive with Traffic.
+                  Simplifies single-version exposure.
                 type: string
+              ingress:
+                description: Ingress configures external HTTP access.
+                properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      Annotations for the Ingress resource (user-provided).
+                      Operator adds path rewriting annotations automatically.
+                    type: object
+                  enabled:
+                    default: true
+                    description: Enabled determines whether to create Ingress/Route.
+                    type: boolean
+                  host:
+                    description: Host is the external hostname.
+                    type: string
+                  ingressClassName:
+                    description: IngressClassName specifies which Ingress controller
+                      to use.
+                    type: string
+                  tls:
+                    description: TLS configures HTTPS.
+                    properties:
+                      certManager:
+                        description: |-
+                          CertManager configures automatic certificate generation.
+                          Mutually exclusive with SecretRef.
+                        properties:
+                          issuerRef:
+                            description: IssuerRef references a cert-manager Issuer
+                              or ClusterIssuer.
+                            properties:
+                              kind:
+                                default: ClusterIssuer
+                                description: Kind is either "Issuer" or "ClusterIssuer".
+                                enum:
+                                - Issuer
+                                - ClusterIssuer
+                                type: string
+                              name:
+                                description: Name of the Issuer/ClusterIssuer.
+                                type: string
+                            required:
+                            - name
+                            type: object
+                        required:
+                        - issuerRef
+                        type: object
+                      enabled:
+                        default: false
+                        description: Enabled determines whether to use HTTPS.
+                        type: boolean
+                      secretRef:
+                        description: |-
+                          SecretRef references an existing TLS Secret.
+                          Mutually exclusive with CertManager.
+                        properties:
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
+                    type: object
+                type: object
+              runtimeRef:
+                description: RuntimeRef points to the LogicFlowRuntime executing the
+                  workflows.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              traffic:
+                description: |-
+                  Traffic distributes requests across workflow versions.
+                  Mutually exclusive with DefaultVersion.
+                  Weights must sum to 100.
+                items:
+                  description: TrafficSpec routes a percentage of traffic to a specific
+                    workflow version.
+                  properties:
+                    definitionRef:
+                      description: DefinitionRef references a LogicFlowDefinition
+                        (workflow version).
+                      properties:
+                        name:
+                          default: ""
+                          description: |-
+                            Name of the referent.
+                            This field is effectively required, but due to backwards compatibility is
+                            allowed to be empty. Instances of this type with an empty value here are
+                            almost certainly wrong.
+                            More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                          type: string
+                      type: object
+                      x-kubernetes-map-type: atomic
+                    weight:
+                      description: Weight is the percentage of traffic (0-100).
+                      format: int32
+                      maximum: 100
+                      minimum: 0
+                      type: integer
+                  required:
+                  - definitionRef
+                  - weight
+                  type: object
+                type: array
+            required:
+            - ingress
+            - runtimeRef
             type: object
           status:
             description: LogicFlowServiceStatus defines the observed state of LogicFlowService.
+            properties:
+              conditions:
+                description: Conditions represent detailed service state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              ingressRef:
+                description: IngressRef references the created Ingress resource.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              observedGeneration:
+                description: ObservedGeneration tracks the last reconciled spec generation.
+                format: int64
+                type: integer
+              routeRef:
+                description: RouteRef references the created Route (OpenShift only).
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              traffic:
+                description: Traffic shows the current traffic distribution.
+                items:
+                  description: TrafficStatus shows the status of a traffic target.
+                  properties:
+                    definitionRef:
+                      description: DefinitionRef references the workflow version.
+                      properties:
+                        name:
+                          default: ""
+                          description: |-
+                            Name of the referent.
+                            This field is effectively required, but due to backwards compatibility is
+                            allowed to be empty. Instances of this type with an empty value here are
+                            almost certainly wrong.
+                            More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                          type: string
+                      type: object
+                      x-kubernetes-map-type: atomic
+                    ready:
+                      description: Ready indicates if this version is ready to serve
+                        traffic.
+                      type: boolean
+                    weight:
+                      description: Weight is the configured traffic percentage.
+                      format: int32
+                      type: integer
+                  required:
+                  - definitionRef
+                  - ready
+                  - weight
+                  type: object
+                type: array
+              url:
+                description: URL is the full external URL for this service.
+                type: string
             type: object
         type: object
     served: true

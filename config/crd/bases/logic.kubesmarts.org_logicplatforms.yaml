@@ -103,31 +103,7 @@ spec:
                               cpu: 250m
                     properties:
                       container:
-                        description: |-
-                          Container configures the application container.
-                          Settings here override the top-level image/resources fields.
-
-                          Use this for:
-                            - Environment variables
-                            - Volume mounts
-                            - Health probes (liveness, readiness, startup)
-                            - Lifecycle hooks
-                            - Security context
-                            - Working directory
-
-                          Example:
-                            container:
-                              env:
-                              - name: QUARKUS_PROFILE
-                                value: prod
-                              livenessProbe:
-                                httpGet:
-                                  path: /q/health/live
-                                  port: 8080
-                              readinessProbe:
-                                httpGet:
-                                  path: /q/health/ready
-                                  port: 8080
+                        description: Container configures the application container.
                         properties:
                           args:
                             description: |-
@@ -1468,58 +1444,18 @@ spec:
                             type: string
                         type: object
                       image:
-                        description: |-
-                          Image specifies the container image for the application.
-                          This should be a fully qualified image reference including registry and tag.
-
-                          This is a convenience field - if container.image or podTemplate.container.image
-                          is set, those take precedence.
-
-                          Example: quay.io/kubesmarts/data-index:2.0.0
+                        description: Image specifies the container image.
                         type: string
                       imagePullPolicy:
                         default: IfNotPresent
-                        description: |-
-                          ImagePullPolicy specifies when to pull the container image.
-                          Defaults to IfNotPresent for tagged images and Always for :latest or no tag.
-
-                          This is a convenience field - if container.imagePullPolicy or
-                          podTemplate.container.imagePullPolicy is set, those take precedence.
+                        description: ImagePullPolicy specifies when to pull the image.
                         enum:
                         - Always
                         - Never
                         - IfNotPresent
                         type: string
                       podTemplate:
-                        description: |-
-                          PodTemplate allows full customization of the application pod.
-                          This provides the most control, overriding all other fields.
-
-                          Use this to configure:
-                            - Pod metadata (labels, annotations)
-                            - Scheduling (affinity, tolerations, node selector)
-                            - Security contexts
-                            - Volumes and volume mounts
-                            - Init containers and sidecars
-                            - Service account
-                            - DNS configuration
-
-                          Example:
-                            podTemplate:
-                              metadata:
-                                labels:
-                                  monitoring: enabled
-                              affinity:
-                                podAntiAffinity:
-                                  preferredDuringSchedulingIgnoredDuringExecution:
-                                  - weight: 100
-                                    podAffinityTerm:
-                                      topologyKey: kubernetes.io/hostname
-                              tolerations:
-                              - key: workload
-                                operator: Equal
-                                value: workflows
-                                effect: NoSchedule
+                        description: PodTemplate allows full pod customization.
                         properties:
                           affinity:
                             description: |-
@@ -9557,29 +9493,13 @@ spec:
                       replicas:
                         default: 1
                         description: |-
-                          Replicas is the desired number of application pod replicas.
+                          Replicas is the desired number of pod replicas.
                           Ignored when HorizontalPodAutoscaler is configured.
-
-                          This is a convenience field - if podTemplate.replicas is set, it takes precedence.
-                          Defaults to 1 if not specified at any level.
                         format: int32
                         minimum: 0
                         type: integer
                       resources:
-                        description: |-
-                          Resources specifies compute resource requirements for the application container.
-
-                          This is a convenience field - if container.resources or podTemplate.container.resources
-                          is set, those take precedence.
-
-                          Example:
-                            resources:
-                              requests:
-                                memory: 512Mi
-                                cpu: 250m
-                              limits:
-                                memory: 1Gi
-                                cpu: 1000m
+                        description: Resources specifies compute resource requirements.
                         properties:
                           claims:
                             description: |-
@@ -11227,31 +11147,7 @@ spec:
                             databaseSchema: workflows
                 properties:
                   container:
-                    description: |-
-                      Container configures the application container.
-                      Settings here override the top-level image/resources fields.
-
-                      Use this for:
-                        - Environment variables
-                        - Volume mounts
-                        - Health probes (liveness, readiness, startup)
-                        - Lifecycle hooks
-                        - Security context
-                        - Working directory
-
-                      Example:
-                        container:
-                          env:
-                          - name: QUARKUS_PROFILE
-                            value: prod
-                          livenessProbe:
-                            httpGet:
-                              path: /q/health/live
-                              port: 8080
-                          readinessProbe:
-                            httpGet:
-                              path: /q/health/ready
-                              port: 8080
+                    description: Container configures the application container.
                     properties:
                       args:
                         description: |-
@@ -12590,23 +12486,11 @@ spec:
                         type: string
                     type: object
                   image:
-                    description: |-
-                      Image specifies the container image for the application.
-                      This should be a fully qualified image reference including registry and tag.
-
-                      This is a convenience field - if container.image or podTemplate.container.image
-                      is set, those take precedence.
-
-                      Example: quay.io/kubesmarts/data-index:2.0.0
+                    description: Image specifies the container image.
                     type: string
                   imagePullPolicy:
                     default: IfNotPresent
-                    description: |-
-                      ImagePullPolicy specifies when to pull the container image.
-                      Defaults to IfNotPresent for tagged images and Always for :latest or no tag.
-
-                      This is a convenience field - if container.imagePullPolicy or
-                      podTemplate.container.imagePullPolicy is set, those take precedence.
+                    description: ImagePullPolicy specifies when to pull the image.
                     enum:
                     - Always
                     - Never
@@ -12614,23 +12498,8 @@ spec:
                     type: string
                   persistence:
                     description: |-
-                      Persistence configures the default database connection for all workflow runtimes.
-
-                      All LogicFlowRuntime deployments in this namespace will inherit this persistence
-                      configuration unless they explicitly override it. The database schema should be
-                      isolated from Data Index (use different databaseSchema values).
-
-                      Individual LogicFlowRuntime resources can override this via their own
-                      persistence field.
-
-                      Example:
-                        persistence:
-                          postgresql:
-                            secretRef:
-                              name: postgres-credentials
-                            serviceRef:
-                              name: postgres
-                              databaseSchema: workflows
+                      Persistence configures database connectivity.
+                      Avoid using the same schema as the Data Index.
                     maxProperties: 2
                     properties:
                       dbMigrationStrategy:
@@ -12724,35 +12593,7 @@ spec:
                         type: object
                     type: object
                   podTemplate:
-                    description: |-
-                      PodTemplate allows full customization of the application pod.
-                      This provides the most control, overriding all other fields.
-
-                      Use this to configure:
-                        - Pod metadata (labels, annotations)
-                        - Scheduling (affinity, tolerations, node selector)
-                        - Security contexts
-                        - Volumes and volume mounts
-                        - Init containers and sidecars
-                        - Service account
-                        - DNS configuration
-
-                      Example:
-                        podTemplate:
-                          metadata:
-                            labels:
-                              monitoring: enabled
-                          affinity:
-                            podAntiAffinity:
-                              preferredDuringSchedulingIgnoredDuringExecution:
-                              - weight: 100
-                                podAffinityTerm:
-                                  topologyKey: kubernetes.io/hostname
-                          tolerations:
-                          - key: workload
-                            operator: Equal
-                            value: workflows
-                            effect: NoSchedule
+                    description: PodTemplate allows full pod customization.
                     properties:
                       affinity:
                         description: |-
@@ -20740,29 +20581,13 @@ spec:
                   replicas:
                     default: 1
                     description: |-
-                      Replicas is the desired number of application pod replicas.
+                      Replicas is the desired number of pod replicas.
                       Ignored when HorizontalPodAutoscaler is configured.
-
-                      This is a convenience field - if podTemplate.replicas is set, it takes precedence.
-                      Defaults to 1 if not specified at any level.
                     format: int32
                     minimum: 0
                     type: integer
                   resources:
-                    description: |-
-                      Resources specifies compute resource requirements for the application container.
-
-                      This is a convenience field - if container.resources or podTemplate.container.resources
-                      is set, those take precedence.
-
-                      Example:
-                        resources:
-                          requests:
-                            memory: 512Mi
-                            cpu: 250m
-                          limits:
-                            memory: 1Gi
-                            cpu: 1000m
+                    description: Resources specifies compute resource requirements.
                     properties:
                       claims:
                         description: |-
@@ -20879,16 +20704,16 @@ spec:
                           resource.
                         properties:
                           name:
-                            description: Name of the referenced object.
-                            type: string
-                          namespace:
+                            default: ""
                             description: |-
-                              Namespace of the referenced object.
-                              For cluster-scoped resources, this field is empty.
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
                             type: string
-                        required:
-                        - name
                         type: object
+                        x-kubernetes-map-type: atomic
                       metricsEndpoint:
                         description: |-
                           MetricsEndpoint is the internal cluster URL for Prometheus metrics.
@@ -20941,16 +20766,16 @@ spec:
                           resource.
                         properties:
                           name:
-                            description: Name of the referenced object.
-                            type: string
-                          namespace:
+                            default: ""
                             description: |-
-                              Namespace of the referenced object.
-                              For cluster-scoped resources, this field is empty.
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
                             type: string
-                        required:
-                        - name
                         type: object
+                        x-kubernetes-map-type: atomic
                       graphqlEndpoint:
                         description: |-
                           GraphQLEndpoint is the internal cluster URL for the Data Index GraphQL API.
@@ -21005,16 +20830,16 @@ spec:
                           resource.
                         properties:
                           name:
-                            description: Name of the referenced object.
-                            type: string
-                          namespace:
+                            default: ""
                             description: |-
-                              Namespace of the referenced object.
-                              For cluster-scoped resources, this field is empty.
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
                             type: string
-                        required:
-                        - name
                         type: object
+                        x-kubernetes-map-type: atomic
                     required:
                     - ready
                     type: object
