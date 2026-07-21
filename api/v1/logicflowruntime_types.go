@@ -32,6 +32,10 @@ type LogicFlowRuntimeSpec struct {
 
 // LogicFlowRuntimeStatus defines the observed state of LogicFlowRuntime.
 type LogicFlowRuntimeStatus struct {
+	// ObservedGeneration tracks the last reconciled spec generation.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
 	// Phase is the runtime lifecycle phase (Pending, Provisioning, Ready, Degraded, Failed).
 	// Derived from Conditions.
 	// +optional

@@ -9744,6 +9744,10 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              observedGeneration:
+                description: ObservedGeneration tracks the last reconciled spec generation.
+                format: int64
+                type: integer
               phase:
                 description: |-
                   Phase is the runtime lifecycle phase (Pending, Provisioning, Ready, Degraded, Failed).

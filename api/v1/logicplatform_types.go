@@ -17,7 +17,6 @@ limitations under the License.
 package v1
 
 import (
-	"github.com/kubesmarts/logic-operator/api"
 	corev1 "k8s.io/api/core/v1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -116,14 +115,10 @@ type LogicPlatformStatus struct {
 	// +optional
 	DataIndex DataIndexStatus `json:"dataIndex,omitempty"`
 	// Conditions represent the latest available observations of the platform's state.
-	// Standard condition types:
-	//   - Ready: All platform services are ready and operational
-	//   - DataIndexReady: Data Index service is ready to serve requests
-	//   - PersistenceReady: Database connections are established and schemas are ready
 	// +optional
 	// +listType=map
 	// +listMapKey=type
-	Conditions []api.Condition          `json:"conditions,omitempty"`
+	Conditions []metav1.Condition       `json:"conditions,omitempty"`
 	Phase      LogicPlatformStatusPhase `json:"phase,omitempty"`
 }
 
