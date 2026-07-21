@@ -61,7 +61,7 @@ Completed implementation of LogicFlowService CRD API types with full documentati
 
 ### 2. Implementation Pattern Documentation
 
-**Created:** `docs/implementation/logicflowservice-pattern.md` (400+ lines)
+**Created:** `adr/implementation/logicflowservice-pattern.md` (400+ lines)
 
 **Comprehensive guide covering:**
 
@@ -356,7 +356,7 @@ Internal: POST http://runtime.ns.svc:8080/q/flow/exec/ns/payment/v1.0.0/invoke
 api/v1/logicflowservice_types.go           # API type implementation
 api/v1/zz_generated.deepcopy.go            # Generated (make manifests)
 config/crd/bases/logic.kubesmarts.org_logicflowservices.yaml  # Generated CRD
-docs/implementation/logicflowservice-pattern.md  # Implementation guide
+adr/implementation/logicflowservice-pattern.md  # Implementation guide
 ```
 
 ## Next Steps
@@ -469,7 +469,7 @@ docs/implementation/logicflowservice-pattern.md  # Implementation guide
 ## Contact
 
 **For questions about this implementation:**
-- Check `docs/implementation/logicflowservice-pattern.md` first
+- Check `adr/implementation/logicflowservice-pattern.md` first
 - Review API types in `api/v1/logicflowservice_types.go`
 - Refer to this handoff document
 

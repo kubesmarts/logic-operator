@@ -21,7 +21,7 @@ spec:
     - jsonPath: .spec.ingress.host
       name: Host
       type: string
-    - jsonPath: .spec.runtimeRef.name
+    - jsonPath: .status.runtimeRef.name
       name: Runtime
       type: string
     - jsonPath: .spec.ingress.tls.enabled
@@ -62,7 +62,7 @@ spec:
 
               Provides stable external HTTP access to workflows with traffic splitting and TLS.
               Forward reference pattern: Service → Definition (no bidirectional references).
-              All referenced resources must be in the same namespace.
+              The runtime is discovered transitively from the referenced definitions.
             properties:
               defaultVersion:
                 description: |-
@@ -77,9 +77,19 @@ spec:
                     additionalProperties:
                       type: string
                     description: |-
-                      Annotations for the Ingress resource (user-provided).
+                      Annotations for the Ingress/Route resource (user-provided).
                       Operator adds path rewriting annotations automatically.
                     type: object
+                  controllerType:
+                    description: |-
+                      ControllerType determines which controller to target.
+                      Auto-detected if not specified (OpenShift → openshift, K8s → nginx).
+                      Immutable on OpenShift (cannot switch between Route and Ingress).
+                      On K8s, can be changed between supported Ingress controllers.
+                    enum:
+                    - nginx
+                    - openshift
+                    type: string
                   enabled:
                     default: true
                     description: Enabled determines whether to create Ingress/Route.
@@ -88,8 +98,9 @@ spec:
                     description: Host is the external hostname.
                     type: string
                   ingressClassName:
-                    description: IngressClassName specifies which Ingress controller
-                      to use.
+                    description: |-
+                      IngressClassName specifies the IngressClass resource name.
+                      Only used when controllerType=nginx (ignored for openshift).
                     type: string
                   tls:
                     description: TLS configures HTTPS.
@@ -103,6 +114,10 @@ spec:
                             description: IssuerRef references a cert-manager Issuer
                               or ClusterIssuer.
                             properties:
+                              group:
+                                default: cert-manager.io
+                                description: Group is the API group of the Issuer.
+                                type: string
                               kind:
                                 default: ClusterIssuer
                                 description: Kind is either "Issuer" or "ClusterIssuer".
@@ -141,21 +156,6 @@ spec:
                         x-kubernetes-map-type: atomic
                     type: object
                 type: object
-              runtimeRef:
-                description: RuntimeRef points to the LogicFlowRuntime executing the
-                  workflows.
-                properties:
-                  name:
-                    default: ""
-                    description: |-
-                      Name of the referent.
-                      This field is effectively required, but due to backwards compatibility is
-                      allowed to be empty. Instances of this type with an empty value here are
-                      almost certainly wrong.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                    type: string
-                type: object
-                x-kubernetes-map-type: atomic
               traffic:
                 description: |-
                   Traffic distributes requests across workflow versions.
@@ -193,7 +193,6 @@ spec:
                 type: array
             required:
             - ingress
-            - runtimeRef
             type: object
           status:
             description: LogicFlowServiceStatus defines the observed state of LogicFlowService.
@@ -278,6 +277,21 @@ spec:
                 type: integer
               routeRef:
                 description: RouteRef references the created Route (OpenShift only).
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              runtimeRef:
+                description: RuntimeRef is the discovered LogicFlowRuntime from the
+                  referenced definitions.
                 properties:
                   name:
                     default: ""

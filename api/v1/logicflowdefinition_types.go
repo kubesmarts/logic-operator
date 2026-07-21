@@ -17,31 +17,85 @@ limitations under the License.
 package v1
 
 import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/open-workflow-specification/sdk-go/v4/model"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // LogicFlowDefinitionSpec defines the desired state of LogicFlowDefinition.
+//
+// Immutable workflow version referencing a LogicFlowRuntime for execution.
 type LogicFlowDefinitionSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// RuntimeRef points to the LogicFlowRuntime executing this workflow.
+	// +required
+	RuntimeRef corev1.LocalObjectReference `json:"runtimeRef"`
 
-	// Foo is an example field of LogicFlowDefinition. Edit logicflowdefinition_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// Flow contains the full Open Workflow Specification 1.0.0 document.
+	// Stored as raw JSON; parsed and validated via sdk-go during admission.
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +required
+	Flow runtime.RawExtension `json:"flow"`
+}
+
+// ParseFlow deserializes the raw flow field into a model.Workflow.
+func (s *LogicFlowDefinitionSpec) ParseFlow() (*model.Workflow, error) {
+	if s.Flow.Raw == nil {
+		return nil, fmt.Errorf("flow field is empty")
+	}
+	wf := &model.Workflow{}
+	if err := json.Unmarshal(s.Flow.Raw, wf); err != nil {
+		return nil, fmt.Errorf("failed to parse flow: %w", err)
+	}
+	return wf, nil
 }
 
 // LogicFlowDefinitionStatus defines the observed state of LogicFlowDefinition.
 type LogicFlowDefinitionStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// ObservedGeneration tracks the last reconciled spec generation.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// WorkflowName is the workflow identity extracted from flow.document.name.
+	// +optional
+	WorkflowName string `json:"workflowName,omitempty"`
+
+	// WorkflowVersion is the version extracted from flow.document.version.
+	// +optional
+	WorkflowVersion string `json:"workflowVersion,omitempty"`
+
+	// WorkflowNamespace is the DSL namespace extracted from flow.document.namespace.
+	// Not the Kubernetes namespace.
+	// +optional
+	WorkflowNamespace string `json:"workflowNamespace,omitempty"`
+
+	// ConfigMapRef references the materialized ConfigMap containing the flow document.
+	// +optional
+	ConfigMapRef *corev1.LocalObjectReference `json:"configMapRef,omitempty"`
+
+	// Conditions represent detailed definition state.
+	// +optional
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
+// LogicFlowDefinition represents an immutable workflow version.
+//
+// Each instance contains one Open Workflow Specification 1.0.0 document
+// and references the LogicFlowRuntime that executes it.
+// Optionally referenced by LogicFlowService for external HTTP traffic routing.
+//
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-
-// LogicFlowDefinition is the Schema for the logicflowdefinitions API.
+// +kubebuilder:resource:scope=Namespaced,shortName={lfd,flowdef}
+// +kubebuilder:printcolumn:name="Workflow",type=string,JSONPath=`.status.workflowName`
+// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.status.workflowVersion`
+// +kubebuilder:printcolumn:name="Runtime",type=string,JSONPath=`.spec.runtimeRef.name`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 type LogicFlowDefinition struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

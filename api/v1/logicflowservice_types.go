@@ -25,12 +25,8 @@ import (
 //
 // Provides stable external HTTP access to workflows with traffic splitting and TLS.
 // Forward reference pattern: Service → Definition (no bidirectional references).
-// All referenced resources must be in the same namespace.
+// The runtime is discovered transitively from the referenced definitions.
 type LogicFlowServiceSpec struct {
-	// RuntimeRef points to the LogicFlowRuntime executing the workflows.
-	// +required
-	RuntimeRef corev1.LocalObjectReference `json:"runtimeRef"`
-
 	// Traffic distributes requests across workflow versions.
 	// Mutually exclusive with DefaultVersion.
 	// Weights must sum to 100.
@@ -154,6 +150,10 @@ type LogicFlowServiceStatus struct {
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
+	// RuntimeRef is the discovered LogicFlowRuntime from the referenced definitions.
+	// +optional
+	RuntimeRef *corev1.LocalObjectReference `json:"runtimeRef,omitempty"`
+
 	// IngressRef references the created Ingress resource.
 	// +optional
 	IngressRef *corev1.LocalObjectReference `json:"ingressRef,omitempty"`
@@ -198,7 +198,7 @@ type TrafficStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName={lfs,flowservice}
 // +kubebuilder:printcolumn:name="Host",type=string,JSONPath=`.spec.ingress.host`
-// +kubebuilder:printcolumn:name="Runtime",type=string,JSONPath=`.spec.runtimeRef.name`
+// +kubebuilder:printcolumn:name="Runtime",type=string,JSONPath=`.status.runtimeRef.name`
 // +kubebuilder:printcolumn:name="TLS",type=boolean,JSONPath=`.spec.ingress.tls.enabled`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 type LogicFlowService struct {

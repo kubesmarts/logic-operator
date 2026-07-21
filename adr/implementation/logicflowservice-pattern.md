@@ -58,13 +58,14 @@ LogicFlowService provides external HTTP access to workflows with stable endpoint
 
 ### Cardinality
 
-- **1 LogicFlowRuntime : N LogicFlowServices**
-  - One runtime can serve multiple workflows
-  - Example: `payments-runtime` serves both `payment-processor` and `client-workflow`
+- **1 LogicFlowRuntime : N LogicFlowDefinitions**
+  - One runtime can execute multiple workflow definitions
+  - Example: `payments-runtime` executes both `payment-processor-v1-0-0` and `fraud-check-v1-0-0`
 
 - **1 LogicFlowService : N LogicFlowDefinitions**
   - One service groups all versions of a workflow
   - Example: `payment-processor` service routes to v1.0.0 and v1.1.0
+  - The runtime is discovered transitively from the referenced definitions
 
 - **1 LogicFlowDefinition : 1 Version**
   - Each definition is immutable and represents one version
@@ -255,7 +256,7 @@ func buildRewritePath(svc *v1.LogicFlowService, def *v1.LogicFlowDefinition) str
 - Namespace: `svc.Namespace`
 - Workflow name: `def.Spec.Workflow.Name`
 - Version: `def.Spec.Workflow.Version`
-- Runtime service: `svc.Spec.RuntimeRef.Name`
+- Runtime service: `def.Spec.RuntimeRef.Name` (discovered from definition)
 
 ### OpenShift Routes
 
@@ -286,9 +287,9 @@ spec:
 
 **Validating Admission Webhook** ensures:
 1. Referenced definitions exist
-2. All definitions target the same runtime
+2. All definitions target the same runtime (discovered transitively)
 3. Traffic weights sum to 100
-4. (Optional) All definitions have same workflow name
+4. All definitions have same workflow `document.namespace` + `document.name` (workflow grouping)
 
 ```go
 func (v *LogicFlowServiceValidator) ValidateCreate(svc *v1.LogicFlowService) error {
@@ -296,6 +297,7 @@ func (v *LogicFlowServiceValidator) ValidateCreate(svc *v1.LogicFlowService) err
         return fmt.Errorf("at least one traffic entry required")
     }
     
+    var runtimeName string
     var workflowName string
     totalWeight := int32(0)
     
@@ -310,13 +312,15 @@ func (v *LogicFlowServiceValidator) ValidateCreate(svc *v1.LogicFlowService) err
                 i, traffic.DefinitionRef.Name)
         }
         
-        // Validate same runtime
-        if def.Spec.RuntimeRef.Name != svc.Spec.RuntimeRef.Name {
-            return fmt.Errorf("traffic[%d]: definition targets runtime %s, service targets %s",
-                i, def.Spec.RuntimeRef.Name, svc.Spec.RuntimeRef.Name)
+        // Validate all definitions target the same runtime
+        if runtimeName == "" {
+            runtimeName = def.Spec.RuntimeRef.Name
+        } else if def.Spec.RuntimeRef.Name != runtimeName {
+            return fmt.Errorf("traffic[%d]: definition targets runtime %s, expected %s",
+                i, def.Spec.RuntimeRef.Name, runtimeName)
         }
         
-        // Validate same workflow name (optional - helps prevent user errors)
+        // Validate same workflow name (enforces workflow grouping)
         if workflowName == "" {
             workflowName = def.Spec.Workflow.Name
         } else if def.Spec.Workflow.Name != workflowName {
@@ -825,15 +829,13 @@ spec:
     tasks: [...]
 ```
 
-3. Create Service
+3. Create Service (runtime is discovered from the definition)
 ```yaml
 apiVersion: logic.kubesmarts.org/v1
 kind: LogicFlowService
 metadata:
   name: payment-processor
 spec:
-  runtimeRef:
-    name: payments-runtime
   traffic:
     - definitionRef:
         name: payment-processor-v1-0-0
