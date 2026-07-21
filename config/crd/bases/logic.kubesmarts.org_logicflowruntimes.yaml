@@ -11,13 +11,37 @@ spec:
     kind: LogicFlowRuntime
     listKind: LogicFlowRuntimeList
     plural: logicflowruntimes
+    shortNames:
+    - lfr
+    - runtime
     singular: logicflowruntime
   scope: Namespaced
   versions:
-  - name: v1
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.replicas
+      name: Replicas
+      type: string
+    - jsonPath: .status.readyReplicas
+      name: Ready
+      type: string
+    - description: Number of loaded workflows
+      jsonPath: .status.definitions[*].name
+      name: Workflows
+      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
     schema:
       openAPIV3Schema:
-        description: LogicFlowRuntime is the Schema for the logicflowruntimes API.
+        description: |-
+          LogicFlowRuntime is a shared Quarkus Flow runner deployment that executes multiple workflow definitions.
+
+          Architecture: 1 Runtime = N Workflow Definitions (shared runner model)
+          Workflows are loaded from ConfigMaps or embedded in the runtime image.
         properties:
           apiVersion:
             description: |-
@@ -37,34 +61,14 @@ spec:
           metadata:
             type: object
           spec:
-            description: LogicFlowRuntimeSpec defines the desired state of LogicFlowRuntime.
+            description: |-
+              LogicFlowRuntimeSpec defines the desired state of LogicFlowRuntime.
+
+              Shared Quarkus Flow runner that executes multiple workflow definitions.
+              Configuration precedence: LogicFlowRuntime.spec > LogicPlatform.spec.runtimeDefaults > operator defaults
             properties:
               container:
-                description: |-
-                  Container configures the application container.
-                  Settings here override the top-level image/resources fields.
-
-                  Use this for:
-                    - Environment variables
-                    - Volume mounts
-                    - Health probes (liveness, readiness, startup)
-                    - Lifecycle hooks
-                    - Security context
-                    - Working directory
-
-                  Example:
-                    container:
-                      env:
-                      - name: QUARKUS_PROFILE
-                        value: prod
-                      livenessProbe:
-                        httpGet:
-                          path: /q/health/live
-                          port: 8080
-                      readinessProbe:
-                        httpGet:
-                          path: /q/health/ready
-                          port: 8080
+                description: Container configures the application container.
                 properties:
                   args:
                     description: |-
@@ -1390,58 +1394,114 @@ spec:
                     type: string
                 type: object
               image:
-                description: |-
-                  Image specifies the container image for the application.
-                  This should be a fully qualified image reference including registry and tag.
-
-                  This is a convenience field - if container.image or podTemplate.container.image
-                  is set, those take precedence.
-
-                  Example: quay.io/kubesmarts/data-index:2.0.0
+                description: Image specifies the container image.
                 type: string
               imagePullPolicy:
                 default: IfNotPresent
-                description: |-
-                  ImagePullPolicy specifies when to pull the container image.
-                  Defaults to IfNotPresent for tagged images and Always for :latest or no tag.
-
-                  This is a convenience field - if container.imagePullPolicy or
-                  podTemplate.container.imagePullPolicy is set, those take precedence.
+                description: ImagePullPolicy specifies when to pull the image.
                 enum:
                 - Always
                 - Never
                 - IfNotPresent
                 type: string
-              podTemplate:
+              persistence:
                 description: |-
-                  PodTemplate allows full customization of the application pod.
-                  This provides the most control, overriding all other fields.
-
-                  Use this to configure:
-                    - Pod metadata (labels, annotations)
-                    - Scheduling (affinity, tolerations, node selector)
-                    - Security contexts
-                    - Volumes and volume mounts
-                    - Init containers and sidecars
-                    - Service account
-                    - DNS configuration
-
-                  Example:
-                    podTemplate:
-                      metadata:
-                        labels:
-                          monitoring: enabled
-                      affinity:
-                        podAntiAffinity:
-                          preferredDuringSchedulingIgnoredDuringExecution:
-                          - weight: 100
-                            podAffinityTerm:
-                              topologyKey: kubernetes.io/hostname
-                      tolerations:
-                      - key: workload
-                        operator: Equal
-                        value: workflows
-                        effect: NoSchedule
+                  Persistence configures database connectivity.
+                  Avoid using the same schema as the Data Index.
+                maxProperties: 2
+                properties:
+                  dbMigrationStrategy:
+                    default: service
+                    description: |-
+                      DB Migration approach for the target application. Use the following values as described.
+                      job: use job based approach provided by the Logic operator.
+                      service: service itself shall migrate the db and will not use Logic operator.
+                      none: no database migration functionality needed.
+                    type: string
+                  postgresql:
+                    description: Connect configured services to a postgresql database.
+                    maxProperties: 2
+                    minProperties: 2
+                    properties:
+                      jdbcUrl:
+                        description: |-
+                          PostgreSql JDBC URL. Mutually exclusive to serviceRef.
+                          e.g. "jdbc:postgresql://host:port/database?currentSchema=data-index-service"
+                        type: string
+                      secretRef:
+                        description: Secret reference to the database user credentials
+                        properties:
+                          name:
+                            description: Name of the postgresql credentials secret.
+                            type: string
+                          passwordKey:
+                            description: Defaults to POSTGRESQL_PASSWORD
+                            type: string
+                          userKey:
+                            description: Defaults to POSTGRESQL_USER
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      serviceRef:
+                        description: Application reference to postgresql datasource.
+                          Mutually exclusive to jdbcUrl.
+                        properties:
+                          databaseName:
+                            description: Name of postgresql database to be used. Defaults
+                              to "logicflow"
+                            type: string
+                          databaseSchema:
+                            description: Schema of postgresql database to be used.
+                              Defaults to "data-index-service"
+                            type: string
+                          name:
+                            description: Name of the postgresql k8s service.
+                            type: string
+                          namespace:
+                            description: Namespace of the postgresql k8s service.
+                              Defaults to the LogicPlatform's local namespace.
+                            type: string
+                          port:
+                            description: Port to use when connecting to the postgresql
+                              k8s service. Defaults to 5432.
+                            type: integer
+                        required:
+                        - name
+                        type: object
+                      tls:
+                        description: |-
+                          TLS configuration for PostgreSQL connections.
+                          When enabled, the operator will append SSL parameters to the JDBC URL.
+                        properties:
+                          enabled:
+                            default: false
+                            description: |-
+                              Enabled determines whether to use TLS/SSL for PostgreSQL connections.
+                              If true, SSL parameters will be added to the JDBC URL based on tlsMode.
+                              Defaults to false.
+                            type: boolean
+                          tlsMode:
+                            default: prefer
+                            description: |-
+                              TLSMode specifies the SSL connection mode for PostgreSQL.
+                              Defaults to "prefer" when enabled is true.
+                              See: https://www.postgresql.org/docs/current/libpq-ssl.html
+                            enum:
+                            - disable
+                            - allow
+                            - prefer
+                            - require
+                            - verify-ca
+                            - verify-full
+                            type: string
+                        type: object
+                    required:
+                    - secretRef
+                    type: object
+                type: object
+              podTemplate:
+                description: PodTemplate allows full pod customization.
                 properties:
                   affinity:
                     description: |-
@@ -9398,29 +9458,13 @@ spec:
               replicas:
                 default: 1
                 description: |-
-                  Replicas is the desired number of application pod replicas.
+                  Replicas is the desired number of pod replicas.
                   Ignored when HorizontalPodAutoscaler is configured.
-
-                  This is a convenience field - if podTemplate.replicas is set, it takes precedence.
-                  Defaults to 1 if not specified at any level.
                 format: int32
                 minimum: 0
                 type: integer
               resources:
-                description: |-
-                  Resources specifies compute resource requirements for the application container.
-
-                  This is a convenience field - if container.resources or podTemplate.container.resources
-                  is set, those take precedence.
-
-                  Example:
-                    resources:
-                      requests:
-                        memory: 512Mi
-                        cpu: 250m
-                      limits:
-                        memory: 1Gi
-                        cpu: 1000m
+                description: Resources specifies compute resource requirements.
                 properties:
                   claims:
                     description: |-
@@ -9478,12 +9522,267 @@ spec:
                       More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
                     type: object
                 type: object
+              security:
+                description: |-
+                  RuntimeSecuritySpec configures authentication for workflow runtime HTTP endpoints.
+
+                  Modes: NONE (dev only), API_KEY (machine-to-machine), OIDC (enterprise SSO)
+                  Roles: flow-admin (full access), flow-invoker (execute only)
+                  See: https://docs.quarkiverse.io/quarkus-flow/dev/runner.html#_security_in_depth
+                properties:
+                  apiKey:
+                    description: APIKey configures API key authentication.
+                    properties:
+                      keys:
+                        description: Keys is a list of API keys with roles.
+                        items:
+                          description: APIKeySpec defines a single API key configuration.
+                          properties:
+                            name:
+                              description: Name is a unique identifier for this API
+                                key.
+                              maxLength: 63
+                              pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                              type: string
+                            roles:
+                              description: Roles assigned to this API key.
+                              items:
+                                description: RuntimeSecurityRole defines predefined
+                                  security roles for workflow runtime access.
+                                enum:
+                                - flow-admin
+                                - flow-invoker
+                                type: string
+                              minItems: 1
+                              type: array
+                            secretRef:
+                              description: SecretRef points to a Secret containing
+                                the API key value.
+                              properties:
+                                key:
+                                  default: value
+                                  description: Key within the Secret.
+                                  type: string
+                                name:
+                                  description: Name of the Secret.
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                          required:
+                          - name
+                          - roles
+                          - secretRef
+                          type: object
+                        minItems: 1
+                        type: array
+                    required:
+                    - keys
+                    type: object
+                  oidc:
+                    description: OIDC configures OpenID Connect authentication.
+                    properties:
+                      authServerUrl:
+                        description: AuthServerUrl is the OIDC provider URL.
+                        type: string
+                      clientId:
+                        description: ClientId is the OAuth2 client ID.
+                        type: string
+                      clientSecret:
+                        description: ClientSecret references the OAuth2 client secret.
+                        properties:
+                          key:
+                            default: value
+                            description: Key within the Secret.
+                            type: string
+                          name:
+                            description: Name of the Secret.
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      rolesClaim:
+                        default: roles
+                        description: RolesClaim is the JWT claim path containing user
+                          roles.
+                        type: string
+                    required:
+                    - authServerUrl
+                    - clientId
+                    - clientSecret
+                    type: object
+                  type:
+                    allOf:
+                    - enum:
+                      - NONE
+                      - API_KEY
+                      - OIDC
+                    - enum:
+                      - NONE
+                      - API_KEY
+                      - OIDC
+                    default: NONE
+                    description: |-
+                      Type specifies the authentication mode.
+                      WARNING: NONE mode should only be used in development.
+                    type: string
+                type: object
             type: object
           status:
             description: LogicFlowRuntimeStatus defines the observed state of LogicFlowRuntime.
+            properties:
+              conditions:
+                description: Conditions represent detailed runtime state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              configMapRefs:
+                description: ConfigMapRefs lists source ConfigMaps for loaded workflows.
+                items:
+                  description: |-
+                    LocalObjectReference contains enough information to let you locate the
+                    referenced object inside the same namespace.
+                  properties:
+                    name:
+                      default: ""
+                      description: |-
+                        Name of the referent.
+                        This field is effectively required, but due to backwards compatibility is
+                        allowed to be empty. Instances of this type with an empty value here are
+                        almost certainly wrong.
+                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      type: string
+                  type: object
+                  x-kubernetes-map-type: atomic
+                type: array
+              definitions:
+                description: Definitions lists loaded workflow definitions.
+                items:
+                  description: RuntimeDefinitionStatus represents a workflow definition
+                    loaded by the runtime.
+                  properties:
+                    name:
+                      description: Name of the workflow.
+                      type: string
+                    service:
+                      description: Service is the HTTP endpoint path.
+                      type: string
+                    version:
+                      description: Version of the workflow.
+                      type: string
+                  required:
+                  - name
+                  - service
+                  type: object
+                type: array
+              deploymentRef:
+                description: DeploymentRef references the managed Deployment.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              phase:
+                description: |-
+                  Phase is the runtime lifecycle phase (Pending, Provisioning, Ready, Degraded, Failed).
+                  Derived from Conditions.
+                type: string
+              readyReplicas:
+                description: ReadyReplicas is the number of ready replicas.
+                format: int32
+                type: integer
+              replicas:
+                description: Replicas is the total number of replicas (for HPA scale
+                  subresource).
+                format: int32
+                type: integer
+              selector:
+                description: Selector is the label selector for pods (for HPA scale
+                  subresource).
+                type: string
+              serviceRef:
+                description: ServiceRef references the HTTP Service.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
             type: object
         type: object
     served: true
     storage: true
     subresources:
+      scale:
+        labelSelectorPath: .status.selector
+        specReplicasPath: .spec.replicas
+        statusReplicasPath: .status.replicas
       status: {}

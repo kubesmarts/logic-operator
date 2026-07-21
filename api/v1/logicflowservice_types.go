@@ -17,31 +17,190 @@ limitations under the License.
 package v1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // LogicFlowServiceSpec defines the desired state of LogicFlowService.
+//
+// Provides stable external HTTP access to workflows with traffic splitting and TLS.
+// Forward reference pattern: Service → Definition (no bidirectional references).
+// All referenced resources must be in the same namespace.
 type LogicFlowServiceSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// RuntimeRef points to the LogicFlowRuntime executing the workflows.
+	// +required
+	RuntimeRef corev1.LocalObjectReference `json:"runtimeRef"`
 
-	// Foo is an example field of LogicFlowService. Edit logicflowservice_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// Traffic distributes requests across workflow versions.
+	// Mutually exclusive with DefaultVersion.
+	// Weights must sum to 100.
+	// +optional
+	Traffic []TrafficSpec `json:"traffic,omitempty"`
+
+	// DefaultVersion auto-routes 100% traffic to a single workflow version.
+	// Mutually exclusive with Traffic.
+	// Simplifies single-version exposure.
+	// +optional
+	DefaultVersion string `json:"defaultVersion,omitempty"`
+
+	// Ingress configures external HTTP access.
+	// +required
+	Ingress IngressSpec `json:"ingress"`
+}
+
+// TotalWeight returns the sum of all traffic weights.
+func (l *LogicFlowServiceSpec) TotalWeight() int32 {
+	totalWeight := int32(0)
+	for _, t := range l.Traffic {
+		totalWeight += t.Weight
+	}
+	return totalWeight
+}
+
+// TrafficSpec routes a percentage of traffic to a specific workflow version.
+type TrafficSpec struct {
+	// DefinitionRef references a LogicFlowDefinition (workflow version).
+	// +required
+	DefinitionRef corev1.LocalObjectReference `json:"definitionRef"`
+
+	// Weight is the percentage of traffic (0-100).
+	// +required
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	Weight int32 `json:"weight"`
+}
+
+// IngressSpec configures external HTTP/HTTPS access.
+type IngressSpec struct {
+	// Enabled determines whether to create Ingress/Route.
+	// +optional
+	// +kubebuilder:default=true
+	Enabled bool `json:"enabled,omitempty"`
+
+	// ControllerType determines which controller to target.
+	// Auto-detected if not specified (OpenShift → openshift, K8s → nginx).
+	// Immutable on OpenShift (cannot switch between Route and Ingress).
+	// On K8s, can be changed between supported Ingress controllers.
+	// +optional
+	// +kubebuilder:validation:Enum=nginx;openshift
+	ControllerType string `json:"controllerType,omitempty"`
+
+	// Host is the external hostname.
+	// +optional
+	Host string `json:"host,omitempty"`
+
+	// IngressClassName specifies the IngressClass resource name.
+	// Only used when controllerType=nginx (ignored for openshift).
+	// +optional
+	IngressClassName *string `json:"ingressClassName,omitempty"`
+
+	// Annotations for the Ingress/Route resource (user-provided).
+	// Operator adds path rewriting annotations automatically.
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
+
+	// TLS configures HTTPS.
+	// +optional
+	TLS TLSSpec `json:"tls,omitempty"`
+}
+
+// TLSSpec configures TLS/HTTPS termination.
+type TLSSpec struct {
+	// Enabled determines whether to use HTTPS.
+	// +optional
+	// +kubebuilder:default=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// SecretRef references an existing TLS Secret.
+	// Mutually exclusive with CertManager.
+	// +optional
+	SecretRef corev1.LocalObjectReference `json:"secretRef,omitempty"`
+
+	// CertManager configures automatic certificate generation.
+	// Mutually exclusive with SecretRef.
+	// +optional
+	CertManager *CertManagerSpec `json:"certManager,omitempty"`
+}
+
+// CertManagerSpec configures automatic TLS certificate generation via cert-manager.
+type CertManagerSpec struct {
+	// IssuerRef references a cert-manager Issuer or ClusterIssuer.
+	// +required
+	IssuerRef CertManagerIssuerRef `json:"issuerRef"`
+}
+
+// CertManagerIssuerRef references a cert-manager Issuer or ClusterIssuer.
+// Matches cert-manager's ObjectReference pattern.
+type CertManagerIssuerRef struct {
+	// Name of the Issuer/ClusterIssuer.
+	// +required
+	Name string `json:"name"`
+
+	// Kind is either "Issuer" or "ClusterIssuer".
+	// +optional
+	// +kubebuilder:default=ClusterIssuer
+	// +kubebuilder:validation:Enum=Issuer;ClusterIssuer
+	Kind string `json:"kind,omitempty"`
+
+	// Group is the API group of the Issuer.
+	// +optional
+	// +kubebuilder:default=cert-manager.io
+	Group string `json:"group,omitempty"`
 }
 
 // LogicFlowServiceStatus defines the observed state of LogicFlowService.
 type LogicFlowServiceStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// ObservedGeneration tracks the last reconciled spec generation.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// IngressRef references the created Ingress resource.
+	// +optional
+	IngressRef *corev1.LocalObjectReference `json:"ingressRef,omitempty"`
+
+	// RouteRef references the created Route (OpenShift only).
+	// +optional
+	RouteRef *corev1.LocalObjectReference `json:"routeRef,omitempty"`
+
+	// URL is the full external URL for this service.
+	// +optional
+	URL string `json:"url,omitempty"`
+
+	// Traffic shows the current traffic distribution.
+	// +optional
+	Traffic []TrafficStatus `json:"traffic,omitempty"`
+
+	// Conditions represent detailed service state.
+	// +optional
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
+// TrafficStatus shows the status of a traffic target.
+type TrafficStatus struct {
+	// DefinitionRef references the workflow version.
+	DefinitionRef corev1.LocalObjectReference `json:"definitionRef"`
+
+	// Weight is the configured traffic percentage.
+	Weight int32 `json:"weight"`
+
+	// Ready indicates if this version is ready to serve traffic.
+	Ready bool `json:"ready"`
+}
+
+// LogicFlowService provides stable external HTTP access to workflows.
+//
+// Forward reference pattern: Service → Definition (no bidirectional references).
+// Supports traffic splitting for canary deployments and gradual rollouts.
+//
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-
-// LogicFlowService is the Schema for the logicflowservices API.
+// +kubebuilder:resource:scope=Namespaced,shortName={lfs,flowservice}
+// +kubebuilder:printcolumn:name="Host",type=string,JSONPath=`.spec.ingress.host`
+// +kubebuilder:printcolumn:name="Runtime",type=string,JSONPath=`.spec.runtimeRef.name`
+// +kubebuilder:printcolumn:name="TLS",type=boolean,JSONPath=`.spec.ingress.tls.enabled`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 type LogicFlowService struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
