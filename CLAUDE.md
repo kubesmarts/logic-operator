@@ -66,6 +66,11 @@ type RuntimeSecuritySpec struct {
 
 **Why:** Concise docs are easier to maintain and keep in sync with code changes.
 
+## Directory Structure
+
+- **`adr/`** — Architecture Decision Records, implementation patterns, specs, and handoff documents. All design documentation goes here.
+- **`docs/`** — Reserved for user-facing documentation (getting started guides, API references, troubleshooting).
+
 ## Git Workflow Rules
 
 **CRITICAL: You are NOT allowed to:**

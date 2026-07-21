@@ -21,11 +21,12 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
 )
@@ -51,7 +52,12 @@ var _ = Describe("LogicFlowDefinition Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: logicv1.LogicFlowDefinitionSpec{
+						RuntimeRef: corev1.LocalObjectReference{Name: "test-runtime"},
+						Flow: runtime.RawExtension{
+							Raw: []byte(`{"document":{"dsl":"1.0.0","namespace":"test","name":"test-workflow","version":"1.0.0"},"do":[{"noop":{"call":"http","with":{"method":"get","endpoint":"http://example.com"}}}]}`),
+						},
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}

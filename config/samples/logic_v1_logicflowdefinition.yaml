@@ -4,6 +4,19 @@ metadata:
   labels:
     app.kubernetes.io/name: logic-operator
     app.kubernetes.io/managed-by: kustomize
-  name: logicflowdefinition-sample
+  name: payment-processor-v1-0-0
 spec:
-  # TODO(user): Add fields here
+  runtimeRef:
+    name: payments-runtime
+  flow:
+    document:
+      dsl: '1.0.0'
+      namespace: payments
+      name: payment-processor
+      version: '1.0.0'
+    do:
+      - validatePayment:
+          call: http
+          with:
+            method: post
+            endpoint: https://validation.example.com/api
