@@ -20,6 +20,7 @@ import (
 	"context"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	appsv1ac "k8s.io/client-go/applyconfigurations/apps/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -39,19 +40,45 @@ type LogicFlowRuntimeReconciler struct {
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the LogicFlowRuntime object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
 func (r *LogicFlowRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = logf.FromContext(ctx)
 
-	// TODO(user): your logic here
-
 	return ctrl.Result{}, nil
+}
+
+func (r *LogicFlowRuntimeReconciler) applyConfigMap(ctx context.Context, rt *logicv1.LogicFlowRuntime) error {
+	// TODO: Should LogicFlowDefinition controller create those and apply to our deployment, or the other way around?
+	return nil
+}
+
+func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *logicv1.LogicFlowRuntime) error {
+	childLabels := ChildLabels(rt)
+	deployment := appsv1ac.Deployment(rt.Name, rt.Namespace).
+		WithLabels(childLabels).
+		WithOwnerReferences(OwnerRef(rt, logicv1.LogicFlowRuntimeKind)).
+		WithSpec(
+			ToDeploymentSpec(
+				ContainerNameRunner,
+				&rt.Spec.ApplicationSpec,
+				childLabels,
+				SelectorLabels(rt.Name),
+				DefaultRunnerImage(rt.Spec.Persistence),
+				WithPersistenceEnvVars(rt.Spec.Persistence, rt.Namespace),
+				WithSecurityEnvVars(rt.Spec.Security),
+				DefaultProbes(),
+			),
+		)
+
+	return r.Apply(ctx, deployment, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
+}
+
+func (r *LogicFlowRuntimeReconciler) applyService(ctx context.Context, rt *logicv1.LogicFlowRuntime) error {
+	svc := QuarkusService(rt, logicv1.LogicFlowRuntimeKind)
+
+	return r.Apply(ctx, svc, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
 }
 
 // SetupWithManager sets up the controller with the Manager.

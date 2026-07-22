@@ -21,6 +21,22 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const LogicFlowRuntimeKind = "LogicFlowRuntime"
+
+// +kubebuilder:validation:Enum=Pending;Ready;Failed
+type ApplicationPhase string
+
+const (
+	ApplicationPhasePending ApplicationPhase = "Pending"
+	ApplicationPhaseReady   ApplicationPhase = "Ready"
+	ApplicationPhaseFailed  ApplicationPhase = "Failed"
+)
+
+const (
+	ConditionDeploymentAvailable = "DeploymentAvailable"
+	ConditionServiceReady        = "ServiceReady"
+)
+
 // LogicFlowRuntimeSpec defines the desired state of LogicFlowRuntime.
 //
 // Shared Quarkus Flow runner that executes multiple workflow definitions.
@@ -36,10 +52,9 @@ type LogicFlowRuntimeStatus struct {
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
-	// Phase is the runtime lifecycle phase (Pending, Provisioning, Ready, Degraded, Failed).
-	// Derived from Conditions.
+	// Phase is the runtime lifecycle phase, derived from Conditions.
 	// +optional
-	Phase string `json:"phase,omitempty"`
+	Phase ApplicationPhase `json:"phase,omitempty"`
 
 	// Replicas is the total number of replicas (for HPA scale subresource).
 	// +optional
@@ -101,7 +116,6 @@ type RuntimeDefinitionStatus struct {
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Replicas",type=string,JSONPath=`.status.replicas`
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.readyReplicas`
-// +kubebuilder:printcolumn:name="Workflows",type=integer,JSONPath=`.status.definitions[*].name`,description="Number of loaded workflows"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 type LogicFlowRuntime struct {
 	metav1.TypeMeta   `json:",inline"`
