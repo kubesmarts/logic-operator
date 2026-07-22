@@ -1,7 +1,7 @@
 # Controller Reconciliation Pattern
 
 **Status:** Design Document  
-**Version:** v1.0  
+**Version:** v1.1  
 **Last Updated:** 2026-07-21
 
 ## Overview
@@ -38,46 +38,63 @@ SSA eliminates all three: the API server tracks field ownership per manager, no-
 
 cert-manager migrated fully to SSA by v1.21 after hitting these issues at scale. Helm 4 defaults to SSA. The Kubernetes project recommends SSA for all controllers.
 
-### The SSA Pattern
+### The Native SSA API (controller-runtime v0.22+)
+
+Since controller-runtime v0.22.0, `client.Apply` (the `Patch` option) is **deprecated**. The new API uses
+`client.Client.Apply()` with typed **apply configurations** from `k8s.io/client-go/applyconfigurations`.
+
+Apply configurations use pointers for every field, so "field not set" vs "field set to zero" is unambiguous.
+This eliminates the infinite reconcile loops caused by zero-value ambiguity in full API objects
+(e.g., `ImagePullPolicy: ""` interpreted as "I want empty" instead of "I don't care").
 
 ```go
+import (
+    appsv1ac "k8s.io/client-go/applyconfigurations/apps/v1"
+    corev1ac "k8s.io/client-go/applyconfigurations/core/v1"
+    metav1ac "k8s.io/client-go/applyconfigurations/meta/v1"
+)
+
 func (r *MyReconciler) applyDeployment(ctx context.Context, owner *v1.MyResource) error {
-    deploy := &appsv1.Deployment{
-        TypeMeta: metav1.TypeMeta{
-            APIVersion: "apps/v1",
-            Kind:       "Deployment",
-        },
-        ObjectMeta: metav1.ObjectMeta{
-            Name:      owner.Name,
-            Namespace: owner.Namespace,
-        },
-        Spec: appsv1.DeploymentSpec{
-            Replicas: ptr.To(owner.Spec.Replicas),
-            Selector: &metav1.LabelSelector{
-                MatchLabels: map[string]string{"app": owner.Name},
-            },
-            Template: corev1.PodTemplateSpec{
-                ObjectMeta: metav1.ObjectMeta{
-                    Labels: map[string]string{"app": owner.Name},
-                },
-                Spec: corev1.PodSpec{
-                    Containers: []corev1.Container{{
-                        Name:  "runtime",
-                        Image: owner.Spec.Image,
-                    }},
-                },
-            },
-        },
-    }
+    deploy := appsv1ac.Deployment(owner.Name, owner.Namespace).
+        WithLabels(childLabels(owner)).
+        WithOwnerReferences(ownerRef(owner)).
+        WithSpec(appsv1ac.DeploymentSpec().
+            WithReplicas(owner.Spec.Replicas).
+            WithSelector(metav1ac.LabelSelector().
+                WithMatchLabels(selectorLabels(owner)),
+            ).
+            WithTemplate(corev1ac.PodTemplateSpec().
+                WithLabels(childLabels(owner)).
+                WithSpec(corev1ac.PodSpec().
+                    WithContainers(corev1ac.Container().
+                        WithName("runtime").
+                        WithImage(owner.Spec.Image),
+                    ),
+                ),
+            ),
+        )
 
-    if err := ctrl.SetControllerReference(owner, deploy, r.Scheme()); err != nil {
-        return err
-    }
-
-    return r.Patch(ctx, deploy, client.Apply,
+    return r.Apply(ctx, deploy,
         client.FieldOwner(FieldOwnerLogicOperator),
         client.ForceOwnership,
     )
+}
+```
+
+### Owner References with Apply Configurations
+
+`ctrl.SetControllerReference` does not work with apply configuration types. Build the
+owner reference using the apply configuration builder:
+
+```go
+func ownerRef(owner *v1.MyResource) *metav1ac.OwnerReferenceApplyConfiguration {
+    return metav1ac.OwnerReference().
+        WithAPIVersion(v1.GroupVersion.String()).
+        WithKind("LogicFlowRuntime").
+        WithName(owner.Name).
+        WithUID(owner.UID).
+        WithBlockOwnerDeletion(true).
+        WithController(true)
 }
 ```
 
@@ -85,12 +102,12 @@ func (r *MyReconciler) applyDeployment(ctx context.Context, owner *v1.MyResource
 
 | Rule | Rationale |
 |------|-----------|
-| Always set `TypeMeta` (APIVersion + Kind) | SSA requires it; unlike normal CRUD, controller-runtime does not infer it |
+| Use apply configurations, not full API objects | Pointer-based fields eliminate zero-value ambiguity |
 | Always use `client.FieldOwner("logic-operator")` | Required for SSA; identifies which manager owns which fields |
 | Always use `client.ForceOwnership` | The operator is authoritative over the fields it manages |
 | Include ALL managed fields | Omitted fields are released/removed by SSA |
 | Never read before write | Construct desired state from the CR spec, not from the live object |
-| Set OwnerReference before applying | `ctrl.SetControllerReference` works with SSA |
+| Set OwnerReference via `.WithOwnerReferences()` | `ctrl.SetControllerReference` does not work with apply configurations |
 
 ### Field Owner Constant
 
@@ -100,6 +117,50 @@ All controllers use a single field owner to keep ownership consistent:
 const FieldOwnerLogicOperator = "logic-operator"
 ```
 
+### Label Constants
+
+```go
+const (
+    LabelManagedBy = "logic-operator"
+    LabelPartOf    = "logic-platform"
+)
+
+func childLabels(owner metav1.Object) map[string]string {
+    labels := make(map[string]string)
+    for k, v := range owner.GetLabels() {
+        labels[k] = v
+    }
+    labels["app.kubernetes.io/name"] = owner.GetName()
+    labels["app.kubernetes.io/managed-by"] = LabelManagedBy
+    labels["app.kubernetes.io/part-of"] = LabelPartOf
+    return labels
+}
+
+func selectorLabels(owner metav1.Object) map[string]string {
+    return map[string]string{
+        "app.kubernetes.io/name":       owner.GetName(),
+        "app.kubernetes.io/managed-by": LabelManagedBy,
+    }
+}
+```
+
+User labels from the CR's `metadata.labels` propagate to child resources, but operator labels
+always win on conflict. Selectors use only stable operator-controlled labels (selectors are
+immutable after creation).
+
+### Generating Apply Configurations for CRDs
+
+For built-in Kubernetes types, apply configurations exist in `k8s.io/client-go/applyconfigurations`.
+For custom CRD types, generate them with:
+
+```bash
+controller-gen applyconfiguration paths=./api/...
+```
+
+This is only needed when one controller SSA-applies another CRD (e.g., the platform controller
+applying a LogicFlowRuntime). Controllers that only apply built-in types (Deployment, Service,
+ConfigMap) do not need this.
+
 ### SSA Gotchas
 
 **Empty slices:** `subjects: []` on ClusterRoleBindings causes `resourceVersion` bumps on every apply (known Kubernetes issue). Omit empty slices instead of including them.
@@ -107,6 +168,17 @@ const FieldOwnerLogicOperator = "logic-operator"
 **Fake client:** SSA support in the fake client was buggy until controller-runtime v0.22.3. Use envtest (real API server) for integration tests, not the fake client.
 
 **No-op writes are cheap:** When the desired state matches the live state, SSA does not write to etcd or broadcast to watchers. Applying every reconcile cycle is safe and correct.
+
+### Migration from Deprecated client.Apply
+
+If existing code uses the deprecated `r.Patch(ctx, obj, client.Apply, ...)` pattern:
+
+| Old (deprecated) | New (v0.22+) |
+|-------------------|-------------|
+| `r.Patch(ctx, obj, client.Apply, client.FieldOwner(...), client.ForceOwnership)` | `r.Apply(ctx, applyConfig, client.FieldOwner(...), client.ForceOwnership)` |
+| Full API object (`*appsv1.Deployment`) | Apply configuration (`*appsv1ac.DeploymentApplyConfiguration`) |
+| `ctrl.SetControllerReference(owner, obj, scheme)` | `.WithOwnerReferences(ownerRef(owner))` |
+| `r.Status().Patch(ctx, obj, client.Apply, ...)` | `r.Status().Apply(ctx, statusAC, ...)` |
 
 ---
 
@@ -131,14 +203,14 @@ func (r *LogicFlowRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Req
         return r.reconcileDelete(ctx, runtime)
     }
 
-    // 3. Reconcile child resources (SSA)
-    if err := r.reconcileConfigMap(ctx, runtime); err != nil {
+    // 3. Apply child resources (native SSA)
+    if err := r.applyConfigMap(ctx, runtime); err != nil {
         return r.handleError(ctx, runtime, "ConfigMap", err)
     }
-    if err := r.reconcileDeployment(ctx, runtime); err != nil {
+    if err := r.applyDeployment(ctx, runtime); err != nil {
         return r.handleError(ctx, runtime, "Deployment", err)
     }
-    if err := r.reconcileService(ctx, runtime); err != nil {
+    if err := r.applyService(ctx, runtime); err != nil {
         return r.handleError(ctx, runtime, "Service", err)
     }
 
@@ -155,7 +227,7 @@ func (r *LogicFlowRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 1. **Level-triggered, not edge-triggered.** Always ask "is the world in the desired state?" and drive toward it. Never react to specific events.
 2. **Idempotent.** Running the same reconcile twice with no spec changes produces no side effects.
-3. **Single responsibility per reconcile method.** Each child resource gets its own `reconcileX` method that constructs and applies the desired state.
+3. **Single responsibility per apply method.** Each child resource gets its own `applyX` method that constructs the apply configuration and calls `r.Apply()`.
 4. **Status is observed, not constructed.** After applying child resources, read their current state to compute conditions.
 
 ---
@@ -164,15 +236,11 @@ func (r *LogicFlowRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 ### OwnerReferences and Garbage Collection
 
-Use `ctrl.SetControllerReference` for all in-namespace child resources. Kubernetes GC automatically deletes children when the parent CR is deleted.
+Set owner references via `.WithOwnerReferences(ownerRef(owner))` on the apply configuration
+(see [Owner References with Apply Configurations](#owner-references-with-apply-configurations)).
+Kubernetes GC automatically deletes children when the parent CR is deleted.
 
-```go
-if err := ctrl.SetControllerReference(owner, child, r.Scheme()); err != nil {
-    return err
-}
-```
-
-- Only one controller reference per object (enforced by `SetControllerReference`).
+- Only one controller reference per object (set `WithController(true)` on exactly one owner).
 - Cross-namespace ownership is not supported by Kubernetes. Use finalizers for cross-namespace or external cleanup.
 
 ### Deleting Stale Children
@@ -205,17 +273,12 @@ func (r *Reconciler) deleteStaleResources(
 
 ### Standard Labels
 
-All child resources carry consistent labels for querying and identification:
+All child resources carry consistent labels for querying and identification.
+See [Label Constants](#label-constants) for the `childLabels` and `selectorLabels` functions.
 
-```go
-func childLabels(owner metav1.Object) map[string]string {
-    return map[string]string{
-        "app.kubernetes.io/name":       owner.GetName(),
-        "app.kubernetes.io/managed-by": "logic-operator",
-        "app.kubernetes.io/part-of":    "logic-platform",
-    }
-}
-```
+User labels from the CR's `metadata.labels` propagate to all child resources, but operator labels
+always take precedence on conflict. This enables customers to use their own labels (cost center,
+team, environment) for filtering and billing.
 
 ---
 
