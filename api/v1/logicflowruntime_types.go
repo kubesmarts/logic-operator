@@ -23,20 +23,6 @@ import (
 
 const LogicFlowRuntimeKind = "LogicFlowRuntime"
 
-// +kubebuilder:validation:Enum=Pending;Ready;Failed
-type ApplicationPhase string
-
-const (
-	ApplicationPhasePending ApplicationPhase = "Pending"
-	ApplicationPhaseReady   ApplicationPhase = "Ready"
-	ApplicationPhaseFailed  ApplicationPhase = "Failed"
-)
-
-const (
-	ConditionDeploymentAvailable = "DeploymentAvailable"
-	ConditionServiceReady        = "ServiceReady"
-)
-
 // LogicFlowRuntimeSpec defines the desired state of LogicFlowRuntime.
 //
 // Shared Quarkus Flow runner that executes multiple workflow definitions.
