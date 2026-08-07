@@ -7,6 +7,8 @@ import (
 	"github.com/onsi/gomega"
 
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1ac "k8s.io/client-go/applyconfigurations/core/v1"
 )
 
@@ -409,4 +411,103 @@ func TestDeploymentAndServiceAreWiredTogether(t *testing.T) {
 	g.Expect(*svc.Spec.Ports[0].Port).To(gomega.Equal(int32(80)))
 	g.Expect(svc.Spec.Ports[0].TargetPort.IntValue()).To(gomega.Equal(int(QuarkusPort)))
 	g.Expect(*svc.Spec.Ports[0].Name).To(gomega.Equal("http"))
+}
+
+func TestWithFlowSourcePath_SetsEnvVar(t *testing.T) {
+	g := gomega.NewWithT(t)
+	c := corev1ac.Container().WithName("test")
+
+	WithFlowSourcePath()(c)
+
+	g.Expect(c.Env).To(gomega.HaveLen(1))
+	g.Expect(*c.Env[0].Name).To(gomega.Equal("QUARKUS_FLOW_RUNNER_SOURCE_PATH"))
+	g.Expect(*c.Env[0].Value).To(gomega.Equal(WorkflowMountPath))
+}
+
+func TestWithFlowSourcePath_OverridesUserValue(t *testing.T) {
+	g := gomega.NewWithT(t)
+	c := corev1ac.Container().WithName("test").
+		WithEnv(corev1ac.EnvVar().WithName("QUARKUS_FLOW_RUNNER_SOURCE_PATH").WithValue("/custom/path"))
+
+	WithFlowSourcePath()(c)
+
+	var count int
+	for _, e := range c.Env {
+		if e.Name != nil && *e.Name == "QUARKUS_FLOW_RUNNER_SOURCE_PATH" {
+			count++
+			g.Expect(*e.Value).To(gomega.Equal(WorkflowMountPath))
+		}
+	}
+	g.Expect(count).To(gomega.Equal(1), "expected exactly one QUARKUS_FLOW_RUNNER_SOURCE_PATH env var")
+}
+
+func TestWithFlowSourcePath_PreservesOtherEnvVars(t *testing.T) {
+	g := gomega.NewWithT(t)
+	c := corev1ac.Container().WithName("test").
+		WithEnv(
+			corev1ac.EnvVar().WithName("OTHER_VAR").WithValue("keep"),
+			corev1ac.EnvVar().WithName("QUARKUS_FLOW_RUNNER_SOURCE_PATH").WithValue("/bad"),
+			corev1ac.EnvVar().WithName("ANOTHER_VAR").WithValue("also-keep"),
+		)
+
+	WithFlowSourcePath()(c)
+
+	g.Expect(c.Env).To(gomega.HaveLen(3))
+	g.Expect(*c.Env[0].Name).To(gomega.Equal("OTHER_VAR"))
+	g.Expect(*c.Env[1].Name).To(gomega.Equal("ANOTHER_VAR"))
+	g.Expect(*c.Env[2].Name).To(gomega.Equal("QUARKUS_FLOW_RUNNER_SOURCE_PATH"))
+	g.Expect(*c.Env[2].Value).To(gomega.Equal(WorkflowMountPath))
+}
+
+func testConfigMaps() []corev1.ConfigMap {
+	return []corev1.ConfigMap{
+		{ObjectMeta: metav1.ObjectMeta{Name: "lfd-order-flow"}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "lfd-payment-processor"}},
+	}
+}
+
+func TestWithFlowVolumeMounts_AddsOneMountPerConfigMap(t *testing.T) {
+	g := gomega.NewWithT(t)
+	c := corev1ac.Container().WithName("test")
+	cms := testConfigMaps()
+
+	WithFlowVolumeMounts(cms)(c)
+
+	g.Expect(c.VolumeMounts).To(gomega.HaveLen(2))
+	g.Expect(*c.VolumeMounts[0].Name).To(gomega.Equal("lfd-order-flow"))
+	g.Expect(*c.VolumeMounts[0].MountPath).To(gomega.Equal(WorkflowMountPath + "/lfd-order-flow"))
+	g.Expect(*c.VolumeMounts[0].ReadOnly).To(gomega.BeTrue())
+	g.Expect(*c.VolumeMounts[1].Name).To(gomega.Equal("lfd-payment-processor"))
+	g.Expect(*c.VolumeMounts[1].MountPath).To(gomega.Equal(WorkflowMountPath + "/lfd-payment-processor"))
+	g.Expect(*c.VolumeMounts[1].ReadOnly).To(gomega.BeTrue())
+}
+
+func TestWithFlowVolumeMounts_EmptyConfigMapsNoMounts(t *testing.T) {
+	g := gomega.NewWithT(t)
+	c := corev1ac.Container().WithName("test")
+
+	WithFlowVolumeMounts(nil)(c)
+
+	g.Expect(c.VolumeMounts).To(gomega.BeEmpty())
+}
+
+func TestFlowVolumes_ReturnsOneVolumePerConfigMap(t *testing.T) {
+	g := gomega.NewWithT(t)
+	cms := testConfigMaps()
+
+	vols := FlowVolumes(cms)
+
+	g.Expect(vols).To(gomega.HaveLen(2))
+	g.Expect(*vols[0].Name).To(gomega.Equal("lfd-order-flow"))
+	g.Expect(*vols[0].ConfigMap.Name).To(gomega.Equal("lfd-order-flow"))
+	g.Expect(*vols[1].Name).To(gomega.Equal("lfd-payment-processor"))
+	g.Expect(*vols[1].ConfigMap.Name).To(gomega.Equal("lfd-payment-processor"))
+}
+
+func TestFlowVolumes_EmptyConfigMapsReturnsEmpty(t *testing.T) {
+	g := gomega.NewWithT(t)
+
+	vols := FlowVolumes(nil)
+
+	g.Expect(vols).To(gomega.BeEmpty())
 }

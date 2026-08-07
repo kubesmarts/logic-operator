@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"sort"
 
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -26,13 +27,17 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	appsv1ac "k8s.io/client-go/applyconfigurations/apps/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-// LogicFlowRuntimeReconciler reconciles a LogicFlowRuntime object
 type LogicFlowRuntimeReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
@@ -45,11 +50,6 @@ type LogicFlowRuntimeReconciler struct {
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
 func (r *LogicFlowRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
@@ -58,7 +58,13 @@ func (r *LogicFlowRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if err := r.applyDeployment(ctx, &rt); err != nil {
+	configMaps, err := r.listConfigMaps(ctx, &rt)
+	if err != nil {
+		log.Error(err, "failed to list ConfigMaps")
+		return ctrl.Result{}, err
+	}
+
+	if err := r.applyDeployment(ctx, &rt, configMaps); err != nil {
 		log.Error(err, "failed to apply Deployment")
 	}
 
@@ -66,50 +72,65 @@ func (r *LogicFlowRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		log.Error(err, "failed to apply Service")
 	}
 
-	if err := r.updateStatus(ctx, &rt); err != nil {
+	if err := r.updateStatus(ctx, &rt, configMaps); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	return ctrl.Result{}, nil
 }
 
-func (r *LogicFlowRuntimeReconciler) applyConfigMap(ctx context.Context, rt *logicv1.LogicFlowRuntime) error {
-	// TODO: Should LogicFlowDefinition controller create those and apply to our deployment, or the other way around?
-	return nil
+func (r *LogicFlowRuntimeReconciler) listConfigMaps(ctx context.Context, rt *logicv1.LogicFlowRuntime) ([]corev1.ConfigMap, error) {
+	var cmList corev1.ConfigMapList
+	if err := r.List(ctx, &cmList,
+		client.InNamespace(rt.Namespace),
+		client.MatchingLabels{LabelRuntimeRef: rt.Name},
+	); err != nil {
+		return nil, err
+	}
+	sort.Slice(cmList.Items, func(i, j int) bool {
+		return cmList.Items[i].Name < cmList.Items[j].Name
+	})
+	return cmList.Items, nil
 }
 
-func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *logicv1.LogicFlowRuntime) error {
+func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *logicv1.LogicFlowRuntime, configMaps []corev1.ConfigMap) error {
 	childLabels := ChildLabels(rt)
+	spec := ToDeploymentSpec(
+		ContainerNameRunner,
+		&rt.Spec.ApplicationSpec,
+		childLabels,
+		SelectorLabels(rt.Name),
+		DefaultRunnerImage(rt.Spec.Persistence),
+		WithPersistenceEnvVars(rt.Spec.Persistence, rt.Namespace),
+		WithSecurityEnvVars(rt.Spec.Security),
+		DefaultProbes(),
+		WithFlowSourcePath(),
+		WithFlowVolumeMounts(configMaps),
+	)
+	if len(configMaps) > 0 {
+		spec.Template.Spec.WithVolumes(FlowVolumes(configMaps)...)
+	}
 	deployment := appsv1ac.Deployment(rt.Name, rt.Namespace).
 		WithLabels(childLabels).
 		WithOwnerReferences(OwnerRef(rt, logicv1.LogicFlowRuntimeKind)).
-		WithSpec(
-			ToDeploymentSpec(
-				ContainerNameRunner,
-				&rt.Spec.ApplicationSpec,
-				childLabels,
-				SelectorLabels(rt.Name),
-				DefaultRunnerImage(rt.Spec.Persistence),
-				WithPersistenceEnvVars(rt.Spec.Persistence, rt.Namespace),
-				WithSecurityEnvVars(rt.Spec.Security),
-				DefaultProbes(),
-			),
-		)
+		WithSpec(spec)
 
 	return r.Apply(ctx, deployment, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
 }
 
 func (r *LogicFlowRuntimeReconciler) applyService(ctx context.Context, rt *logicv1.LogicFlowRuntime) error {
 	svc := QuarkusService(rt, logicv1.LogicFlowRuntimeKind)
-
 	return r.Apply(ctx, svc, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
 }
 
-func (r *LogicFlowRuntimeReconciler) updateStatus(ctx context.Context, rt *logicv1.LogicFlowRuntime) error {
+func (r *LogicFlowRuntimeReconciler) updateStatus(ctx context.Context, rt *logicv1.LogicFlowRuntime, configMaps []corev1.ConfigMap) error {
 	rt.Status.ObservedGeneration = rt.Generation
 	rt.Status.DeploymentRef.Name = rt.Name
 	rt.Status.ServiceRef.Name = rt.Name
 	rt.Status.Selector = labels.Set(SelectorLabels(rt.Name)).String()
+
+	rt.Status.ConfigMapRefs = configMapRefs(configMaps)
+	rt.Status.Definitions = definitionsFromConfigMaps(configMaps)
 
 	if err := r.updateStatusDeployment(ctx, rt); err != nil {
 		return err
@@ -120,9 +141,30 @@ func (r *LogicFlowRuntimeReconciler) updateStatus(ctx context.Context, rt *logic
 
 	rt.Status.Phase = logicv1.DerivePhase(rt.Status.Conditions, rt.Status.ReadyReplicas)
 
-	// TODO DefinitionsRef, ConfigMapRef
-
 	return r.Status().Update(ctx, rt)
+}
+
+func configMapRefs(configMaps []corev1.ConfigMap) []corev1.LocalObjectReference {
+	refs := make([]corev1.LocalObjectReference, 0, len(configMaps))
+	for i := range configMaps {
+		refs = append(refs, corev1.LocalObjectReference{Name: configMaps[i].Name})
+	}
+	return refs
+}
+
+func definitionsFromConfigMaps(configMaps []corev1.ConfigMap) []logicv1.RuntimeDefinitionStatus {
+	defs := make([]logicv1.RuntimeDefinitionStatus, 0, len(configMaps))
+	for i := range configMaps {
+		name := configMaps[i].Labels[LabelWorkflowName]
+		if name == "" {
+			continue
+		}
+		defs = append(defs, logicv1.RuntimeDefinitionStatus{
+			Name:    name,
+			Version: configMaps[i].Labels[LabelWorkflowVersion],
+		})
+	}
+	return defs
 }
 
 func (r *LogicFlowRuntimeReconciler) updateStatusDeployment(ctx context.Context, rt *logicv1.LogicFlowRuntime) error {
@@ -177,12 +219,32 @@ func (r *LogicFlowRuntimeReconciler) updateStatusSvc(ctx context.Context, rt *lo
 	return nil
 }
 
-// SetupWithManager sets up the controller with the Manager.
+func (r *LogicFlowRuntimeReconciler) mapConfigMapToRuntime(ctx context.Context, obj client.Object) []reconcile.Request {
+	rtName := obj.GetLabels()[LabelRuntimeRef]
+	if rtName == "" {
+		return nil
+	}
+	return []reconcile.Request{
+		{NamespacedName: types.NamespacedName{Name: rtName, Namespace: obj.GetNamespace()}},
+	}
+}
+
+func runtimeRefLabelPredicate() predicate.Predicate {
+	return predicate.NewPredicateFuncs(func(obj client.Object) bool {
+		_, ok := obj.GetLabels()[LabelRuntimeRef]
+		return ok
+	})
+}
+
 func (r *LogicFlowRuntimeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
+		For(&logicv1.LogicFlowRuntime{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
-		For(&logicv1.LogicFlowRuntime{}).
+		Watches(&corev1.ConfigMap{},
+			handler.EnqueueRequestsFromMapFunc(r.mapConfigMapToRuntime),
+			builder.WithPredicates(runtimeRefLabelPredicate()),
+		).
 		Named("logicflowruntime").
 		Complete(r)
 }

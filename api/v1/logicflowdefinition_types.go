@@ -26,6 +26,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+const LogicFlowDefinitionKind = "LogicFlowDefinition"
+
 // LogicFlowDefinitionSpec defines the desired state of LogicFlowDefinition.
 //
 // Immutable workflow version referencing a LogicFlowRuntime for execution.

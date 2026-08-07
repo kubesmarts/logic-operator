@@ -172,6 +172,34 @@ func WithSecurityEnvVars(sec logicv1.RuntimeSecuritySpec) ContainerOption {
 	}
 }
 
+// WithFlowSourcePath returns a ContainerOption that sets the QUARKUS_FLOW_RUNNER_SOURCE_PATH environment variable.
+// Filters out any user-provided duplicate before adding the canonical value.
+func WithFlowSourcePath() ContainerOption {
+	return func(c *corev1ac.ContainerApplyConfiguration) {
+		filtered := make([]corev1ac.EnvVarApplyConfiguration, 0, len(c.Env))
+		for _, e := range c.Env {
+			if e.Name != nil && *e.Name == "QUARKUS_FLOW_RUNNER_SOURCE_PATH" {
+				continue
+			}
+			filtered = append(filtered, e)
+		}
+		c.Env = filtered
+		c.WithEnv(envLiteral("QUARKUS_FLOW_RUNNER_SOURCE_PATH", WorkflowMountPath))
+	}
+}
+
+// WithFlowVolumeMounts returns a ContainerOption that adds a read-only VolumeMount per ConfigMap.
+func WithFlowVolumeMounts(configMaps []corev1.ConfigMap) ContainerOption {
+	return func(c *corev1ac.ContainerApplyConfiguration) {
+		for i := range configMaps {
+			c.WithVolumeMounts(corev1ac.VolumeMount().
+				WithName(configMaps[i].Name).
+				WithMountPath(WorkflowMountPath + "/" + configMaps[i].Name).
+				WithReadOnly(true))
+		}
+	}
+}
+
 func securityEnvVars(sec logicv1.RuntimeSecuritySpec) []*corev1ac.EnvVarApplyConfiguration {
 	switch sec.Type {
 	case logicv1.RuntimeSecurityAPIKey:
