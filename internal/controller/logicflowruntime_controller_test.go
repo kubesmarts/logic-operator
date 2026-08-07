@@ -1,84 +1,454 @@
-/*
-Copyright 2026.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package controller
 
 import (
 	"context"
+	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-var _ = Describe("LogicFlowRuntime Controller", func() {
-	Context("When reconciling a resource", func() {
-		const resourceName = "test-resource"
+func reconcileAndFetch(ctx context.Context, r *LogicFlowRuntimeReconciler, nn types.NamespacedName) *logicv1.LogicFlowRuntime {
+	_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+	Expect(err).NotTo(HaveOccurred())
+	var rt logicv1.LogicFlowRuntime
+	Expect(k8sClient.Get(ctx, nn, &rt)).To(Succeed())
+	return &rt
+}
 
-		ctx := context.Background()
-
-		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+func findEnvVar(envs []corev1.EnvVar, name string) *corev1.EnvVar {
+	for i := range envs {
+		if envs[i].Name == name {
+			return &envs[i]
 		}
-		logicflowruntime := &logicv1.LogicFlowRuntime{}
+	}
+	return nil
+}
+
+func newReconciler() *LogicFlowRuntimeReconciler {
+	return &LogicFlowRuntimeReconciler{
+		Client: k8sClient,
+		Scheme: k8sClient.Scheme(),
+	}
+}
+
+func createRuntime(ctx context.Context, name string, spec logicv1.LogicFlowRuntimeSpec) types.NamespacedName {
+	nn := types.NamespacedName{Name: name, Namespace: "default"}
+	rt := &logicv1.LogicFlowRuntime{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+		Spec:       spec,
+	}
+	Expect(k8sClient.Create(ctx, rt)).To(Succeed())
+	return nn
+}
+
+func deleteRuntime(ctx context.Context, nn types.NamespacedName) {
+	rt := &logicv1.LogicFlowRuntime{}
+	err := k8sClient.Get(ctx, nn, rt)
+	if errors.IsNotFound(err) {
+		return
+	}
+	Expect(err).NotTo(HaveOccurred())
+	Expect(k8sClient.Delete(ctx, rt)).To(Succeed())
+}
+
+func mainContainer(dep *appsv1.Deployment) corev1.Container {
+	for _, c := range dep.Spec.Template.Spec.Containers {
+		if c.Name == ContainerNameRunner {
+			return c
+		}
+	}
+	Fail("container " + ContainerNameRunner + " not found in Deployment")
+	return corev1.Container{}
+}
+
+var _ = Describe("LogicFlowRuntime Controller", func() {
+
+	Context("Minimal runtime (no persistence, no security)", func() {
+		const name = "test-minimal"
+		var nn types.NamespacedName
+		var r *LogicFlowRuntimeReconciler
 
 		BeforeEach(func() {
-			By("creating the custom resource for the Kind LogicFlowRuntime")
-			err := k8sClient.Get(ctx, typeNamespacedName, logicflowruntime)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &logicv1.LogicFlowRuntime{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      resourceName,
-						Namespace: "default",
-					},
-					// TODO(user): Specify other spec details if needed.
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
-			}
+			r = newReconciler()
+			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{})
 		})
-
 		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &logicv1.LogicFlowRuntime{}
-			err := k8sClient.Get(ctx, typeNamespacedName, resource)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Cleanup the specific resource instance LogicFlowRuntime")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+			deleteRuntime(ctx, nn)
 		})
-		It("should successfully reconcile the resource", func() {
-			By("Reconciling the created resource")
-			controllerReconciler := &LogicFlowRuntimeReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
-			}
 
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
+		It("should create a Deployment with minimal image and probes", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+
+			c := mainContainer(&dep)
+			expectedImage := fmt.Sprintf("%s/%s:%s-%s", QuarkusFlowRegistry, QuarkusFlowRunner, QuarkusFlowVersion, ImageVariantMinimal)
+			Expect(c.Image).To(Equal(expectedImage))
+
+			Expect(c.LivenessProbe).NotTo(BeNil())
+			Expect(c.LivenessProbe.HTTPGet.Path).To(Equal("/q/health/live"))
+			Expect(c.LivenessProbe.HTTPGet.Port.IntValue()).To(Equal(int(QuarkusPort)))
+
+			Expect(c.ReadinessProbe).NotTo(BeNil())
+			Expect(c.ReadinessProbe.HTTPGet.Path).To(Equal("/q/health/ready"))
+			Expect(c.ReadinessProbe.HTTPGet.Port.IntValue()).To(Equal(int(QuarkusPort)))
+
+			Expect(dep.Labels).To(HaveKeyWithValue("app.kubernetes.io/name", name))
+			Expect(dep.Labels).To(HaveKeyWithValue("app.kubernetes.io/managed-by", LabelManagedBy))
+
+			Expect(dep.Spec.Selector.MatchLabels).To(Equal(SelectorLabels(name)))
+
+			secEnv := findEnvVar(c.Env, "QUARKUS_FLOW_RUNNER_SECURITY_TYPE")
+			Expect(secEnv).NotTo(BeNil())
+			Expect(secEnv.Value).To(Equal("none"))
+
+			Expect(findEnvVar(c.Env, "QUARKUS_DATASOURCE_DB_KIND")).To(BeNil())
+		})
+
+		It("should create a Service with port 80 targeting 8080", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			var svc corev1.Service
+			Expect(k8sClient.Get(ctx, nn, &svc)).To(Succeed())
+
+			Expect(svc.Spec.Ports).To(HaveLen(1))
+			port := svc.Spec.Ports[0]
+			Expect(port.Name).To(Equal("http"))
+			Expect(port.Protocol).To(Equal(corev1.ProtocolTCP))
+			Expect(port.Port).To(Equal(int32(80)))
+			Expect(port.TargetPort.IntValue()).To(Equal(int(QuarkusPort)))
+
+			Expect(svc.Spec.Selector).To(Equal(SelectorLabels(name)))
+		})
+
+		It("should set owner references on child resources", func() {
+			rt := reconcileAndFetch(ctx, r, nn)
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+			Expect(dep.OwnerReferences).To(HaveLen(1))
+			Expect(dep.OwnerReferences[0].APIVersion).To(Equal(logicv1.GroupVersion.String()))
+			Expect(dep.OwnerReferences[0].Kind).To(Equal(logicv1.LogicFlowRuntimeKind))
+			Expect(dep.OwnerReferences[0].Name).To(Equal(name))
+			Expect(dep.OwnerReferences[0].UID).To(Equal(rt.UID))
+			Expect(*dep.OwnerReferences[0].Controller).To(BeTrue())
+			Expect(*dep.OwnerReferences[0].BlockOwnerDeletion).To(BeTrue())
+
+			var svc corev1.Service
+			Expect(k8sClient.Get(ctx, nn, &svc)).To(Succeed())
+			Expect(svc.OwnerReferences).To(HaveLen(1))
+			Expect(svc.OwnerReferences[0].Kind).To(Equal(logicv1.LogicFlowRuntimeKind))
+			Expect(svc.OwnerReferences[0].UID).To(Equal(rt.UID))
+		})
+
+		It("should set status fields on first reconcile", func() {
+			rt := reconcileAndFetch(ctx, r, nn)
+
+			Expect(rt.Status.ObservedGeneration).To(Equal(rt.Generation))
+			Expect(rt.Status.DeploymentRef.Name).To(Equal(name))
+			Expect(rt.Status.ServiceRef.Name).To(Equal(name))
+			Expect(rt.Status.Selector).To(Equal(labels.Set(SelectorLabels(name)).String()))
+			Expect(rt.Status.Replicas).To(Equal(int32(0)))
+			Expect(rt.Status.ReadyReplicas).To(Equal(int32(0)))
+
+			depCond := meta.FindStatusCondition(rt.Status.Conditions, logicv1.ConditionDeploymentAvailable)
+			Expect(depCond).NotTo(BeNil())
+			Expect(depCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(depCond.Reason).To(Equal(logicv1.ReasonDeploymentProgressing))
+
+			svcCond := meta.FindStatusCondition(rt.Status.Conditions, logicv1.ConditionServiceReady)
+			Expect(svcCond).NotTo(BeNil())
+			Expect(svcCond.Status).To(Equal(metav1.ConditionTrue))
+			Expect(svcCond.Reason).To(Equal(logicv1.ReasonReady))
+
+			Expect(rt.Status.Phase).To(Equal(logicv1.ApplicationPhasePending))
+		})
+	})
+
+	Context("With persistence", func() {
+		const name = "test-persist"
+		var nn types.NamespacedName
+		var r *LogicFlowRuntimeReconciler
+
+		BeforeEach(func() {
+			r = newReconciler()
+			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{
+				RuntimeSpec: logicv1.RuntimeSpec{
+					Persistence: &logicv1.PersistenceOptionsSpec{
+						PostgreSQL: &logicv1.PersistencePostgreSQL{
+							SecretRef: logicv1.PostgreSQLSecretOptions{Name: "pg-creds"},
+							JdbcUrl:   "jdbc:postgresql://pg.default.svc:5432/logicflow",
+						},
+					},
+				},
 			})
+		})
+		AfterEach(func() {
+			deleteRuntime(ctx, nn)
+		})
+
+		It("should create a Deployment with the standard runner image", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+			c := mainContainer(&dep)
+
+			expectedImage := fmt.Sprintf("%s/%s:%s-%s", QuarkusFlowRegistry, QuarkusFlowRunner, QuarkusFlowVersion, ImageVariantStandard)
+			Expect(c.Image).To(Equal(expectedImage))
+		})
+
+		It("should include persistence environment variables", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+			envs := mainContainer(&dep).Env
+
+			dbKind := findEnvVar(envs, "QUARKUS_DATASOURCE_DB_KIND")
+			Expect(dbKind).NotTo(BeNil())
+			Expect(dbKind.Value).To(Equal("postgresql"))
+
+			user := findEnvVar(envs, "QUARKUS_DATASOURCE_USERNAME")
+			Expect(user).NotTo(BeNil())
+			Expect(user.ValueFrom.SecretKeyRef.Name).To(Equal("pg-creds"))
+			Expect(user.ValueFrom.SecretKeyRef.Key).To(Equal("POSTGRESQL_USER"))
+
+			password := findEnvVar(envs, "QUARKUS_DATASOURCE_PASSWORD")
+			Expect(password).NotTo(BeNil())
+			Expect(password.ValueFrom.SecretKeyRef.Name).To(Equal("pg-creds"))
+
+			jdbcUrl := findEnvVar(envs, "QUARKUS_DATASOURCE_JDBC_URL")
+			Expect(jdbcUrl).NotTo(BeNil())
+			Expect(jdbcUrl.Value).To(Equal("jdbc:postgresql://pg.default.svc:5432/logicflow"))
+		})
+	})
+
+	Context("With API_KEY security", func() {
+		const name = "test-apikey"
+		var nn types.NamespacedName
+		var r *LogicFlowRuntimeReconciler
+
+		BeforeEach(func() {
+			r = newReconciler()
+			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{
+				Security: logicv1.RuntimeSecuritySpec{
+					Type: logicv1.RuntimeSecurityAPIKey,
+					APIKey: &logicv1.APIKeyAuthSpec{
+						Keys: []logicv1.APIKeySpec{
+							{
+								Name:      "svc-key",
+								SecretRef: logicv1.SecretKeySelector{Name: "api-secret", Key: "token"},
+								Roles:     []logicv1.RuntimeSecurityRole{logicv1.RuntimeSecurityRoleAdmin},
+							},
+						},
+					},
+				},
+			})
+		})
+		AfterEach(func() {
+			deleteRuntime(ctx, nn)
+		})
+
+		It("should include API key security environment variables", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+			envs := mainContainer(&dep).Env
+
+			secType := findEnvVar(envs, "QUARKUS_FLOW_RUNNER_SECURITY_TYPE")
+			Expect(secType).NotTo(BeNil())
+			Expect(secType.Value).To(Equal("api-key"))
+
+			secretEnv := findEnvVar(envs, `QUARKUS_FLOW_RUNNER_SECURITY_API_KEYS__"svc-key"__SECRET`)
+			Expect(secretEnv).NotTo(BeNil())
+			Expect(secretEnv.ValueFrom.SecretKeyRef.Name).To(Equal("api-secret"))
+			Expect(secretEnv.ValueFrom.SecretKeyRef.Key).To(Equal("token"))
+
+			rolesEnv := findEnvVar(envs, `QUARKUS_FLOW_RUNNER_SECURITY_API_KEYS__"svc-key"__ROLES`)
+			Expect(rolesEnv).NotTo(BeNil())
+			Expect(rolesEnv.Value).To(Equal("flow-admin"))
+		})
+	})
+
+	Context("Status derivation with patched Deployment", func() {
+		const name = "test-status"
+		var nn types.NamespacedName
+		var r *LogicFlowRuntimeReconciler
+
+		BeforeEach(func() {
+			r = newReconciler()
+			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{})
+		})
+		AfterEach(func() {
+			deleteRuntime(ctx, nn)
+		})
+
+		It("should set Phase=Ready when deployment is available with replicas", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+			dep.Status.Replicas = 1
+			dep.Status.ReadyReplicas = 1
+			dep.Status.Conditions = []appsv1.DeploymentCondition{
+				{
+					Type:    appsv1.DeploymentAvailable,
+					Status:  corev1.ConditionTrue,
+					Reason:  "MinimumReplicasAvailable",
+					Message: "Deployment has minimum availability.",
+				},
+			}
+			Expect(k8sClient.Status().Update(ctx, &dep)).To(Succeed())
+
+			rt := reconcileAndFetch(ctx, r, nn)
+
+			Expect(rt.Status.Replicas).To(Equal(int32(1)))
+			Expect(rt.Status.ReadyReplicas).To(Equal(int32(1)))
+
+			depCond := meta.FindStatusCondition(rt.Status.Conditions, logicv1.ConditionDeploymentAvailable)
+			Expect(depCond).NotTo(BeNil())
+			Expect(depCond.Status).To(Equal(metav1.ConditionTrue))
+
+			Expect(rt.Status.Phase).To(Equal(logicv1.ApplicationPhaseReady))
+		})
+
+		It("should set Phase=Failed on ProgressDeadlineExceeded", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+			dep.Status.Conditions = []appsv1.DeploymentCondition{
+				{
+					Type:    appsv1.DeploymentProgressing,
+					Status:  corev1.ConditionFalse,
+					Reason:  logicv1.ReasonProgressDeadlineExceeded,
+					Message: "timed out",
+				},
+			}
+			Expect(k8sClient.Status().Update(ctx, &dep)).To(Succeed())
+
+			rt := reconcileAndFetch(ctx, r, nn)
+
+			depCond := meta.FindStatusCondition(rt.Status.Conditions, logicv1.ConditionDeploymentAvailable)
+			Expect(depCond).NotTo(BeNil())
+			Expect(depCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(depCond.Reason).To(Equal(logicv1.ReasonProgressDeadlineExceeded))
+
+			Expect(rt.Status.Phase).To(Equal(logicv1.ApplicationPhaseFailed))
+		})
+
+		It("should propagate Replicas and ReadyReplicas from Deployment status", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+			dep.Status.Replicas = 3
+			dep.Status.ReadyReplicas = 2
+			Expect(k8sClient.Status().Update(ctx, &dep)).To(Succeed())
+
+			rt := reconcileAndFetch(ctx, r, nn)
+			Expect(rt.Status.Replicas).To(Equal(int32(3)))
+			Expect(rt.Status.ReadyReplicas).To(Equal(int32(2)))
+		})
+	})
+
+	Context("Idempotency", func() {
+		const name = "test-idempotent"
+		var nn types.NamespacedName
+		var r *LogicFlowRuntimeReconciler
+
+		BeforeEach(func() {
+			r = newReconciler()
+			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{})
+		})
+		AfterEach(func() {
+			deleteRuntime(ctx, nn)
+		})
+
+		It("should produce the same result on repeated reconciliation", func() {
+			rt1 := reconcileAndFetch(ctx, r, nn)
+			phase1 := rt1.Status.Phase
+			gen1 := rt1.Status.ObservedGeneration
+			condCount1 := len(rt1.Status.Conditions)
+
+			rt2 := reconcileAndFetch(ctx, r, nn)
+			Expect(rt2.Status.Phase).To(Equal(phase1))
+			Expect(rt2.Status.ObservedGeneration).To(Equal(gen1))
+			Expect(rt2.Status.Conditions).To(HaveLen(condCount1))
+		})
+	})
+
+	Context("CR not found", func() {
+		It("should return success for a missing CR", func() {
+			r := newReconciler()
+			nn := types.NamespacedName{Name: "does-not-exist", Namespace: "default"}
+
+			result, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			var dep appsv1.Deployment
+			err = k8sClient.Get(ctx, nn, &dep)
+			Expect(errors.IsNotFound(err)).To(BeTrue())
+		})
+	})
+
+	Context("Spec updates via SSA", func() {
+		const name = "test-ssa"
+		var nn types.NamespacedName
+		var r *LogicFlowRuntimeReconciler
+
+		BeforeEach(func() {
+			r = newReconciler()
+			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{})
+		})
+		AfterEach(func() {
+			deleteRuntime(ctx, nn)
+		})
+
+		It("should update the Deployment when spec image changes", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+			Expect(mainContainer(&dep).Image).To(Equal(runnerImage(ImageVariantMinimal)))
+
+			var rt logicv1.LogicFlowRuntime
+			Expect(k8sClient.Get(ctx, nn, &rt)).To(Succeed())
+			rt.Spec.Image = "custom-registry/my-runner:2.0"
+			Expect(k8sClient.Update(ctx, &rt)).To(Succeed())
+
+			reconcileAndFetch(ctx, r, nn)
+
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+			Expect(mainContainer(&dep).Image).To(Equal("custom-registry/my-runner:2.0"))
+		})
+
+		It("should update ObservedGeneration after spec change", func() {
+			rt := reconcileAndFetch(ctx, r, nn)
+			gen1 := rt.Status.ObservedGeneration
+
+			Expect(k8sClient.Get(ctx, nn, rt)).To(Succeed())
+			rt.Spec.Image = "custom-registry/my-runner:3.0"
+			Expect(k8sClient.Update(ctx, rt)).To(Succeed())
+
+			rt = reconcileAndFetch(ctx, r, nn)
+			Expect(rt.Status.ObservedGeneration).To(BeNumerically(">", gen1))
+			Expect(rt.Status.ObservedGeneration).To(Equal(rt.Generation))
 		})
 	})
 })

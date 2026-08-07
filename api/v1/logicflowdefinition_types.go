@@ -17,10 +17,10 @@ limitations under the License.
 package v1
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/open-workflow-specification/sdk-go/v4/model"
+	"github.com/open-workflow-specification/sdk-go/v4/parser"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -46,8 +46,8 @@ func (s *LogicFlowDefinitionSpec) ParseFlow() (*model.Workflow, error) {
 	if s.Flow.Raw == nil {
 		return nil, fmt.Errorf("flow field is empty")
 	}
-	wf := &model.Workflow{}
-	if err := json.Unmarshal(s.Flow.Raw, wf); err != nil {
+	wf, err := parser.FromJSONSource(s.Flow.Raw)
+	if err != nil {
 		return nil, fmt.Errorf("failed to parse flow: %w", err)
 	}
 	return wf, nil
