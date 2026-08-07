@@ -16,6 +16,11 @@ const (
 	FieldOwnerLogicOperator = "logic-operator"
 	LabelManagedBy          = "logic-operator"
 	LabelPartOf             = "logic-platform"
+
+	ConfigMapPrefix      = "lfd-"
+	LabelRuntimeRef      = "logic.kubesmarts.org/runtime-ref"
+	LabelWorkflowName    = "logic.kubesmarts.org/workflow-name"
+	LabelWorkflowVersion = "logic.kubesmarts.org/workflow-version"
 )
 
 func ChildLabels(owner metav1.Object) map[string]string {
@@ -279,4 +284,16 @@ func MergeMaps(maps ...map[string]string) map[string]string {
 		}
 	}
 	return result
+}
+
+// FlowVolumes returns pod-level Volume entries for ConfigMaps.
+func FlowVolumes(configMaps []corev1.ConfigMap) []*corev1ac.VolumeApplyConfiguration {
+	vols := make([]*corev1ac.VolumeApplyConfiguration, 0, len(configMaps))
+	for i := range configMaps {
+		vols = append(vols, corev1ac.Volume().
+			WithName(configMaps[i].Name).
+			WithConfigMap(corev1ac.ConfigMapVolumeSource().
+				WithName(configMaps[i].Name)))
+	}
+	return vols
 }

@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -70,6 +71,56 @@ func mainContainer(dep *appsv1.Deployment) corev1.Container {
 	}
 	Fail("container " + ContainerNameRunner + " not found in Deployment")
 	return corev1.Container{}
+}
+
+func createFlowConfigMap(ctx context.Context, name, runtimeRef, workflowName, workflowVersion string) {
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: "default",
+			Labels: map[string]string{
+				"app.kubernetes.io/name":       name,
+				"app.kubernetes.io/managed-by": LabelManagedBy,
+				"app.kubernetes.io/part-of":    LabelPartOf,
+				LabelRuntimeRef:                runtimeRef,
+				LabelWorkflowName:              workflowName,
+				LabelWorkflowVersion:           workflowVersion,
+			},
+		},
+		Data: map[string]string{
+			workflowName + ".json": `{"document":{"name":"` + workflowName + `"}}`,
+		},
+	}
+	Expect(k8sClient.Create(ctx, cm)).To(Succeed())
+}
+
+func deleteConfigMap(ctx context.Context, name string) {
+	cm := &corev1.ConfigMap{}
+	nn := types.NamespacedName{Name: name, Namespace: "default"}
+	err := k8sClient.Get(ctx, nn, cm)
+	if errors.IsNotFound(err) {
+		return
+	}
+	Expect(err).NotTo(HaveOccurred())
+	Expect(k8sClient.Delete(ctx, cm)).To(Succeed())
+}
+
+func findVolume(dep *appsv1.Deployment, name string) *corev1.Volume {
+	for i := range dep.Spec.Template.Spec.Volumes {
+		if dep.Spec.Template.Spec.Volumes[i].Name == name {
+			return &dep.Spec.Template.Spec.Volumes[i]
+		}
+	}
+	return nil
+}
+
+func findVolumeMount(c corev1.Container, name string) *corev1.VolumeMount {
+	for i := range c.VolumeMounts {
+		if c.VolumeMounts[i].Name == name {
+			return &c.VolumeMounts[i]
+		}
+	}
+	return nil
 }
 
 var _ = Describe("LogicFlowRuntime Controller", func() {
@@ -449,6 +500,244 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 			rt = reconcileAndFetch(ctx, r, nn)
 			Expect(rt.Status.ObservedGeneration).To(BeNumerically(">", gen1))
 			Expect(rt.Status.ObservedGeneration).To(Equal(rt.Generation))
+		})
+	})
+
+	Context("Source path env var", func() {
+		const name = "test-source-path"
+		var nn types.NamespacedName
+		var r *LogicFlowRuntimeReconciler
+
+		BeforeEach(func() {
+			r = newReconciler()
+			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{})
+		})
+		AfterEach(func() {
+			deleteRuntime(ctx, nn)
+		})
+
+		It("should always set QUARKUS_FLOW_RUNNER_SOURCE_PATH", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+			c := mainContainer(&dep)
+			env := findEnvVar(c.Env, "QUARKUS_FLOW_RUNNER_SOURCE_PATH")
+			Expect(env).NotTo(BeNil())
+			Expect(env.Value).To(Equal(WorkflowMountPath))
+		})
+
+		It("should have empty definitions and configMapRefs with no ConfigMaps", func() {
+			rt := reconcileAndFetch(ctx, r, nn)
+			Expect(rt.Status.Definitions).To(BeEmpty())
+			Expect(rt.Status.ConfigMapRefs).To(BeEmpty())
+		})
+	})
+
+	Context("With one workflow ConfigMap", func() {
+		const name = "test-one-cm"
+		const cmName = "lfd-payment-processor"
+		var nn types.NamespacedName
+		var r *LogicFlowRuntimeReconciler
+
+		BeforeEach(func() {
+			r = newReconciler()
+			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{})
+			createFlowConfigMap(ctx, cmName, name, "payment-processor", "1.0.0")
+		})
+		AfterEach(func() {
+			deleteConfigMap(ctx, cmName)
+			deleteRuntime(ctx, nn)
+		})
+
+		It("should add a volume for the ConfigMap", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+
+			vol := findVolume(&dep, cmName)
+			Expect(vol).NotTo(BeNil(), "volume for ConfigMap not found")
+			Expect(vol.ConfigMap).NotTo(BeNil())
+			Expect(vol.ConfigMap.Name).To(Equal(cmName))
+		})
+
+		It("should add a volumeMount for the ConfigMap", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+			c := mainContainer(&dep)
+
+			vm := findVolumeMount(c, cmName)
+			Expect(vm).NotTo(BeNil(), "volumeMount for ConfigMap not found")
+			Expect(vm.MountPath).To(Equal(WorkflowMountPath + "/" + cmName))
+			Expect(vm.ReadOnly).To(BeTrue())
+		})
+
+		It("should populate status.definitions with workflow metadata", func() {
+			rt := reconcileAndFetch(ctx, r, nn)
+
+			Expect(rt.Status.Definitions).To(HaveLen(1))
+			Expect(rt.Status.Definitions[0].Name).To(Equal("payment-processor"))
+			Expect(rt.Status.Definitions[0].Version).To(Equal("1.0.0"))
+			Expect(rt.Status.Definitions[0].Service).To(BeEmpty())
+		})
+
+		It("should populate status.configMapRefs", func() {
+			rt := reconcileAndFetch(ctx, r, nn)
+
+			Expect(rt.Status.ConfigMapRefs).To(HaveLen(1))
+			Expect(rt.Status.ConfigMapRefs[0].Name).To(Equal(cmName))
+		})
+	})
+
+	Context("With multiple workflow ConfigMaps", func() {
+		const name = "test-multi-cm"
+		const cm1Name = "lfd-order-flow"
+		const cm2Name = "lfd-payment-processor"
+		var nn types.NamespacedName
+		var r *LogicFlowRuntimeReconciler
+
+		BeforeEach(func() {
+			r = newReconciler()
+			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{})
+			createFlowConfigMap(ctx, cm1Name, name, "order-flow", "2.0.0")
+			createFlowConfigMap(ctx, cm2Name, name, "payment-processor", "1.0.0")
+		})
+		AfterEach(func() {
+			deleteConfigMap(ctx, cm1Name)
+			deleteConfigMap(ctx, cm2Name)
+			deleteRuntime(ctx, nn)
+		})
+
+		It("should add volumes sorted by name", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+
+			var flowVols []string
+			for _, v := range dep.Spec.Template.Spec.Volumes {
+				if strings.HasPrefix(v.Name, ConfigMapPrefix) {
+					flowVols = append(flowVols, v.Name)
+				}
+			}
+			Expect(flowVols).To(Equal([]string{cm1Name, cm2Name}))
+		})
+
+		It("should populate status with all definitions sorted by ConfigMap name", func() {
+			rt := reconcileAndFetch(ctx, r, nn)
+
+			Expect(rt.Status.Definitions).To(HaveLen(2))
+			Expect(rt.Status.Definitions[0].Name).To(Equal("order-flow"))
+			Expect(rt.Status.Definitions[1].Name).To(Equal("payment-processor"))
+			Expect(rt.Status.ConfigMapRefs).To(HaveLen(2))
+			Expect(rt.Status.ConfigMapRefs[0].Name).To(Equal(cm1Name))
+			Expect(rt.Status.ConfigMapRefs[1].Name).To(Equal(cm2Name))
+		})
+	})
+
+	Context("ConfigMap lifecycle", func() {
+		const name = "test-cm-lifecycle"
+		const cmName = "lfd-lifecycle-wf"
+		var nn types.NamespacedName
+		var r *LogicFlowRuntimeReconciler
+
+		BeforeEach(func() {
+			r = newReconciler()
+			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{})
+		})
+		AfterEach(func() {
+			deleteConfigMap(ctx, cmName)
+			deleteRuntime(ctx, nn)
+		})
+
+		It("should add volume when ConfigMap appears after initial reconcile", func() {
+			rt := reconcileAndFetch(ctx, r, nn)
+			Expect(rt.Status.Definitions).To(BeEmpty())
+
+			createFlowConfigMap(ctx, cmName, name, "lifecycle-wf", "1.0.0")
+			rt = reconcileAndFetch(ctx, r, nn)
+
+			Expect(rt.Status.Definitions).To(HaveLen(1))
+			Expect(rt.Status.ConfigMapRefs).To(HaveLen(1))
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+			Expect(findVolume(&dep, cmName)).NotTo(BeNil())
+		})
+
+		It("should remove volume when ConfigMap is deleted", func() {
+			createFlowConfigMap(ctx, cmName, name, "lifecycle-wf", "1.0.0")
+			rt := reconcileAndFetch(ctx, r, nn)
+			Expect(rt.Status.Definitions).To(HaveLen(1))
+
+			deleteConfigMap(ctx, cmName)
+			rt = reconcileAndFetch(ctx, r, nn)
+
+			Expect(rt.Status.Definitions).To(BeEmpty())
+			Expect(rt.Status.ConfigMapRefs).To(BeEmpty())
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+			Expect(findVolume(&dep, cmName)).To(BeNil())
+		})
+	})
+
+	Context("ConfigMap with wrong runtime-ref", func() {
+		const name = "test-wrong-ref"
+		const cmName = "lfd-wrong-ref-wf"
+		var nn types.NamespacedName
+		var r *LogicFlowRuntimeReconciler
+
+		BeforeEach(func() {
+			r = newReconciler()
+			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{})
+			createFlowConfigMap(ctx, cmName, "other-runtime", "wrong-ref-wf", "1.0.0")
+		})
+		AfterEach(func() {
+			deleteConfigMap(ctx, cmName)
+			deleteRuntime(ctx, nn)
+		})
+
+		It("should not include ConfigMap in volumes or status", func() {
+			rt := reconcileAndFetch(ctx, r, nn)
+
+			Expect(rt.Status.Definitions).To(BeEmpty())
+			Expect(rt.Status.ConfigMapRefs).To(BeEmpty())
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+			Expect(findVolume(&dep, cmName)).To(BeNil())
+		})
+	})
+
+	Context("Idempotency with ConfigMaps", func() {
+		const name = "test-idem-cm"
+		const cmName = "lfd-idem-wf"
+		var nn types.NamespacedName
+		var r *LogicFlowRuntimeReconciler
+
+		BeforeEach(func() {
+			r = newReconciler()
+			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{})
+			createFlowConfigMap(ctx, cmName, name, "idem-wf", "1.0.0")
+		})
+		AfterEach(func() {
+			deleteConfigMap(ctx, cmName)
+			deleteRuntime(ctx, nn)
+		})
+
+		It("should produce the same result on repeated reconciliation with ConfigMaps", func() {
+			rt1 := reconcileAndFetch(ctx, r, nn)
+			Expect(rt1.Status.Definitions).To(HaveLen(1))
+
+			rt2 := reconcileAndFetch(ctx, r, nn)
+			Expect(rt2.Status.Definitions).To(HaveLen(1))
+			Expect(rt2.Status.Definitions[0].Name).To(Equal(rt1.Status.Definitions[0].Name))
+			Expect(rt2.Status.ConfigMapRefs).To(HaveLen(1))
+			Expect(rt2.Status.ConfigMapRefs[0].Name).To(Equal(rt1.Status.ConfigMapRefs[0].Name))
 		})
 	})
 })

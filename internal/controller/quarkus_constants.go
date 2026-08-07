@@ -9,4 +9,6 @@ const (
 	ImageVariantStandard = "standard"
 
 	QuarkusPort = int32(8080)
+
+	WorkflowMountPath = "/deployments/workflows"
 )
