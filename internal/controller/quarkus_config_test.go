@@ -605,3 +605,25 @@ func TestMemberLeaseLabels(t *testing.T) {
 	g.Expect(labels[LabelDurablePool]).To(gomega.Equal("my-pool"))
 	g.Expect(labels[LabelDurableIsLeader]).To(gomega.Equal("false"))
 }
+
+func TestDurableDeploymentStrategy_SingleReplica(t *testing.T) {
+	g := gomega.NewWithT(t)
+	s := durableDeploymentStrategy(1)
+	g.Expect(*s.Type).To(gomega.Equal(appsv1.RecreateDeploymentStrategyType))
+	g.Expect(s.RollingUpdate).To(gomega.BeNil())
+}
+
+func TestDurableDeploymentStrategy_ZeroReplica(t *testing.T) {
+	g := gomega.NewWithT(t)
+	s := durableDeploymentStrategy(0)
+	g.Expect(*s.Type).To(gomega.Equal(appsv1.RecreateDeploymentStrategyType))
+}
+
+func TestDurableDeploymentStrategy_MultiReplica(t *testing.T) {
+	g := gomega.NewWithT(t)
+	s := durableDeploymentStrategy(3)
+	g.Expect(*s.Type).To(gomega.Equal(appsv1.RollingUpdateDeploymentStrategyType))
+	g.Expect(s.RollingUpdate).NotTo(gomega.BeNil())
+	g.Expect(s.RollingUpdate.MaxUnavailable.IntValue()).To(gomega.Equal(1))
+	g.Expect(s.RollingUpdate.MaxSurge.IntValue()).To(gomega.Equal(1))
+}

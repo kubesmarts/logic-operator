@@ -8,6 +8,7 @@ import (
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	appsv1ac "k8s.io/client-go/applyconfigurations/apps/v1"
 	corev1ac "k8s.io/client-go/applyconfigurations/core/v1"
 	metav1ac "k8s.io/client-go/applyconfigurations/meta/v1"
@@ -296,6 +297,19 @@ func effectiveReplicas(app *logicv1.ApplicationSpec) int32 {
 		return *app.Replicas
 	}
 	return 1
+}
+
+func durableDeploymentStrategy(replicas int32) *appsv1ac.DeploymentStrategyApplyConfiguration {
+	if replicas <= 1 {
+		return appsv1ac.DeploymentStrategy().
+			WithType(appsv1.RecreateDeploymentStrategyType)
+	}
+	one := intstr.FromInt32(1)
+	return appsv1ac.DeploymentStrategy().
+		WithType(appsv1.RollingUpdateDeploymentStrategyType).
+		WithRollingUpdate(appsv1ac.RollingUpdateDeployment().
+			WithMaxUnavailable(one).
+			WithMaxSurge(one))
 }
 
 func memberLeaseLabels(poolName string) map[string]string {
