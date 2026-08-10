@@ -20,9 +20,13 @@ import (
 	"context"
 	"sort"
 
+	"fmt"
+
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -49,6 +53,9 @@ type LogicFlowRuntimeReconciler struct {
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
+// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;delete
+// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;delete
 
 func (r *LogicFlowRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
@@ -66,6 +73,14 @@ func (r *LogicFlowRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	if err := r.applyDeployment(ctx, &rt, configMaps); err != nil {
 		log.Error(err, "failed to apply Deployment")
+	}
+
+	if err := r.reconcilePodRBAC(ctx, &rt); err != nil {
+		log.Error(err, "failed to reconcile pod RBAC")
+	}
+
+	if err := r.reconcileLeases(ctx, &rt); err != nil {
+		log.Error(err, "failed to reconcile leases")
 	}
 
 	if err := r.applyService(ctx, &rt); err != nil {
@@ -95,20 +110,29 @@ func (r *LogicFlowRuntimeReconciler) listConfigMaps(ctx context.Context, rt *log
 
 func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *logicv1.LogicFlowRuntime, configMaps []corev1.ConfigMap) error {
 	childLabels := ChildLabels(rt)
-	spec := ToDeploymentSpec(
-		ContainerNameRunner,
-		&rt.Spec.ApplicationSpec,
-		childLabels,
-		SelectorLabels(rt.Name),
+	opts := []ContainerOption{
 		DefaultRunnerImage(rt.Spec.Persistence),
 		WithPersistenceEnvVars(rt.Spec.Persistence, rt.Namespace),
 		WithSecurityEnvVars(rt.Spec.Security),
 		DefaultProbes(),
 		WithFlowSourcePath(),
 		WithFlowVolumeMounts(configMaps),
+	}
+	if rt.Spec.Persistence != nil {
+		opts = append(opts, WithDurableEnvVars(rt))
+	}
+	spec := ToDeploymentSpec(
+		ContainerNameRunner,
+		&rt.Spec.ApplicationSpec,
+		childLabels,
+		SelectorLabels(rt.Name),
+		opts...,
 	)
 	if len(configMaps) > 0 {
 		spec.Template.Spec.WithVolumes(FlowVolumes(configMaps)...)
+	}
+	if rt.Spec.Persistence != nil {
+		spec.Template.Spec.WithServiceAccountName(rt.Name)
 	}
 	deployment := appsv1ac.Deployment(rt.Name, rt.Namespace).
 		WithLabels(childLabels).
@@ -116,6 +140,135 @@ func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *lo
 		WithSpec(spec)
 
 	return r.Apply(ctx, deployment, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
+}
+
+func (r *LogicFlowRuntimeReconciler) reconcileLeases(ctx context.Context, rt *logicv1.LogicFlowRuntime) error {
+	if rt.Spec.Persistence == nil {
+		return nil
+	}
+
+	desired := effectiveReplicas(&rt.Spec.ApplicationSpec)
+
+	var dep appsv1.Deployment
+	if err := r.Get(ctx, client.ObjectKeyFromObject(rt), &dep); err != nil {
+		return err
+	}
+
+	var leaseList coordinationv1.LeaseList
+	if err := r.List(ctx, &leaseList,
+		client.InNamespace(rt.Namespace),
+		client.MatchingLabels{LabelDurablePool: rt.Name},
+	); err != nil {
+		return err
+	}
+
+	existing := make(map[string]struct{}, len(leaseList.Items))
+	for i := range leaseList.Items {
+		existing[leaseList.Items[i].Name] = struct{}{}
+	}
+
+	desiredNames := make(map[string]struct{}, desired)
+	for i := int32(0); i < desired; i++ {
+		name := fmt.Sprintf(LeaseMemberNameFmt, rt.Name, i)
+		desiredNames[name] = struct{}{}
+		if _, ok := existing[name]; ok {
+			continue
+		}
+		lease := newMemberLease(name, rt.Namespace, rt.Name, &dep)
+		if err := r.Create(ctx, lease); err != nil {
+			if !apierrors.IsAlreadyExists(err) {
+				return err
+			}
+		}
+	}
+
+	for i := range leaseList.Items {
+		if _, ok := desiredNames[leaseList.Items[i].Name]; !ok {
+			if err := r.Delete(ctx, &leaseList.Items[i]); err != nil && !apierrors.IsNotFound(err) {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (r *LogicFlowRuntimeReconciler) reconcilePodRBAC(ctx context.Context, rt *logicv1.LogicFlowRuntime) error {
+	if rt.Spec.Persistence == nil {
+		return nil
+	}
+
+	isController := true
+	ownerRef := metav1.OwnerReference{
+		APIVersion:         logicv1.GroupVersion.String(),
+		Kind:               logicv1.LogicFlowRuntimeKind,
+		Name:               rt.Name,
+		UID:                rt.UID,
+		Controller:         &isController,
+		BlockOwnerDeletion: &isController,
+	}
+
+	sa := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            rt.Name,
+			Namespace:       rt.Namespace,
+			OwnerReferences: []metav1.OwnerReference{ownerRef},
+		},
+	}
+	if err := r.Create(ctx, sa); err != nil && !apierrors.IsAlreadyExists(err) {
+		return err
+	}
+
+	rb := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            rt.Name + "-durable",
+			Namespace:       rt.Namespace,
+			OwnerReferences: []metav1.OwnerReference{ownerRef},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     ClusterRoleDurable,
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      rt.Name,
+				Namespace: rt.Namespace,
+			},
+		},
+	}
+	if err := r.Create(ctx, rb); err != nil && !apierrors.IsAlreadyExists(err) {
+		return err
+	}
+
+	return nil
+}
+
+func (r *LogicFlowRuntimeReconciler) updateStatusLeases(ctx context.Context, rt *logicv1.LogicFlowRuntime) error {
+	if rt.Spec.Persistence == nil {
+		return nil
+	}
+
+	var leaseList coordinationv1.LeaseList
+	if err := r.List(ctx, &leaseList,
+		client.InNamespace(rt.Namespace),
+		client.MatchingLabels{LabelDurablePool: rt.Name},
+	); err != nil {
+		return err
+	}
+
+	rt.Status.LeaseReplicas = int32(len(leaseList.Items))
+	desired := effectiveReplicas(&rt.Spec.ApplicationSpec)
+
+	if rt.Status.LeaseReplicas >= desired {
+		logicv1.SetCondition(&rt.Status.Conditions, logicv1.ConditionLeaseReady, metav1.ConditionTrue, rt.Generation, logicv1.ReasonReady, "")
+	} else {
+		logicv1.SetCondition(&rt.Status.Conditions, logicv1.ConditionLeaseReady, metav1.ConditionFalse, rt.Generation, logicv1.ReasonLeaseNotFound,
+			fmt.Sprintf("%d of %d leases ready", rt.Status.LeaseReplicas, desired))
+	}
+
+	return nil
 }
 
 func (r *LogicFlowRuntimeReconciler) applyService(ctx context.Context, rt *logicv1.LogicFlowRuntime) error {
@@ -136,6 +289,9 @@ func (r *LogicFlowRuntimeReconciler) updateStatus(ctx context.Context, rt *logic
 		return err
 	}
 	if err := r.updateStatusSvc(ctx, rt); err != nil {
+		return err
+	}
+	if err := r.updateStatusLeases(ctx, rt); err != nil {
 		return err
 	}
 

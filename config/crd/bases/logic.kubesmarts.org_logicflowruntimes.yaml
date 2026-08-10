@@ -9730,6 +9730,10 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              leaseReplicas:
+                description: LeaseReplicas is the number of durable pool leases.
+                format: int32
+                type: integer
               observedGeneration:
                 description: ObservedGeneration tracks the last reconciled spec generation.
                 format: int64

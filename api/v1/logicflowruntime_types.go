@@ -70,6 +70,10 @@ type LogicFlowRuntimeStatus struct {
 	// +optional
 	ConfigMapRefs []v1.LocalObjectReference `json:"configMapRefs,omitempty"`
 
+	// LeaseReplicas is the number of durable pool leases.
+	// +optional
+	LeaseReplicas int32 `json:"leaseReplicas,omitempty"`
+
 	// Conditions represent detailed runtime state.
 	// +optional
 	// +listType=map

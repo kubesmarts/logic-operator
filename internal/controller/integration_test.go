@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"fmt"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -363,6 +364,83 @@ var _ = Describe("Cross-controller integration", func() {
 			var rt4 logicv1.LogicFlowRuntime
 			Expect(k8sClient.Get(ctx, rtNN, &rt4)).To(Succeed())
 			Expect(rt4.Status.Conditions).To(HaveLen(len(rt3.Status.Conditions)))
+		})
+	})
+
+	Context("Durable leases with ConfigMap integration", func() {
+		const rtName = "integ-durable-rt"
+		const defName = "integ-durable-def"
+		var rtNN, defNN types.NamespacedName
+		var rtRec *LogicFlowRuntimeReconciler
+		var defRec *LogicFlowDefinitionReconciler
+
+		BeforeEach(func() {
+			rtRec = newReconciler()
+			defRec = newDefReconciler()
+			rtNN = createRuntime(ctx, rtName, persistenceSpec())
+		})
+		AfterEach(func() {
+			deleteDefinition(ctx, defNN)
+			deleteLeases(ctx, rtName)
+
+			deleteRuntime(ctx, rtNN)
+		})
+
+		It("should create leases, mount ConfigMaps, and set durable env vars", func() {
+			// Step 1: Reconcile Runtime — leases created, durable env vars set
+			rt := reconcileAndFetch(ctx, rtRec, rtNN)
+			leases := listLeases(ctx, rtName)
+			Expect(leases).To(HaveLen(1))
+			Expect(rt.Status.LeaseReplicas).To(Equal(int32(1)))
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, rtNN, &dep)).To(Succeed())
+			c := mainContainer(&dep)
+			Expect(findEnvVar(c.Env, "QUARKUS_FLOW_DURABLE_KUBE_LEASE_LEADER_ENABLED")).NotTo(BeNil())
+			Expect(findEnvVar(c.Env, "QUARKUS_FLOW_DURABLE_KUBE_POOL_NAME").Value).To(Equal(rtName))
+
+			var sa corev1.ServiceAccount
+			Expect(k8sClient.Get(ctx, rtNN, &sa)).To(Succeed())
+			Expect(dep.Spec.Template.Spec.ServiceAccountName).To(Equal(rtName))
+
+			// Step 2: Add a Definition — ConfigMap mounted alongside leases
+			defNN = createDefinition(ctx, defName, rtName, validFlowJSON("durable-flow", "1.0.0", "ns"))
+			def := reconcileDefAndFetch(ctx, defRec, defNN)
+			cmName := def.Status.ConfigMapRef.Name
+
+			rt = reconcileAndFetch(ctx, rtRec, rtNN)
+			Expect(rt.Status.Definitions).To(HaveLen(1))
+			Expect(k8sClient.Get(ctx, rtNN, &dep)).To(Succeed())
+			Expect(findVolume(&dep, cmName)).NotTo(BeNil())
+
+			leases = listLeases(ctx, rtName)
+			Expect(leases).To(HaveLen(1))
+
+			// Step 3: Scale up — new leases created
+			Expect(k8sClient.Get(ctx, rtNN, rt)).To(Succeed())
+			replicas := int32(3)
+			rt.Spec.Replicas = &replicas
+			Expect(k8sClient.Update(ctx, rt)).To(Succeed())
+
+			rt2 := reconcileAndFetch(ctx, rtRec, rtNN)
+			leases = listLeases(ctx, rtName)
+			Expect(leases).To(HaveLen(3))
+			Expect(rt2.Status.LeaseReplicas).To(Equal(int32(3)))
+
+			Expect(rt2.Status.Definitions).To(HaveLen(1))
+
+			// Verify lease names follow convention
+			for i := int32(0); i < 3; i++ {
+				expectedName := fmt.Sprintf(LeaseMemberNameFmt, rtName, i)
+				found := false
+				for _, l := range leases {
+					if l.Name == expectedName {
+						found = true
+						break
+					}
+				}
+				Expect(found).To(BeTrue(), "expected lease %s not found", expectedName)
+			}
 		})
 	})
 })
