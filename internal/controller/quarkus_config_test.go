@@ -462,12 +462,18 @@ func TestWithFlowSourcePath_PreservesOtherEnvVars(t *testing.T) {
 
 func testConfigMaps() []corev1.ConfigMap {
 	return []corev1.ConfigMap{
-		{ObjectMeta: metav1.ObjectMeta{Name: "lfd-order-flow"}},
-		{ObjectMeta: metav1.ObjectMeta{Name: "lfd-payment-processor"}},
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "lfd-order-flow"},
+			Data:       map[string]string{"order-flow.json": "{}"},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "lfd-payment-processor"},
+			Data:       map[string]string{"payment-processor.json": "{}"},
+		},
 	}
 }
 
-func TestWithFlowVolumeMounts_AddsOneMountPerConfigMap(t *testing.T) {
+func TestWithFlowVolumeMounts_AddsOneMountPerConfigMapKey(t *testing.T) {
 	g := gomega.NewWithT(t)
 	c := corev1ac.Container().WithName("test")
 	cms := testConfigMaps()
@@ -476,10 +482,12 @@ func TestWithFlowVolumeMounts_AddsOneMountPerConfigMap(t *testing.T) {
 
 	g.Expect(c.VolumeMounts).To(gomega.HaveLen(2))
 	g.Expect(*c.VolumeMounts[0].Name).To(gomega.Equal("lfd-order-flow"))
-	g.Expect(*c.VolumeMounts[0].MountPath).To(gomega.Equal(WorkflowMountPath + "/lfd-order-flow"))
+	g.Expect(*c.VolumeMounts[0].MountPath).To(gomega.Equal(WorkflowMountPath + "/order-flow.json"))
+	g.Expect(*c.VolumeMounts[0].SubPath).To(gomega.Equal("order-flow.json"))
 	g.Expect(*c.VolumeMounts[0].ReadOnly).To(gomega.BeTrue())
 	g.Expect(*c.VolumeMounts[1].Name).To(gomega.Equal("lfd-payment-processor"))
-	g.Expect(*c.VolumeMounts[1].MountPath).To(gomega.Equal(WorkflowMountPath + "/lfd-payment-processor"))
+	g.Expect(*c.VolumeMounts[1].MountPath).To(gomega.Equal(WorkflowMountPath + "/payment-processor.json"))
+	g.Expect(*c.VolumeMounts[1].SubPath).To(gomega.Equal("payment-processor.json"))
 	g.Expect(*c.VolumeMounts[1].ReadOnly).To(gomega.BeTrue())
 }
 

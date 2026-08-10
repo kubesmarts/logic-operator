@@ -113,7 +113,8 @@ func ToDeploymentSpec(
 // Precedence: podTemplate.container > container > top-level shortcuts.
 // Each layer overrides non-zero fields from the previous layer.
 func resolveContainerAC(containerName string, app *logicv1.ApplicationSpec) *corev1ac.ContainerApplyConfiguration {
-	c := corev1ac.Container().WithName(containerName)
+	c := corev1ac.Container().WithName(containerName).
+		WithSecurityContext(restrictedContainerSecurity())
 
 	applyContainerFields(c, &logicv1.ContainerSpec{
 		Image:           app.Image,
@@ -179,7 +180,9 @@ func toPodSpecAC(pt *logicv1.PodTemplateSpec, mainContainer *corev1ac.ContainerA
 	if mainContainer.Name != nil {
 		mainName = *mainContainer.Name
 	}
-	ps := corev1ac.PodSpec().WithContainers(mainContainer)
+	ps := corev1ac.PodSpec().
+		WithContainers(mainContainer).
+		WithSecurityContext(restrictedPodSecurity())
 
 	if pt.NodeSelector != nil {
 		ps.WithNodeSelector(pt.NodeSelector)
@@ -310,6 +313,20 @@ func durableDeploymentStrategy(replicas int32) *appsv1ac.DeploymentStrategyApply
 		WithRollingUpdate(appsv1ac.RollingUpdateDeployment().
 			WithMaxUnavailable(one).
 			WithMaxSurge(one))
+}
+
+func restrictedContainerSecurity() *corev1ac.SecurityContextApplyConfiguration {
+	return corev1ac.SecurityContext().
+		WithAllowPrivilegeEscalation(false).
+		WithCapabilities(corev1ac.Capabilities().
+			WithDrop("ALL"))
+}
+
+func restrictedPodSecurity() *corev1ac.PodSecurityContextApplyConfiguration {
+	return corev1ac.PodSecurityContext().
+		WithRunAsNonRoot(true).
+		WithSeccompProfile(corev1ac.SeccompProfile().
+			WithType(corev1.SeccompProfileTypeRuntimeDefault))
 }
 
 func memberLeaseLabels(poolName string) map[string]string {

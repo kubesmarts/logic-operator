@@ -4,6 +4,5 @@ metadata:
   labels:
     app.kubernetes.io/name: logic-operator
     app.kubernetes.io/managed-by: kustomize
-  name: logicflowruntime-sample
-spec:
-  # TODO(user): Add fields here
+  name: hello-runtime
+spec: {}
