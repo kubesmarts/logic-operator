@@ -4,19 +4,17 @@ metadata:
   labels:
     app.kubernetes.io/name: logic-operator
     app.kubernetes.io/managed-by: kustomize
-  name: payment-processor-v1-0-0
+  name: hello-world-v1-0-0
 spec:
   runtimeRef:
-    name: payments-runtime
+    name: hello-runtime
   flow:
     document:
       dsl: '1.0.0'
-      namespace: payments
-      name: payment-processor
+      namespace: examples
+      name: hello-world
       version: '1.0.0'
     do:
-      - validatePayment:
-          call: http
-          with:
-            method: post
-            endpoint: https://validation.example.com/api
+      - greet:
+          set:
+            message: '${ "Hello, " + .name + "!" }'

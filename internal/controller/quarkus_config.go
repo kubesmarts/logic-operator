@@ -188,14 +188,20 @@ func WithFlowSourcePath() ContainerOption {
 	}
 }
 
-// WithFlowVolumeMounts returns a ContainerOption that adds a read-only VolumeMount per ConfigMap.
+// WithFlowVolumeMounts returns a ContainerOption that adds a read-only VolumeMount per ConfigMap data key.
+// Uses subPath to mount each key as a direct file, avoiding ConfigMap symlink structures
+// that cause duplicate detection in the runner's Files.walk() scanner.
+// TODO(#22): revert to directory mounts once quarkiverse/quarkus-flow#835 is fixed.
 func WithFlowVolumeMounts(configMaps []corev1.ConfigMap) ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
 		for i := range configMaps {
-			c.WithVolumeMounts(corev1ac.VolumeMount().
-				WithName(configMaps[i].Name).
-				WithMountPath(WorkflowMountPath + "/" + configMaps[i].Name).
-				WithReadOnly(true))
+			for key := range configMaps[i].Data {
+				c.WithVolumeMounts(corev1ac.VolumeMount().
+					WithName(configMaps[i].Name).
+					WithMountPath(WorkflowMountPath + "/" + key).
+					WithSubPath(key).
+					WithReadOnly(true))
+			}
 		}
 	}
 }
