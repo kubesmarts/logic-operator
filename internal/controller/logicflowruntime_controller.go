@@ -133,6 +133,7 @@ func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *lo
 	}
 	if rt.Spec.Persistence != nil {
 		spec.Template.Spec.WithServiceAccountName(rt.Name)
+		spec.WithStrategy(durableDeploymentStrategy(effectiveReplicas(&rt.Spec.ApplicationSpec)))
 	}
 	deployment := appsv1ac.Deployment(rt.Name, rt.Namespace).
 		WithLabels(childLabels).

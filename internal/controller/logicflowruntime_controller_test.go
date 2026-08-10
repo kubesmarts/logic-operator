@@ -1001,6 +1001,68 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 		})
 	})
 
+	Context("Deployment strategy with persistence", func() {
+		const name = "test-strategy"
+		var nn types.NamespacedName
+		var r *LogicFlowRuntimeReconciler
+
+		BeforeEach(func() {
+			r = newReconciler()
+			nn = createRuntime(ctx, name, persistenceSpec())
+		})
+		AfterEach(func() {
+			deleteLeases(ctx, name)
+			deleteRuntime(ctx, nn)
+		})
+
+		It("should use Recreate strategy for single replica", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+			Expect(dep.Spec.Strategy.Type).To(Equal(appsv1.RecreateDeploymentStrategyType))
+		})
+
+		It("should use RollingUpdate with maxUnavailable=1 for multiple replicas", func() {
+			var rt logicv1.LogicFlowRuntime
+			Expect(k8sClient.Get(ctx, nn, &rt)).To(Succeed())
+			replicas := int32(3)
+			rt.Spec.Replicas = &replicas
+			Expect(k8sClient.Update(ctx, &rt)).To(Succeed())
+
+			reconcileAndFetch(ctx, r, nn)
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+			Expect(dep.Spec.Strategy.Type).To(Equal(appsv1.RollingUpdateDeploymentStrategyType))
+			Expect(dep.Spec.Strategy.RollingUpdate).NotTo(BeNil())
+			Expect(dep.Spec.Strategy.RollingUpdate.MaxUnavailable.IntValue()).To(Equal(1))
+			Expect(dep.Spec.Strategy.RollingUpdate.MaxSurge.IntValue()).To(Equal(1))
+		})
+	})
+
+	Context("Deployment strategy without persistence", func() {
+		const name = "test-no-strategy"
+		var nn types.NamespacedName
+		var r *LogicFlowRuntimeReconciler
+
+		BeforeEach(func() {
+			r = newReconciler()
+			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{})
+		})
+		AfterEach(func() {
+			deleteRuntime(ctx, nn)
+		})
+
+		It("should not override the default strategy", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+			Expect(dep.Spec.Strategy.Type).To(Equal(appsv1.RollingUpdateDeploymentStrategyType))
+		})
+	})
+
 	Context("Pod RBAC with persistence", func() {
 		const name = "test-rbac"
 		var nn types.NamespacedName
