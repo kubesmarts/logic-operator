@@ -10,12 +10,15 @@ import (
 
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -121,6 +124,36 @@ func findVolumeMount(c corev1.Container, name string) *corev1.VolumeMount {
 		}
 	}
 	return nil
+}
+
+func persistenceSpec() logicv1.LogicFlowRuntimeSpec {
+	return logicv1.LogicFlowRuntimeSpec{
+		RuntimeSpec: logicv1.RuntimeSpec{
+			Persistence: &logicv1.PersistenceOptionsSpec{
+				PostgreSQL: &logicv1.PersistencePostgreSQL{
+					SecretRef: logicv1.PostgreSQLSecretOptions{Name: "pg-creds"},
+					JdbcUrl:   "jdbc:postgresql://pg.default.svc:5432/logicflow",
+				},
+			},
+		},
+	}
+}
+
+func listLeases(ctx context.Context, poolName string) []coordinationv1.Lease {
+	var list coordinationv1.LeaseList
+	err := k8sClient.List(ctx, &list,
+		client.InNamespace("default"),
+		client.MatchingLabels{LabelDurablePool: poolName},
+	)
+	Expect(err).NotTo(HaveOccurred())
+	return list.Items
+}
+
+func deleteLeases(ctx context.Context, poolName string) {
+	leases := listLeases(ctx, poolName)
+	for i := range leases {
+		_ = k8sClient.Delete(ctx, &leases[i])
+	}
 }
 
 var _ = Describe("LogicFlowRuntime Controller", func() {
@@ -738,6 +771,316 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 			Expect(rt2.Status.Definitions[0].Name).To(Equal(rt1.Status.Definitions[0].Name))
 			Expect(rt2.Status.ConfigMapRefs).To(HaveLen(1))
 			Expect(rt2.Status.ConfigMapRefs[0].Name).To(Equal(rt1.Status.ConfigMapRefs[0].Name))
+		})
+	})
+
+	Context("Lease creation with persistence", func() {
+		const name = "test-lease"
+		var nn types.NamespacedName
+		var r *LogicFlowRuntimeReconciler
+
+		BeforeEach(func() {
+			r = newReconciler()
+			nn = createRuntime(ctx, name, persistenceSpec())
+		})
+		AfterEach(func() {
+			deleteLeases(ctx, name)
+
+			deleteRuntime(ctx, nn)
+		})
+
+		It("should create one lease for default replicas", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			leases := listLeases(ctx, name)
+			Expect(leases).To(HaveLen(1))
+			Expect(leases[0].Name).To(Equal(fmt.Sprintf(LeaseMemberNameFmt, name, 0)))
+			Expect(*leases[0].Spec.LeaseDurationSeconds).To(Equal(LeaseDuration))
+			Expect(leases[0].Spec.HolderIdentity).To(BeNil())
+		})
+
+		It("should set correct labels on leases", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			leases := listLeases(ctx, name)
+			Expect(leases[0].Labels).To(HaveKeyWithValue("app.kubernetes.io/managed-by", DurableManagedByValue))
+			Expect(leases[0].Labels).To(HaveKeyWithValue("app.kubernetes.io/component", DurableComponentValue))
+			Expect(leases[0].Labels).To(HaveKeyWithValue(LabelDurablePool, name))
+			Expect(leases[0].Labels).To(HaveKeyWithValue(LabelDurableIsLeader, "false"))
+		})
+
+		It("should set Deployment owner reference on leases", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+
+			leases := listLeases(ctx, name)
+			Expect(leases[0].OwnerReferences).To(HaveLen(1))
+			Expect(leases[0].OwnerReferences[0].Kind).To(Equal("Deployment"))
+			Expect(leases[0].OwnerReferences[0].Name).To(Equal(name))
+			Expect(leases[0].OwnerReferences[0].UID).To(Equal(dep.UID))
+			Expect(*leases[0].OwnerReferences[0].Controller).To(BeFalse())
+		})
+
+		It("should set LeaseReady condition and LeaseReplicas", func() {
+			rt := reconcileAndFetch(ctx, r, nn)
+
+			Expect(rt.Status.LeaseReplicas).To(Equal(int32(1)))
+
+			leaseCond := meta.FindStatusCondition(rt.Status.Conditions, logicv1.ConditionLeaseReady)
+			Expect(leaseCond).NotTo(BeNil())
+			Expect(leaseCond.Status).To(Equal(metav1.ConditionTrue))
+		})
+	})
+
+	Context("No leases without persistence", func() {
+		const name = "test-no-lease"
+		var nn types.NamespacedName
+		var r *LogicFlowRuntimeReconciler
+
+		BeforeEach(func() {
+			r = newReconciler()
+			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{})
+		})
+		AfterEach(func() {
+			deleteRuntime(ctx, nn)
+		})
+
+		It("should not create any leases", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			leases := listLeases(ctx, name)
+			Expect(leases).To(BeEmpty())
+		})
+
+		It("should not set LeaseReady condition", func() {
+			rt := reconcileAndFetch(ctx, r, nn)
+
+			leaseCond := meta.FindStatusCondition(rt.Status.Conditions, logicv1.ConditionLeaseReady)
+			Expect(leaseCond).To(BeNil())
+		})
+	})
+
+	Context("Lease scaling", func() {
+		const name = "test-lease-scale"
+		var nn types.NamespacedName
+		var r *LogicFlowRuntimeReconciler
+
+		BeforeEach(func() {
+			r = newReconciler()
+			nn = createRuntime(ctx, name, persistenceSpec())
+		})
+		AfterEach(func() {
+			deleteLeases(ctx, name)
+
+			deleteRuntime(ctx, nn)
+		})
+
+		It("should create additional leases on scale up", func() {
+			reconcileAndFetch(ctx, r, nn)
+			Expect(listLeases(ctx, name)).To(HaveLen(1))
+
+			var rt logicv1.LogicFlowRuntime
+			Expect(k8sClient.Get(ctx, nn, &rt)).To(Succeed())
+			replicas := int32(3)
+			rt.Spec.Replicas = &replicas
+			Expect(k8sClient.Update(ctx, &rt)).To(Succeed())
+
+			rt2 := reconcileAndFetch(ctx, r, nn)
+			leases := listLeases(ctx, name)
+			Expect(leases).To(HaveLen(3))
+			Expect(rt2.Status.LeaseReplicas).To(Equal(int32(3)))
+		})
+
+		It("should delete excess leases on scale down", func() {
+			var rt logicv1.LogicFlowRuntime
+			Expect(k8sClient.Get(ctx, nn, &rt)).To(Succeed())
+			replicas := int32(3)
+			rt.Spec.Replicas = &replicas
+			Expect(k8sClient.Update(ctx, &rt)).To(Succeed())
+			reconcileAndFetch(ctx, r, nn)
+			Expect(listLeases(ctx, name)).To(HaveLen(3))
+
+			Expect(k8sClient.Get(ctx, nn, &rt)).To(Succeed())
+			replicas = int32(1)
+			rt.Spec.Replicas = &replicas
+			Expect(k8sClient.Update(ctx, &rt)).To(Succeed())
+
+			rt2 := reconcileAndFetch(ctx, r, nn)
+			leases := listLeases(ctx, name)
+			Expect(leases).To(HaveLen(1))
+			Expect(leases[0].Name).To(Equal(fmt.Sprintf(LeaseMemberNameFmt, name, 0)))
+			Expect(rt2.Status.LeaseReplicas).To(Equal(int32(1)))
+		})
+	})
+
+	Context("Lease idempotency", func() {
+		const name = "test-lease-idem"
+		var nn types.NamespacedName
+		var r *LogicFlowRuntimeReconciler
+
+		BeforeEach(func() {
+			r = newReconciler()
+			nn = createRuntime(ctx, name, persistenceSpec())
+		})
+		AfterEach(func() {
+			deleteLeases(ctx, name)
+
+			deleteRuntime(ctx, nn)
+		})
+
+		It("should produce the same leases on repeated reconciliation", func() {
+			reconcileAndFetch(ctx, r, nn)
+			leases1 := listLeases(ctx, name)
+			Expect(leases1).To(HaveLen(1))
+
+			reconcileAndFetch(ctx, r, nn)
+			leases2 := listLeases(ctx, name)
+			Expect(leases2).To(HaveLen(1))
+			Expect(leases2[0].Name).To(Equal(leases1[0].Name))
+			Expect(leases2[0].UID).To(Equal(leases1[0].UID))
+		})
+	})
+
+	Context("Durable env vars on Deployment", func() {
+		const name = "test-durable-env"
+		var nn types.NamespacedName
+		var r *LogicFlowRuntimeReconciler
+
+		BeforeEach(func() {
+			r = newReconciler()
+			nn = createRuntime(ctx, name, persistenceSpec())
+		})
+		AfterEach(func() {
+			deleteLeases(ctx, name)
+
+			deleteRuntime(ctx, nn)
+		})
+
+		It("should set durable env vars when persistence is configured", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+			c := mainContainer(&dep)
+
+			leader := findEnvVar(c.Env, "QUARKUS_FLOW_DURABLE_KUBE_LEASE_LEADER_ENABLED")
+			Expect(leader).NotTo(BeNil())
+			Expect(leader.Value).To(Equal("false"))
+
+			pool := findEnvVar(c.Env, "QUARKUS_FLOW_DURABLE_KUBE_POOL_NAME")
+			Expect(pool).NotTo(BeNil())
+			Expect(pool.Value).To(Equal(name))
+
+			podName := findEnvVar(c.Env, "POD_NAME")
+			Expect(podName).NotTo(BeNil())
+			Expect(podName.ValueFrom.FieldRef.FieldPath).To(Equal("metadata.name"))
+
+			podNs := findEnvVar(c.Env, "POD_NAMESPACE")
+			Expect(podNs).NotTo(BeNil())
+			Expect(podNs.ValueFrom.FieldRef.FieldPath).To(Equal("metadata.namespace"))
+		})
+
+		It("should not set durable env vars without persistence", func() {
+			deleteLeases(ctx, name)
+
+			deleteRuntime(ctx, nn)
+
+			nn = createRuntime(ctx, "test-no-durable-env", logicv1.LogicFlowRuntimeSpec{})
+			reconcileAndFetch(ctx, r, nn)
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-no-durable-env", Namespace: "default"}, &dep)).To(Succeed())
+			c := mainContainer(&dep)
+
+			Expect(findEnvVar(c.Env, "QUARKUS_FLOW_DURABLE_KUBE_LEASE_LEADER_ENABLED")).To(BeNil())
+			Expect(findEnvVar(c.Env, "QUARKUS_FLOW_DURABLE_KUBE_POOL_NAME")).To(BeNil())
+
+			deleteRuntime(ctx, types.NamespacedName{Name: "test-no-durable-env", Namespace: "default"})
+		})
+	})
+
+	Context("Pod RBAC with persistence", func() {
+		const name = "test-rbac"
+		var nn types.NamespacedName
+		var r *LogicFlowRuntimeReconciler
+
+		BeforeEach(func() {
+			r = newReconciler()
+			nn = createRuntime(ctx, name, persistenceSpec())
+		})
+		AfterEach(func() {
+			deleteLeases(ctx, name)
+
+			deleteRuntime(ctx, nn)
+		})
+
+		It("should create a ServiceAccount", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			var sa corev1.ServiceAccount
+			Expect(k8sClient.Get(ctx, nn, &sa)).To(Succeed())
+			Expect(sa.OwnerReferences).To(HaveLen(1))
+			Expect(sa.OwnerReferences[0].Kind).To(Equal(logicv1.LogicFlowRuntimeKind))
+		})
+
+		It("should create a RoleBinding", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			var rb rbacv1.RoleBinding
+			rbNN := types.NamespacedName{Name: name + "-durable", Namespace: "default"}
+			Expect(k8sClient.Get(ctx, rbNN, &rb)).To(Succeed())
+			Expect(rb.RoleRef.Name).To(Equal(ClusterRoleDurable))
+			Expect(rb.RoleRef.Kind).To(Equal("ClusterRole"))
+			Expect(rb.Subjects).To(HaveLen(1))
+			Expect(rb.Subjects[0].Name).To(Equal(name))
+			Expect(rb.Subjects[0].Kind).To(Equal("ServiceAccount"))
+			Expect(rb.OwnerReferences).To(HaveLen(1))
+			Expect(rb.OwnerReferences[0].Kind).To(Equal(logicv1.LogicFlowRuntimeKind))
+		})
+
+		It("should set serviceAccountName on the Deployment", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+			Expect(dep.Spec.Template.Spec.ServiceAccountName).To(Equal(name))
+		})
+	})
+
+	Context("No RBAC without persistence", func() {
+		const name = "test-no-rbac"
+		var nn types.NamespacedName
+		var r *LogicFlowRuntimeReconciler
+
+		BeforeEach(func() {
+			r = newReconciler()
+			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{})
+		})
+		AfterEach(func() {
+			deleteRuntime(ctx, nn)
+		})
+
+		It("should not create ServiceAccount or RoleBinding", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			var sa corev1.ServiceAccount
+			err := k8sClient.Get(ctx, nn, &sa)
+			Expect(errors.IsNotFound(err)).To(BeTrue())
+
+			var rb rbacv1.RoleBinding
+			rbNN := types.NamespacedName{Name: name + "-durable", Namespace: "default"}
+			err = k8sClient.Get(ctx, rbNN, &rb)
+			Expect(errors.IsNotFound(err)).To(BeTrue())
+		})
+
+		It("should not set serviceAccountName on the Deployment", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+			Expect(dep.Spec.Template.Spec.ServiceAccountName).To(BeEmpty())
 		})
 	})
 })

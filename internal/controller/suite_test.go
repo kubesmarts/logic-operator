@@ -25,6 +25,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	rbacv1 "k8s.io/api/rbac/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -83,6 +85,18 @@ var _ = BeforeSuite(func() {
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
+
+	// The durable ClusterRole is a static manifest deployed with the operator.
+	// In envtest we create it once in the suite to mirror the production setup.
+	durableCR := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{Name: ClusterRoleDurable},
+		Rules: []rbacv1.PolicyRule{{
+			APIGroups: []string{"coordination.k8s.io"},
+			Resources: []string{"leases"},
+			Verbs:     []string{"get", "list", "watch", "update"},
+		}},
+	}
+	Expect(k8sClient.Create(context.TODO(), durableCR)).To(Succeed())
 })
 
 var _ = AfterSuite(func() {

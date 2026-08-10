@@ -200,6 +200,33 @@ func WithFlowVolumeMounts(configMaps []corev1.ConfigMap) ContainerOption {
 	}
 }
 
+// WithDurableEnvVars returns a ContainerOption that sets durable lease env vars.
+// Filters user-provided duplicates for immutable env vars before adding operator values.
+func WithDurableEnvVars(rt *logicv1.LogicFlowRuntime) ContainerOption {
+	return func(c *corev1ac.ContainerApplyConfiguration) {
+		immutable := map[string]bool{
+			"QUARKUS_FLOW_DURABLE_KUBE_LEASE_LEADER_ENABLED": true,
+			"QUARKUS_FLOW_DURABLE_KUBE_POOL_NAME":            true,
+			"POD_NAME":                                       true,
+			"POD_NAMESPACE":                                  true,
+		}
+		filtered := make([]corev1ac.EnvVarApplyConfiguration, 0, len(c.Env))
+		for _, e := range c.Env {
+			if e.Name != nil && immutable[*e.Name] {
+				continue
+			}
+			filtered = append(filtered, e)
+		}
+		c.Env = filtered
+		c.WithEnv(
+			envLiteral("QUARKUS_FLOW_DURABLE_KUBE_LEASE_LEADER_ENABLED", "false"),
+			envLiteral("QUARKUS_FLOW_DURABLE_KUBE_POOL_NAME", rt.Name),
+			envFieldRef("POD_NAME", "metadata.name"),
+			envFieldRef("POD_NAMESPACE", "metadata.namespace"),
+		)
+	}
+}
+
 func securityEnvVars(sec logicv1.RuntimeSecuritySpec) []*corev1ac.EnvVarApplyConfiguration {
 	switch sec.Type {
 	case logicv1.RuntimeSecurityAPIKey:
@@ -293,6 +320,14 @@ func buildJdbcUrl(ref *logicv1.PostgreSQLServiceOptions, fallbackNamespace strin
 
 func envLiteral(name, value string) *corev1ac.EnvVarApplyConfiguration {
 	return corev1ac.EnvVar().WithName(name).WithValue(value)
+}
+
+func envFieldRef(name, fieldPath string) *corev1ac.EnvVarApplyConfiguration {
+	return corev1ac.EnvVar().
+		WithName(name).
+		WithValueFrom(corev1ac.EnvVarSource().
+			WithFieldRef(corev1ac.ObjectFieldSelector().
+				WithFieldPath(fieldPath)))
 }
 
 func envFromSecret(name, secretName, key string) *corev1ac.EnvVarApplyConfiguration {

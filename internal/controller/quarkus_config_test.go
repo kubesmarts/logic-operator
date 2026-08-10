@@ -7,6 +7,7 @@ import (
 	"github.com/onsi/gomega"
 
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1ac "k8s.io/client-go/applyconfigurations/core/v1"
@@ -510,4 +511,97 @@ func TestFlowVolumes_EmptyConfigMapsReturnsEmpty(t *testing.T) {
 	vols := FlowVolumes(nil)
 
 	g.Expect(vols).To(gomega.BeEmpty())
+}
+
+func TestEffectiveReplicas_Default(t *testing.T) {
+	g := gomega.NewWithT(t)
+	app := &logicv1.ApplicationSpec{}
+	g.Expect(effectiveReplicas(app)).To(gomega.Equal(int32(1)))
+}
+
+func TestEffectiveReplicas_ExplicitReplicas(t *testing.T) {
+	g := gomega.NewWithT(t)
+	app := &logicv1.ApplicationSpec{Replicas: int32Ptr(3)}
+	g.Expect(effectiveReplicas(app)).To(gomega.Equal(int32(3)))
+}
+
+func TestEffectiveReplicas_PodTemplateOverrides(t *testing.T) {
+	g := gomega.NewWithT(t)
+	app := &logicv1.ApplicationSpec{
+		Replicas:    int32Ptr(3),
+		PodTemplate: logicv1.PodTemplateSpec{Replicas: int32Ptr(5)},
+	}
+	g.Expect(effectiveReplicas(app)).To(gomega.Equal(int32(5)))
+}
+
+func TestWithDurableEnvVars_SetsAllEnvVars(t *testing.T) {
+	g := gomega.NewWithT(t)
+	rt := &logicv1.LogicFlowRuntime{}
+	rt.Name = "my-runtime"
+	c := corev1ac.Container().WithName("test")
+
+	WithDurableEnvVars(rt)(c)
+
+	g.Expect(c.Env).To(gomega.HaveLen(4))
+	g.Expect(*c.Env[0].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_LEASE_LEADER_ENABLED"))
+	g.Expect(*c.Env[0].Value).To(gomega.Equal("false"))
+	g.Expect(*c.Env[1].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_POOL_NAME"))
+	g.Expect(*c.Env[1].Value).To(gomega.Equal("my-runtime"))
+	g.Expect(*c.Env[2].Name).To(gomega.Equal("POD_NAME"))
+	g.Expect(*c.Env[2].ValueFrom.FieldRef.FieldPath).To(gomega.Equal("metadata.name"))
+	g.Expect(*c.Env[3].Name).To(gomega.Equal("POD_NAMESPACE"))
+	g.Expect(*c.Env[3].ValueFrom.FieldRef.FieldPath).To(gomega.Equal("metadata.namespace"))
+}
+
+func TestWithDurableEnvVars_FiltersUserDuplicates(t *testing.T) {
+	g := gomega.NewWithT(t)
+	rt := &logicv1.LogicFlowRuntime{}
+	rt.Name = "my-runtime"
+	c := corev1ac.Container().WithName("test").
+		WithEnv(
+			corev1ac.EnvVar().WithName("OTHER_VAR").WithValue("keep"),
+			corev1ac.EnvVar().WithName("QUARKUS_FLOW_DURABLE_KUBE_POOL_NAME").WithValue("user-pool"),
+			corev1ac.EnvVar().WithName("POD_NAME").WithValue("user-pod"),
+		)
+
+	WithDurableEnvVars(rt)(c)
+
+	g.Expect(c.Env).To(gomega.HaveLen(5))
+	g.Expect(*c.Env[0].Name).To(gomega.Equal("OTHER_VAR"))
+	g.Expect(*c.Env[0].Value).To(gomega.Equal("keep"))
+	g.Expect(*c.Env[1].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_LEASE_LEADER_ENABLED"))
+	g.Expect(*c.Env[2].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_POOL_NAME"))
+	g.Expect(*c.Env[2].Value).To(gomega.Equal("my-runtime"))
+	g.Expect(*c.Env[3].Name).To(gomega.Equal("POD_NAME"))
+	g.Expect(*c.Env[4].Name).To(gomega.Equal("POD_NAMESPACE"))
+}
+
+func TestNewMemberLease_Fields(t *testing.T) {
+	g := gomega.NewWithT(t)
+	dep := &appsv1.Deployment{}
+	dep.Name = "my-runtime"
+	dep.UID = "dep-uid-123"
+
+	lease := newMemberLease("flow-pool-member-my-runtime-00", "default", "my-runtime", dep)
+
+	g.Expect(lease.Name).To(gomega.Equal("flow-pool-member-my-runtime-00"))
+	g.Expect(lease.Namespace).To(gomega.Equal("default"))
+	g.Expect(lease.Labels).To(gomega.HaveKeyWithValue("app.kubernetes.io/managed-by", DurableManagedByValue))
+	g.Expect(lease.Labels).To(gomega.HaveKeyWithValue("app.kubernetes.io/component", DurableComponentValue))
+	g.Expect(lease.Labels).To(gomega.HaveKeyWithValue(LabelDurablePool, "my-runtime"))
+	g.Expect(lease.Labels).To(gomega.HaveKeyWithValue(LabelDurableIsLeader, "false"))
+	g.Expect(*lease.Spec.LeaseDurationSeconds).To(gomega.Equal(LeaseDuration))
+	g.Expect(lease.Spec.HolderIdentity).To(gomega.BeNil())
+	g.Expect(lease.OwnerReferences).To(gomega.HaveLen(1))
+	g.Expect(lease.OwnerReferences[0].Kind).To(gomega.Equal("Deployment"))
+	g.Expect(lease.OwnerReferences[0].Name).To(gomega.Equal("my-runtime"))
+	g.Expect(*lease.OwnerReferences[0].Controller).To(gomega.BeFalse())
+}
+
+func TestMemberLeaseLabels(t *testing.T) {
+	g := gomega.NewWithT(t)
+	labels := memberLeaseLabels("my-pool")
+	g.Expect(labels).To(gomega.HaveLen(4))
+	g.Expect(labels[LabelDurablePool]).To(gomega.Equal("my-pool"))
+	g.Expect(labels[LabelDurableIsLeader]).To(gomega.Equal("false"))
 }

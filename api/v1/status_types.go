@@ -17,11 +17,13 @@ const (
 const (
 	ConditionDeploymentAvailable = "DeploymentAvailable"
 	ConditionServiceReady        = "ServiceReady"
+	ConditionLeaseReady          = "LeaseReady"
 )
 
 const (
 	ReasonDeploymentNotFound       = "DeploymentNotFound"
 	ReasonServiceNotFound          = "ServiceNotFound"
+	ReasonLeaseNotFound            = "LeaseNotFound"
 	ReasonReady                    = "Ready"
 	ReasonDeploymentProgressing    = "DeploymentProgressing"
 	ReasonProgressDeadlineExceeded = "ProgressDeadlineExceeded"
