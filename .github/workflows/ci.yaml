@@ -11,7 +11,7 @@ on:
 
 jobs:
   validate:
-    name: Validate Code
+    name: Validate & Test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -32,6 +32,15 @@ jobs:
             exit 1
           fi
 
+      - name: Check generated code is up to date
+        run: |
+          make manifests generate
+          if ! git diff --quiet; then
+            echo "Generated files are out of date. Please run 'make manifests generate' and commit the changes."
+            git diff --stat
+            exit 1
+          fi
+
       - name: Run linter
         run: make lint
 
@@ -39,6 +48,52 @@ jobs:
         run: make build
 
       - name: Run unit tests
+        run: make test
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: cover.out
+          retention-days: 14
+
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Create Kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: logic-operator-test-e2e
+
+      - name: Build operator image
+        run: make docker-build IMG=example.com/logic-operator:v0.0.1
+
+      - name: Load image into Kind
+        run: kind load docker-image example.com/logic-operator:v0.0.1 --name logic-operator-test-e2e
+
+      - name: Run e2e tests
         run: |
-          make manifests generate fmt vet setup-envtest
-          KUBEBUILDER_ASSETS="$(bin/setup-envtest use 1.35.0 --bin-dir $(pwd)/bin -p path)" go test $(go list ./... | grep -v /e2e)
+          KIND_CLUSTER=logic-operator-test-e2e go test ./test/e2e/ -v -ginkgo.v -timeout 15m
+
+      - name: Collect failure logs
+        if: failure()
+        run: |
+          echo "=== Pod status ==="
+          kubectl get pods -A
+          echo "=== Events ==="
+          kubectl get events -n logic-operator-system --sort-by=.lastTimestamp || true
+          echo "=== Controller logs ==="
+          kubectl logs -l control-plane=controller-manager -n logic-operator-system --tail=100 || true
+          echo "=== Cert-manager logs ==="
+          kubectl logs -l app=cert-manager -n cert-manager --tail=50 || true
