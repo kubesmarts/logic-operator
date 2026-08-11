@@ -30,6 +30,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -228,6 +229,18 @@ func main() {
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "LogicFlowRuntime")
+		os.Exit(1)
+	}
+	if err := builder.WebhookManagedBy(mgr, &logicv1.LogicFlowDefinition{}).
+		WithValidator(&logicv1.LogicFlowDefinitionValidator{}).
+		Complete(); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "LogicFlowDefinition")
+		os.Exit(1)
+	}
+	if err := builder.WebhookManagedBy(mgr, &logicv1.LogicFlowRuntime{}).
+		WithValidator(&logicv1.LogicFlowRuntimeValidator{}).
+		Complete(); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "LogicFlowRuntime")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

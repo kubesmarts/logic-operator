@@ -1,0 +1,46 @@
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: validating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-logic-kubesmarts-org-v1-logicflowdefinition
+  failurePolicy: Fail
+  name: vlogicflowdefinition-v1.kb.io
+  rules:
+  - apiGroups:
+    - logic.kubesmarts.org
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - logicflowdefinitions
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-logic-kubesmarts-org-v1-logicflowruntime
+  failurePolicy: Fail
+  name: vlogicflowruntime-v1.kb.io
+  rules:
+  - apiGroups:
+    - logic.kubesmarts.org
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - logicflowruntimes
+  sideEffects: None

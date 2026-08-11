@@ -1,0 +1,8 @@
+# This file is for teaching kustomize how to do var substitution
+nameReference:
+- kind: Issuer
+  group: cert-manager.io
+  fieldSpecs:
+  - kind: Certificate
+    group: cert-manager.io
+    path: spec/issuerRef/name
