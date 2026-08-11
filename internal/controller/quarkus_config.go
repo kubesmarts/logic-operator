@@ -64,22 +64,9 @@ func DefaultRunnerImage(persistence *logicv1.PersistenceOptionsSpec) ContainerOp
 	}
 }
 
-// ValidateRunnerImage checks that a known runner image variant is consistent with the persistence config.
-// Custom images (different registry/repo) skip validation.
-// TODO(webhook): wire into a ValidatingAdmissionWebhook for LogicFlowRuntime to reject invalid CRs at admission time.
+// ValidateRunnerImage delegates to the api/v1 validation for backward compatibility.
 func ValidateRunnerImage(image string, persistence *logicv1.PersistenceOptionsSpec) error {
-	if !isKnownRunnerImage(image) {
-		return nil
-	}
-
-	if strings.HasSuffix(image, "-"+ImageVariantMinimal) && hasPersistence(persistence) {
-		return fmt.Errorf("image %q does not support persistence; use the %s variant or remove persistence config", image, ImageVariantStandard)
-	}
-	if strings.HasSuffix(image, "-"+ImageVariantStandard) && !hasPersistence(persistence) {
-		return fmt.Errorf("image %q requires persistence configuration; set spec.persistence or use the %s variant", image, ImageVariantMinimal)
-	}
-
-	return nil
+	return logicv1.ValidateRunnerImage(image, persistence)
 }
 
 // DefaultProbes returns a ContainerOption that sets liveness and readiness probes

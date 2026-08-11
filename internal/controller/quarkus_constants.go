@@ -1,12 +1,16 @@
 package controller
 
+import (
+	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
+)
+
 const (
-	QuarkusFlowRegistry = "quay.io/quarkiverse"
-	QuarkusFlowRunner   = "quarkus-flow-runner"
+	QuarkusFlowRegistry = logicv1.FlowRunnerRegistry
+	QuarkusFlowRunner   = logicv1.FlowRunnerImage
 	QuarkusFlowVersion  = "0.15.1"
 
-	ImageVariantMinimal  = "minimal"
-	ImageVariantStandard = "standard"
+	ImageVariantMinimal  = logicv1.ImageVariantMinimal
+	ImageVariantStandard = logicv1.ImageVariantStandard
 
 	QuarkusPort = int32(8080)
 
