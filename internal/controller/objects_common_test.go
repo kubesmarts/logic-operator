@@ -17,8 +17,8 @@ func TestToDeploymentSpec_MinimalConfig(t *testing.T) {
 	app := &logicv1.ApplicationSpec{
 		Image: "quay.io/kubesmarts/quarkus-flow:2.0.0",
 	}
-	podLabels := map[string]string{"app.kubernetes.io/name": "my-runtime"}
-	selLabels := SelectorLabels("my-runtime")
+	podLabels := map[string]string{testLabelKeyName: testRuntimeName}
+	selLabels := SelectorLabels(testRuntimeName)
 
 	spec := ToDeploymentSpec(ContainerNameRunner, app, podLabels, selLabels)
 
@@ -39,22 +39,22 @@ func TestToDeploymentSpec_ThreeTierImagePrecedence(t *testing.T) {
 	}{
 		{
 			name:     "top-level only",
-			app:      logicv1.ApplicationSpec{Image: "top:1.0"},
-			expected: "top:1.0",
+			app:      logicv1.ApplicationSpec{Image: testImageTop},
+			expected: testImageTop,
 		},
 		{
 			name: "container overrides top-level",
 			app: logicv1.ApplicationSpec{
-				Image:     "top:1.0",
-				Container: logicv1.ContainerSpec{Image: "container:2.0"},
+				Image:     testImageTop,
+				Container: logicv1.ContainerSpec{Image: testImageContainer},
 			},
-			expected: "container:2.0",
+			expected: testImageContainer,
 		},
 		{
 			name: "podTemplate.container overrides all",
 			app: logicv1.ApplicationSpec{
-				Image:     "top:1.0",
-				Container: logicv1.ContainerSpec{Image: "container:2.0"},
+				Image:     testImageTop,
+				Container: logicv1.ContainerSpec{Image: testImageContainer},
 				PodTemplate: logicv1.PodTemplateSpec{
 					Container: logicv1.ContainerSpec{Image: "podtemplate:3.0"},
 				},
@@ -76,7 +76,7 @@ func TestToDeploymentSpec_ResourcesPrecedence(t *testing.T) {
 	g := gomega.NewWithT(t)
 	sel := SelectorLabels("test")
 	app := &logicv1.ApplicationSpec{
-		Image: "test:1.0",
+		Image: testImageBase,
 		Resources: corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("256Mi")},
 		},
@@ -99,7 +99,7 @@ func TestToDeploymentSpec_Replicas(t *testing.T) {
 
 	t.Run("top-level", func(t *testing.T) {
 		g = gomega.NewWithT(t)
-		app := &logicv1.ApplicationSpec{Image: "test:1.0", Replicas: int32Ptr(3)}
+		app := &logicv1.ApplicationSpec{Image: testImageBase, Replicas: int32Ptr(3)}
 		spec := ToDeploymentSpec(ContainerNameRunner, app, sel, sel)
 		g.Expect(*spec.Replicas).To(gomega.Equal(int32(3)))
 	})
@@ -107,7 +107,7 @@ func TestToDeploymentSpec_Replicas(t *testing.T) {
 	t.Run("podTemplate overrides top-level", func(t *testing.T) {
 		g = gomega.NewWithT(t)
 		app := &logicv1.ApplicationSpec{
-			Image:    "test:1.0",
+			Image:    testImageBase,
 			Replicas: int32Ptr(2),
 			PodTemplate: logicv1.PodTemplateSpec{
 				Replicas: int32Ptr(5),
@@ -119,7 +119,7 @@ func TestToDeploymentSpec_Replicas(t *testing.T) {
 
 	t.Run("nil when unset", func(t *testing.T) {
 		g = gomega.NewWithT(t)
-		app := &logicv1.ApplicationSpec{Image: "test:1.0"}
+		app := &logicv1.ApplicationSpec{Image: testImageBase}
 		spec := ToDeploymentSpec(ContainerNameRunner, app, sel, sel)
 		g.Expect(spec.Replicas).To(gomega.BeNil())
 	})
@@ -132,26 +132,26 @@ func TestToDeploymentSpec_PodLabels(t *testing.T) {
 
 	t.Run("operator labels propagated", func(t *testing.T) {
 		g = gomega.NewWithT(t)
-		app := &logicv1.ApplicationSpec{Image: "test:1.0"}
+		app := &logicv1.ApplicationSpec{Image: testImageBase}
 		spec := ToDeploymentSpec(ContainerNameRunner, app, podLabels, sel)
-		g.Expect(spec.Template.Labels).To(gomega.HaveKeyWithValue("app.kubernetes.io/managed-by", LabelManagedBy))
+		g.Expect(spec.Template.Labels).To(gomega.HaveKeyWithValue(testLabelKeyManagedBy, LabelManagedBy))
 		g.Expect(spec.Template.Labels).To(gomega.HaveKeyWithValue("app.kubernetes.io/part-of", LabelPartOf))
 	})
 
 	t.Run("user labels merged from podTemplate.metadata", func(t *testing.T) {
 		g = gomega.NewWithT(t)
 		app := &logicv1.ApplicationSpec{
-			Image: "test:1.0",
+			Image: testImageBase,
 			PodTemplate: logicv1.PodTemplateSpec{
 				Metadata: &logicv1.PodTemplateMetadata{
-					Labels: map[string]string{"team": "platform", "env": "prod"},
+					Labels: map[string]string{testLabelTeam: testPlatformLabel, "env": "prod"},
 				},
 			},
 		}
 		spec := ToDeploymentSpec(ContainerNameRunner, app, podLabels, sel)
-		g.Expect(spec.Template.Labels).To(gomega.HaveKeyWithValue("team", "platform"))
+		g.Expect(spec.Template.Labels).To(gomega.HaveKeyWithValue(testLabelTeam, testPlatformLabel))
 		g.Expect(spec.Template.Labels).To(gomega.HaveKeyWithValue("env", "prod"))
-		g.Expect(spec.Template.Labels).To(gomega.HaveKeyWithValue("app.kubernetes.io/managed-by", LabelManagedBy))
+		g.Expect(spec.Template.Labels).To(gomega.HaveKeyWithValue(testLabelKeyManagedBy, LabelManagedBy))
 	})
 }
 
@@ -159,7 +159,7 @@ func TestToDeploymentSpec_Annotations(t *testing.T) {
 	g := gomega.NewWithT(t)
 	sel := SelectorLabels("test")
 	app := &logicv1.ApplicationSpec{
-		Image: "test:1.0",
+		Image: testImageBase,
 		PodTemplate: logicv1.PodTemplateSpec{
 			Metadata: &logicv1.PodTemplateMetadata{
 				Annotations: map[string]string{"prometheus.io/scrape": "true"},
@@ -178,7 +178,7 @@ func TestToDeploymentSpec_Sidecars(t *testing.T) {
 	t.Run("sidecar included", func(t *testing.T) {
 		g = gomega.NewWithT(t)
 		app := &logicv1.ApplicationSpec{
-			Image: "test:1.0",
+			Image: testImageBase,
 			PodTemplate: logicv1.PodTemplateSpec{
 				PodSpec: logicv1.PodSpec{
 					Containers: []corev1.Container{
@@ -196,7 +196,7 @@ func TestToDeploymentSpec_Sidecars(t *testing.T) {
 	t.Run("duplicate main container name filtered", func(t *testing.T) {
 		g = gomega.NewWithT(t)
 		app := &logicv1.ApplicationSpec{
-			Image: "test:1.0",
+			Image: testImageBase,
 			PodTemplate: logicv1.PodTemplateSpec{
 				PodSpec: logicv1.PodSpec{
 					Containers: []corev1.Container{
@@ -208,7 +208,7 @@ func TestToDeploymentSpec_Sidecars(t *testing.T) {
 		}
 		spec := ToDeploymentSpec(ContainerNameRunner, app, sel, sel)
 		g.Expect(spec.Template.Spec.Containers).To(gomega.HaveLen(2))
-		g.Expect(*spec.Template.Spec.Containers[0].Image).To(gomega.Equal("test:1.0"))
+		g.Expect(*spec.Template.Spec.Containers[0].Image).To(gomega.Equal(testImageBase))
 		g.Expect(*spec.Template.Spec.Containers[1].Name).To(gomega.Equal("valid-sidecar"))
 	})
 }
@@ -216,7 +216,7 @@ func TestToDeploymentSpec_Sidecars(t *testing.T) {
 func TestToDeploymentSpec_ContainerOptions(t *testing.T) {
 	g := gomega.NewWithT(t)
 	sel := SelectorLabels("test")
-	app := &logicv1.ApplicationSpec{Image: "test:1.0"}
+	app := &logicv1.ApplicationSpec{Image: testImageBase}
 
 	spec := ToDeploymentSpec(ContainerNameRunner, app, sel, sel,
 		WithEnvVars(
@@ -236,7 +236,7 @@ func TestToDeploymentSpec_Probes(t *testing.T) {
 	g := gomega.NewWithT(t)
 	sel := SelectorLabels("test")
 	app := &logicv1.ApplicationSpec{
-		Image: "test:1.0",
+		Image: testImageBase,
 		Container: logicv1.ContainerSpec{
 			LivenessProbe: &corev1.Probe{
 				ProbeHandler:        corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/q/health/live"}},
@@ -259,7 +259,7 @@ func TestToDeploymentSpec_SchedulingConstraints(t *testing.T) {
 	g := gomega.NewWithT(t)
 	sel := SelectorLabels("test")
 	app := &logicv1.ApplicationSpec{
-		Image: "test:1.0",
+		Image: testImageBase,
 		PodTemplate: logicv1.PodTemplateSpec{
 			PodSpec: logicv1.PodSpec{
 				NodeSelector:       map[string]string{"disktype": "ssd"},
@@ -284,31 +284,31 @@ func TestChildLabels(t *testing.T) {
 	t.Run("propagates CR labels with operator labels", func(t *testing.T) {
 		g = gomega.NewWithT(t)
 		rt := &logicv1.LogicFlowRuntime{}
-		rt.Name = "my-runtime"
-		rt.Labels = map[string]string{"team": "platform"}
+		rt.Name = testRuntimeName
+		rt.Labels = map[string]string{testLabelTeam: testPlatformLabel}
 
 		labels := ChildLabels(rt)
-		g.Expect(labels).To(gomega.HaveKeyWithValue("app.kubernetes.io/name", "my-runtime"))
-		g.Expect(labels).To(gomega.HaveKeyWithValue("app.kubernetes.io/managed-by", LabelManagedBy))
+		g.Expect(labels).To(gomega.HaveKeyWithValue(testLabelKeyName, testRuntimeName))
+		g.Expect(labels).To(gomega.HaveKeyWithValue(testLabelKeyManagedBy, LabelManagedBy))
 		g.Expect(labels).To(gomega.HaveKeyWithValue("app.kubernetes.io/part-of", LabelPartOf))
-		g.Expect(labels).To(gomega.HaveKeyWithValue("team", "platform"))
+		g.Expect(labels).To(gomega.HaveKeyWithValue(testLabelTeam, testPlatformLabel))
 	})
 
 	t.Run("operator labels override CR labels", func(t *testing.T) {
 		g = gomega.NewWithT(t)
 		rt := &logicv1.LogicFlowRuntime{}
-		rt.Name = "my-runtime"
-		rt.Labels = map[string]string{"app.kubernetes.io/managed-by": "user-override"}
+		rt.Name = testRuntimeName
+		rt.Labels = map[string]string{testLabelKeyManagedBy: "user-override"}
 
 		labels := ChildLabels(rt)
-		g.Expect(labels).To(gomega.HaveKeyWithValue("app.kubernetes.io/managed-by", LabelManagedBy))
+		g.Expect(labels).To(gomega.HaveKeyWithValue(testLabelKeyManagedBy, LabelManagedBy))
 	})
 }
 
 func TestSelectorLabels(t *testing.T) {
 	g := gomega.NewWithT(t)
-	sel := SelectorLabels("my-runtime")
+	sel := SelectorLabels(testRuntimeName)
 	g.Expect(sel).To(gomega.HaveLen(2))
-	g.Expect(sel).To(gomega.HaveKeyWithValue("app.kubernetes.io/name", "my-runtime"))
-	g.Expect(sel).To(gomega.HaveKeyWithValue("app.kubernetes.io/managed-by", LabelManagedBy))
+	g.Expect(sel).To(gomega.HaveKeyWithValue(testLabelKeyName, testRuntimeName))
+	g.Expect(sel).To(gomega.HaveKeyWithValue(testLabelKeyManagedBy, LabelManagedBy))
 }

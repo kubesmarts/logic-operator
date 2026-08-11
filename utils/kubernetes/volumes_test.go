@@ -24,21 +24,28 @@ import (
 	v1 "k8s.io/api/core/v1"
 )
 
+const (
+	testVolume1 = "volume1"
+	testVolume2 = "volume2"
+	testCM1     = "cm1"
+	testCMB     = "cmB"
+)
+
 func TestReplaceOrAddVolume(t *testing.T) {
 	podSpec := v1.PodSpec{Volumes: []v1.Volume{
-		{Name: "volume1", VolumeSource: v1.VolumeSource{ConfigMap: &v1.ConfigMapVolumeSource{
-			LocalObjectReference: v1.LocalObjectReference{Name: "cm1"},
+		{Name: testVolume1, VolumeSource: v1.VolumeSource{ConfigMap: &v1.ConfigMapVolumeSource{
+			LocalObjectReference: v1.LocalObjectReference{Name: testCM1},
 		}}},
-		{Name: "volume2", VolumeSource: v1.VolumeSource{ConfigMap: &v1.ConfigMapVolumeSource{
+		{Name: testVolume2, VolumeSource: v1.VolumeSource{ConfigMap: &v1.ConfigMapVolumeSource{
 			LocalObjectReference: v1.LocalObjectReference{Name: "cm2"},
 		}}},
 	}}
 	volumes := []v1.Volume{
-		{Name: "volume1", VolumeSource: v1.VolumeSource{ConfigMap: &v1.ConfigMapVolumeSource{
+		{Name: testVolume1, VolumeSource: v1.VolumeSource{ConfigMap: &v1.ConfigMapVolumeSource{
 			LocalObjectReference: v1.LocalObjectReference{Name: "cmA"},
 		}}},
-		{Name: "volume2", VolumeSource: v1.VolumeSource{ConfigMap: &v1.ConfigMapVolumeSource{
-			LocalObjectReference: v1.LocalObjectReference{Name: "cmB"},
+		{Name: testVolume2, VolumeSource: v1.VolumeSource{ConfigMap: &v1.ConfigMapVolumeSource{
+			LocalObjectReference: v1.LocalObjectReference{Name: testCMB},
 		}}},
 		{Name: "volume3", VolumeSource: v1.VolumeSource{ConfigMap: &v1.ConfigMapVolumeSource{
 			LocalObjectReference: v1.LocalObjectReference{Name: "cmC"},
@@ -49,35 +56,35 @@ func TestReplaceOrAddVolume(t *testing.T) {
 
 	assert.Len(t, podSpec.Volumes, 3)
 	assert.Equal(t, "cmA", podSpec.Volumes[0].ConfigMap.Name)
-	assert.Equal(t, "cmB", podSpec.Volumes[1].ConfigMap.Name)
+	assert.Equal(t, testCMB, podSpec.Volumes[1].ConfigMap.Name)
 	assert.Equal(t, "cmC", podSpec.Volumes[2].ConfigMap.Name)
 }
 
 func TestReplaceOrAddVolume_Append(t *testing.T) {
 	podSpec := v1.PodSpec{Volumes: []v1.Volume{
-		{Name: "volume1", VolumeSource: v1.VolumeSource{ConfigMap: &v1.ConfigMapVolumeSource{
-			LocalObjectReference: v1.LocalObjectReference{Name: "cm1"},
+		{Name: testVolume1, VolumeSource: v1.VolumeSource{ConfigMap: &v1.ConfigMapVolumeSource{
+			LocalObjectReference: v1.LocalObjectReference{Name: testCM1},
 		}}},
 	}}
 	volumes := []v1.Volume{
-		{Name: "volume2", VolumeSource: v1.VolumeSource{ConfigMap: &v1.ConfigMapVolumeSource{
-			LocalObjectReference: v1.LocalObjectReference{Name: "cmB"},
+		{Name: testVolume2, VolumeSource: v1.VolumeSource{ConfigMap: &v1.ConfigMapVolumeSource{
+			LocalObjectReference: v1.LocalObjectReference{Name: testCMB},
 		}}},
 	}
 
 	AddOrReplaceVolume(&podSpec, volumes...)
 
 	assert.Len(t, podSpec.Volumes, 2)
-	assert.Equal(t, "cm1", podSpec.Volumes[0].ConfigMap.Name)
-	assert.Equal(t, "cmB", podSpec.Volumes[1].ConfigMap.Name)
+	assert.Equal(t, testCM1, podSpec.Volumes[0].ConfigMap.Name)
+	assert.Equal(t, testCMB, podSpec.Volumes[1].ConfigMap.Name)
 }
 
 func TestReplaceOrAddVolume_EmptyVolumes(t *testing.T) {
 	podSpec := v1.PodSpec{Volumes: []v1.Volume{
-		{Name: "volume1", VolumeSource: v1.VolumeSource{ConfigMap: &v1.ConfigMapVolumeSource{
-			LocalObjectReference: v1.LocalObjectReference{Name: "cm1"},
+		{Name: testVolume1, VolumeSource: v1.VolumeSource{ConfigMap: &v1.ConfigMapVolumeSource{
+			LocalObjectReference: v1.LocalObjectReference{Name: testCM1},
 		}}},
-		{Name: "volume2", VolumeSource: v1.VolumeSource{ConfigMap: &v1.ConfigMapVolumeSource{
+		{Name: testVolume2, VolumeSource: v1.VolumeSource{ConfigMap: &v1.ConfigMapVolumeSource{
 			LocalObjectReference: v1.LocalObjectReference{Name: "cm2"},
 		}}},
 	}}
@@ -86,18 +93,18 @@ func TestReplaceOrAddVolume_EmptyVolumes(t *testing.T) {
 	AddOrReplaceVolume(&podSpec, volumes...)
 
 	assert.Len(t, podSpec.Volumes, 2)
-	assert.Equal(t, "cm1", podSpec.Volumes[0].ConfigMap.Name)
+	assert.Equal(t, testCM1, podSpec.Volumes[0].ConfigMap.Name)
 	assert.Equal(t, "cm2", podSpec.Volumes[1].ConfigMap.Name)
 }
 
 func TestReplaceOrAddVolume_EmptyPodVolumes(t *testing.T) {
 	podSpec := v1.PodSpec{}
 	volumes := []v1.Volume{
-		{Name: "volume1", VolumeSource: v1.VolumeSource{ConfigMap: &v1.ConfigMapVolumeSource{
+		{Name: testVolume1, VolumeSource: v1.VolumeSource{ConfigMap: &v1.ConfigMapVolumeSource{
 			LocalObjectReference: v1.LocalObjectReference{Name: "cmA"},
 		}}},
-		{Name: "volume2", VolumeSource: v1.VolumeSource{ConfigMap: &v1.ConfigMapVolumeSource{
-			LocalObjectReference: v1.LocalObjectReference{Name: "cmB"},
+		{Name: testVolume2, VolumeSource: v1.VolumeSource{ConfigMap: &v1.ConfigMapVolumeSource{
+			LocalObjectReference: v1.LocalObjectReference{Name: testCMB},
 		}}},
 		{Name: "volume3", VolumeSource: v1.VolumeSource{ConfigMap: &v1.ConfigMapVolumeSource{
 			LocalObjectReference: v1.LocalObjectReference{Name: "cmC"},
@@ -108,7 +115,7 @@ func TestReplaceOrAddVolume_EmptyPodVolumes(t *testing.T) {
 
 	assert.Len(t, podSpec.Volumes, 3)
 	assert.Equal(t, "cmA", podSpec.Volumes[0].ConfigMap.Name)
-	assert.Equal(t, "cmB", podSpec.Volumes[1].ConfigMap.Name)
+	assert.Equal(t, testCMB, podSpec.Volumes[1].ConfigMap.Name)
 	assert.Equal(t, "cmC", podSpec.Volumes[2].ConfigMap.Name)
 }
 

@@ -9,6 +9,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+const (
+	testRuntimeName = "my-runtime"
+	testNamespace   = "default"
+	testPGSecret    = "pg-secret"
+)
+
 func validFlowRaw() runtime.RawExtension {
 	return runtime.RawExtension{
 		Raw: []byte(`{
@@ -50,7 +56,7 @@ func TestLogicFlowDefinitionValidator_ValidateCreate(t *testing.T) {
 			name: "valid flow passes",
 			obj: &LogicFlowDefinition{
 				Spec: LogicFlowDefinitionSpec{
-					RuntimeRef: corev1.LocalObjectReference{Name: "my-runtime"},
+					RuntimeRef: corev1.LocalObjectReference{Name: testRuntimeName},
 					Flow:       validFlowRaw(),
 				},
 			},
@@ -60,7 +66,7 @@ func TestLogicFlowDefinitionValidator_ValidateCreate(t *testing.T) {
 			name: "invalid flow rejected",
 			obj: &LogicFlowDefinition{
 				Spec: LogicFlowDefinitionSpec{
-					RuntimeRef: corev1.LocalObjectReference{Name: "my-runtime"},
+					RuntimeRef: corev1.LocalObjectReference{Name: testRuntimeName},
 					Flow:       invalidFlowRaw(),
 				},
 			},
@@ -70,7 +76,7 @@ func TestLogicFlowDefinitionValidator_ValidateCreate(t *testing.T) {
 			name: "empty flow rejected",
 			obj: &LogicFlowDefinition{
 				Spec: LogicFlowDefinitionSpec{
-					RuntimeRef: corev1.LocalObjectReference{Name: "my-runtime"},
+					RuntimeRef: corev1.LocalObjectReference{Name: testRuntimeName},
 					Flow:       runtime.RawExtension{},
 				},
 			},
@@ -103,9 +109,9 @@ func TestLogicFlowDefinitionValidator_ValidateUpdate(t *testing.T) {
 	ctx := context.Background()
 
 	base := &LogicFlowDefinition{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-def", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "my-def", Namespace: testNamespace},
 		Spec: LogicFlowDefinitionSpec{
-			RuntimeRef: corev1.LocalObjectReference{Name: "my-runtime"},
+			RuntimeRef: corev1.LocalObjectReference{Name: testRuntimeName},
 			Flow:       validFlowRaw(),
 		},
 	}

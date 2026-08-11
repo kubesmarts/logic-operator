@@ -194,17 +194,18 @@ func logicFlowRuntimeLifecycleTests() {
 		It("should execute the hello-world workflow via the runner API", func() {
 			By("creating a curl pod to invoke the workflow")
 			curlPodName := "curl-workflow"
-			cmd := exec.Command("kubectl", "run", curlPodName, "--restart=Never",
-				"--namespace", namespace,
-				"--image=curlimages/curl:latest",
-				"--overrides",
-				fmt.Sprintf(`{
+			svcURL := fmt.Sprintf("http://%s.%s.svc:80/q/flow/exec/examples/hello-world?wait=true",
+				testRuntimeName, namespace)
+			curlArgs := "curl -s --retry 5 --retry-delay 3 --retry-all-errors" +
+				" -X POST -H 'Content-Type: application/json'" +
+				` -d '{"name":"world"}' '` + svcURL + `'`
+			overrides := fmt.Sprintf(`{
 					"spec": {
 						"containers": [{
 							"name": "curl",
 							"image": "curlimages/curl:latest",
 							"command": ["/bin/sh", "-c"],
-							"args": ["curl -s --retry 5 --retry-delay 3 --retry-all-errors -X POST -H 'Content-Type: application/json' -d '{\"name\":\"world\"}' 'http://%s.%s.svc:80/q/flow/exec/examples/hello-world?wait=true'"],
+							"args": [%q],
 							"securityContext": {
 								"allowPrivilegeEscalation": false,
 								"capabilities": {"drop": ["ALL"]},
@@ -215,7 +216,11 @@ func logicFlowRuntimeLifecycleTests() {
 						}],
 						"restartPolicy": "Never"
 					}
-				}`, testRuntimeName, namespace))
+				}`, curlArgs)
+			cmd := exec.Command("kubectl", "run", curlPodName, "--restart=Never",
+				"--namespace", namespace,
+				"--image=curlimages/curl:latest",
+				"--overrides", overrides)
 			_, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create curl-workflow pod")
 

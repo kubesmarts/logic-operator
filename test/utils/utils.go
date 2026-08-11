@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2" // nolint:revive,staticcheck
 )
@@ -120,16 +121,47 @@ func InstallCertManager() error {
 	if _, err := Run(cmd); err != nil {
 		return err
 	}
-	// Wait for cert-manager-webhook to be ready, which can take time if cert-manager
-	// was re-installed after uninstalling on a cluster.
-	cmd = exec.Command("kubectl", "wait", "deployment.apps/cert-manager-webhook",
-		"--for", "condition=Available",
-		"--namespace", "cert-manager",
-		"--timeout", "5m",
-	)
+	// Wait for all cert-manager deployments to be available.
+	for _, deploy := range []string{"cert-manager", "cert-manager-cainjector", "cert-manager-webhook"} {
+		cmd = exec.Command("kubectl", "wait", fmt.Sprintf("deployment.apps/%s", deploy),
+			"--for", "condition=Available",
+			"--namespace", "cert-manager",
+			"--timeout", "5m",
+		)
+		if _, err := Run(cmd); err != nil {
+			return err
+		}
+	}
+	// The webhook deployment being Available does not guarantee the TLS cert is ready.
+	// Wait for the cainjector to populate the caBundle on cert-manager's own webhook.
+	return waitForCertManagerWebhookReady()
+}
 
-	_, err := Run(cmd)
-	return err
+func waitForCertManagerWebhookReady() error {
+	deadline := time.Now().Add(2 * time.Minute)
+	for time.Now().Before(deadline) {
+		cmd := exec.Command("kubectl", "get", "validatingwebhookconfigurations",
+			"cert-manager-webhook", "-o",
+			"jsonpath={.webhooks[0].clientConfig.caBundle}")
+		output, err := Run(cmd)
+		if err == nil && len(strings.TrimSpace(output)) > 0 {
+			// caBundle is populated — verify the webhook actually responds
+			cmd = exec.Command("kubectl", "apply", "--dry-run=server", "-f", "-")
+			cmd.Stdin = strings.NewReader(`apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: cert-manager-readiness-probe
+  namespace: cert-manager
+spec:
+  selfSigned: {}
+`)
+			if _, err := Run(cmd); err == nil {
+				return nil
+			}
+		}
+		time.Sleep(5 * time.Second)
+	}
+	return fmt.Errorf("timed out waiting for cert-manager webhook to become ready")
 }
 
 // IsCertManagerCRDsInstalled checks if any Cert Manager CRDs are installed

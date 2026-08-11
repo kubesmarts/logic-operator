@@ -112,7 +112,9 @@ spec:
 			Expect(string(output)).To(ContainSubstring("runtimeRef"))
 
 			// Cleanup
-			_ = exec.Command("kubectl", "delete", "logicflowdefinition", "immutable-ref-def", "-n", namespace, "--ignore-not-found").Run()
+			cmd = exec.Command("kubectl", "delete", "logicflowdefinition",
+				"immutable-ref-def", "-n", namespace, "--ignore-not-found")
+			_ = cmd.Run()
 		})
 	})
 

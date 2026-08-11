@@ -23,10 +23,6 @@ func runnerImage(variant string) string {
 	return fmt.Sprintf("%s/%s:%s-%s", QuarkusFlowRegistry, QuarkusFlowRunner, QuarkusFlowVersion, variant)
 }
 
-func isKnownRunnerImage(image string) bool {
-	return strings.HasPrefix(image, QuarkusFlowRegistry+"/"+QuarkusFlowRunner+":")
-}
-
 func hasPersistence(p *logicv1.PersistenceOptionsSpec) bool {
 	return p != nil && p.PostgreSQL != nil
 }
@@ -62,11 +58,6 @@ func DefaultRunnerImage(persistence *logicv1.PersistenceOptionsSpec) ContainerOp
 			c.WithImage(runnerImage(ImageVariantMinimal))
 		}
 	}
-}
-
-// ValidateRunnerImage delegates to the api/v1 validation for backward compatibility.
-func ValidateRunnerImage(image string, persistence *logicv1.PersistenceOptionsSpec) error {
-	return logicv1.ValidateRunnerImage(image, persistence)
 }
 
 // DefaultProbes returns a ContainerOption that sets liveness and readiness probes
