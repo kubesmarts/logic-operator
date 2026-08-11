@@ -344,17 +344,16 @@ func (r *LogicFlowRuntimeReconciler) updateStatusDeployment(ctx context.Context,
 	for _, cond := range deployment.Status.Conditions {
 		switch cond.Type {
 		case appsv1.DeploymentAvailable:
-			if cond.Status == corev1.ConditionTrue {
+			switch cond.Status {
+			case corev1.ConditionTrue:
 				logicv1.SetCondition(&rt.Status.Conditions, logicv1.ConditionDeploymentAvailable, metav1.ConditionTrue, rt.Generation, cond.Reason, cond.Message)
-			} else if cond.Status == corev1.ConditionFalse {
+			case corev1.ConditionFalse:
 				logicv1.SetCondition(&rt.Status.Conditions, logicv1.ConditionDeploymentAvailable, metav1.ConditionFalse, rt.Generation, cond.Reason, cond.Message)
 			}
-			break
 		case appsv1.DeploymentProgressing:
 			if cond.Status == corev1.ConditionFalse && cond.Reason == logicv1.ReasonProgressDeadlineExceeded {
 				logicv1.SetCondition(&rt.Status.Conditions, logicv1.ConditionDeploymentAvailable, metav1.ConditionFalse, rt.Generation, cond.Reason, cond.Message)
 			}
-			break
 		}
 	}
 

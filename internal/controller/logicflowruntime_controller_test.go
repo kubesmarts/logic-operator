@@ -47,9 +47,9 @@ func newReconciler() *LogicFlowRuntimeReconciler {
 }
 
 func createRuntime(ctx context.Context, name string, spec logicv1.LogicFlowRuntimeSpec) types.NamespacedName {
-	nn := types.NamespacedName{Name: name, Namespace: "default"}
+	nn := types.NamespacedName{Name: name, Namespace: testNamespace}
 	rt := &logicv1.LogicFlowRuntime{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace},
 		Spec:       spec,
 	}
 	Expect(k8sClient.Create(ctx, rt)).To(Succeed())
@@ -80,14 +80,14 @@ func createFlowConfigMap(ctx context.Context, name, runtimeRef, workflowName, wo
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: "default",
+			Namespace: testNamespace,
 			Labels: map[string]string{
-				"app.kubernetes.io/name":       name,
-				"app.kubernetes.io/managed-by": LabelManagedBy,
-				"app.kubernetes.io/part-of":    LabelPartOf,
-				LabelRuntimeRef:                runtimeRef,
-				LabelWorkflowName:              workflowName,
-				LabelWorkflowVersion:           workflowVersion,
+				testLabelKeyName:            name,
+				testLabelKeyManagedBy:       LabelManagedBy,
+				"app.kubernetes.io/part-of": LabelPartOf,
+				LabelRuntimeRef:             runtimeRef,
+				LabelWorkflowName:           workflowName,
+				LabelWorkflowVersion:        workflowVersion,
 			},
 		},
 		Data: map[string]string{
@@ -99,7 +99,7 @@ func createFlowConfigMap(ctx context.Context, name, runtimeRef, workflowName, wo
 
 func deleteConfigMap(ctx context.Context, name string) {
 	cm := &corev1.ConfigMap{}
-	nn := types.NamespacedName{Name: name, Namespace: "default"}
+	nn := types.NamespacedName{Name: name, Namespace: testNamespace}
 	err := k8sClient.Get(ctx, nn, cm)
 	if errors.IsNotFound(err) {
 		return
@@ -142,7 +142,7 @@ func persistenceSpec() logicv1.LogicFlowRuntimeSpec {
 func listLeases(ctx context.Context, poolName string) []coordinationv1.Lease {
 	var list coordinationv1.LeaseList
 	err := k8sClient.List(ctx, &list,
-		client.InNamespace("default"),
+		client.InNamespace(testNamespace),
 		client.MatchingLabels{LabelDurablePool: poolName},
 	)
 	Expect(err).NotTo(HaveOccurred())
@@ -189,8 +189,8 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 			Expect(c.ReadinessProbe.HTTPGet.Path).To(Equal("/q/health/ready"))
 			Expect(c.ReadinessProbe.HTTPGet.Port.IntValue()).To(Equal(int(QuarkusPort)))
 
-			Expect(dep.Labels).To(HaveKeyWithValue("app.kubernetes.io/name", name))
-			Expect(dep.Labels).To(HaveKeyWithValue("app.kubernetes.io/managed-by", LabelManagedBy))
+			Expect(dep.Labels).To(HaveKeyWithValue(testLabelKeyName, name))
+			Expect(dep.Labels).To(HaveKeyWithValue(testLabelKeyManagedBy, LabelManagedBy))
 
 			Expect(dep.Spec.Selector.MatchLabels).To(Equal(SelectorLabels(name)))
 
@@ -479,7 +479,7 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 	Context("CR not found", func() {
 		It("should return success for a missing CR", func() {
 			r := newReconciler()
-			nn := types.NamespacedName{Name: "does-not-exist", Namespace: "default"}
+			nn := types.NamespacedName{Name: "does-not-exist", Namespace: testNamespace}
 
 			result, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
@@ -804,7 +804,7 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 			reconcileAndFetch(ctx, r, nn)
 
 			leases := listLeases(ctx, name)
-			Expect(leases[0].Labels).To(HaveKeyWithValue("app.kubernetes.io/managed-by", DurableManagedByValue))
+			Expect(leases[0].Labels).To(HaveKeyWithValue(testLabelKeyManagedBy, DurableManagedByValue))
 			Expect(leases[0].Labels).To(HaveKeyWithValue("app.kubernetes.io/component", DurableComponentValue))
 			Expect(leases[0].Labels).To(HaveKeyWithValue(LabelDurablePool, name))
 			Expect(leases[0].Labels).To(HaveKeyWithValue(LabelDurableIsLeader, "false"))
@@ -992,13 +992,13 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 			reconcileAndFetch(ctx, r, nn)
 
 			var dep appsv1.Deployment
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-no-durable-env", Namespace: "default"}, &dep)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-no-durable-env", Namespace: testNamespace}, &dep)).To(Succeed())
 			c := mainContainer(&dep)
 
 			Expect(findEnvVar(c.Env, "QUARKUS_FLOW_DURABLE_KUBE_LEASE_LEADER_ENABLED")).To(BeNil())
 			Expect(findEnvVar(c.Env, "QUARKUS_FLOW_DURABLE_KUBE_POOL_NAME")).To(BeNil())
 
-			deleteRuntime(ctx, types.NamespacedName{Name: "test-no-durable-env", Namespace: "default"})
+			deleteRuntime(ctx, types.NamespacedName{Name: "test-no-durable-env", Namespace: testNamespace})
 		})
 	})
 
@@ -1092,7 +1092,7 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 			reconcileAndFetch(ctx, r, nn)
 
 			var rb rbacv1.RoleBinding
-			rbNN := types.NamespacedName{Name: name + "-durable", Namespace: "default"}
+			rbNN := types.NamespacedName{Name: name + "-durable", Namespace: testNamespace}
 			Expect(k8sClient.Get(ctx, rbNN, &rb)).To(Succeed())
 			Expect(rb.RoleRef.Name).To(Equal(ClusterRoleDurable))
 			Expect(rb.RoleRef.Kind).To(Equal("ClusterRole"))
@@ -1133,7 +1133,7 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 			Expect(errors.IsNotFound(err)).To(BeTrue())
 
 			var rb rbacv1.RoleBinding
-			rbNN := types.NamespacedName{Name: name + "-durable", Namespace: "default"}
+			rbNN := types.NamespacedName{Name: name + "-durable", Namespace: testNamespace}
 			err = k8sClient.Get(ctx, rbNN, &rb)
 			Expect(errors.IsNotFound(err)).To(BeTrue())
 		})

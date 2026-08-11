@@ -24,6 +24,9 @@ const (
 	LabelRuntimeRef      = "logic.kubesmarts.org/runtime-ref"
 	LabelWorkflowName    = "logic.kubesmarts.org/workflow-name"
 	LabelWorkflowVersion = "logic.kubesmarts.org/workflow-version"
+
+	LabelKeyName      = "app.kubernetes.io/name"
+	LabelKeyManagedBy = "app.kubernetes.io/managed-by"
 )
 
 func ChildLabels(owner metav1.Object) map[string]string {
@@ -31,16 +34,16 @@ func ChildLabels(owner metav1.Object) map[string]string {
 	for k, v := range owner.GetLabels() {
 		labels[k] = v
 	}
-	labels["app.kubernetes.io/name"] = owner.GetName()
-	labels["app.kubernetes.io/managed-by"] = LabelManagedBy
+	labels[LabelKeyName] = owner.GetName()
+	labels[LabelKeyManagedBy] = LabelManagedBy
 	labels["app.kubernetes.io/part-of"] = LabelPartOf
 	return labels
 }
 
 func SelectorLabels(name string) map[string]string {
 	return map[string]string{
-		"app.kubernetes.io/name":       name,
-		"app.kubernetes.io/managed-by": LabelManagedBy,
+		LabelKeyName:      name,
+		LabelKeyManagedBy: LabelManagedBy,
 	}
 }
 
@@ -217,8 +220,8 @@ func toPodSpecAC(pt *logicv1.PodTemplateSpec, mainContainer *corev1ac.ContainerA
 	if pt.InitContainers != nil {
 		ps.WithInitContainers(convertSliceTo[corev1.Container, corev1ac.ContainerApplyConfiguration](pt.InitContainers)...)
 	}
-	if pt.PodSpec.Containers != nil {
-		sidecars := filterSidecars(pt.PodSpec.Containers, mainName)
+	if pt.Containers != nil {
+		sidecars := filterSidecars(pt.Containers, mainName)
 		if len(sidecars) > 0 {
 			ps.WithContainers(convertSliceTo[corev1.Container, corev1ac.ContainerApplyConfiguration](sidecars)...)
 		}

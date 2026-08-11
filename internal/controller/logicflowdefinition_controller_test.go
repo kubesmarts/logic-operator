@@ -52,11 +52,11 @@ func validFlowJSON(name, version, namespace string) []byte {
 }
 
 func createDefinition(ctx context.Context, name, runtimeRef string, flowJSON []byte) types.NamespacedName {
-	nn := types.NamespacedName{Name: name, Namespace: "default"}
+	nn := types.NamespacedName{Name: name, Namespace: testNamespace}
 	// Delete first if exists to ensure clean state
 	deleteDefinition(ctx, nn)
 	def := &logicv1.LogicFlowDefinition{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace},
 		Spec: logicv1.LogicFlowDefinitionSpec{
 			RuntimeRef: corev1.LocalObjectReference{Name: runtimeRef},
 			Flow:       runtime.RawExtension{Raw: flowJSON},
@@ -77,11 +77,11 @@ func deleteDefinition(ctx context.Context, nn types.NamespacedName) {
 }
 
 func createRuntimeForDef(ctx context.Context, name string) types.NamespacedName {
-	nn := types.NamespacedName{Name: name, Namespace: "default"}
+	nn := types.NamespacedName{Name: name, Namespace: testNamespace}
 	// Delete first if exists to ensure clean state
 	deleteRuntime2(ctx, nn)
 	rt := &logicv1.LogicFlowRuntime{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace},
 		Spec:       logicv1.LogicFlowRuntimeSpec{},
 	}
 	Expect(k8sClient.Create(ctx, rt)).To(Succeed())
@@ -120,7 +120,7 @@ var _ = Describe("LogicFlowDefinition Controller", func() {
 			reconcileDefAndFetch(ctx, r, defNN)
 
 			var cm corev1.ConfigMap
-			cmNN := types.NamespacedName{Name: ConfigMapPrefix + defName, Namespace: "default"}
+			cmNN := types.NamespacedName{Name: ConfigMapPrefix + defName, Namespace: testNamespace}
 			Expect(k8sClient.Get(ctx, cmNN, &cm)).To(Succeed())
 			Expect(cm.Name).To(Equal("lfd-" + defName))
 		})
@@ -129,11 +129,11 @@ var _ = Describe("LogicFlowDefinition Controller", func() {
 			reconcileDefAndFetch(ctx, r, defNN)
 
 			var cm corev1.ConfigMap
-			cmNN := types.NamespacedName{Name: ConfigMapPrefix + defName, Namespace: "default"}
+			cmNN := types.NamespacedName{Name: ConfigMapPrefix + defName, Namespace: testNamespace}
 			Expect(k8sClient.Get(ctx, cmNN, &cm)).To(Succeed())
 
-			Expect(cm.Labels).To(HaveKeyWithValue("app.kubernetes.io/name", defName))
-			Expect(cm.Labels).To(HaveKeyWithValue("app.kubernetes.io/managed-by", LabelManagedBy))
+			Expect(cm.Labels).To(HaveKeyWithValue(testLabelKeyName, defName))
+			Expect(cm.Labels).To(HaveKeyWithValue(testLabelKeyManagedBy, LabelManagedBy))
 			Expect(cm.Labels).To(HaveKeyWithValue("app.kubernetes.io/part-of", LabelPartOf))
 			Expect(cm.Labels).To(HaveKeyWithValue(LabelRuntimeRef, rtName))
 			Expect(cm.Labels).To(HaveKeyWithValue(LabelWorkflowName, "payment-processor"))
@@ -144,7 +144,7 @@ var _ = Describe("LogicFlowDefinition Controller", func() {
 			def := reconcileDefAndFetch(ctx, r, defNN)
 
 			var cm corev1.ConfigMap
-			cmNN := types.NamespacedName{Name: ConfigMapPrefix + defName, Namespace: "default"}
+			cmNN := types.NamespacedName{Name: ConfigMapPrefix + defName, Namespace: testNamespace}
 			Expect(k8sClient.Get(ctx, cmNN, &cm)).To(Succeed())
 
 			Expect(cm.OwnerReferences).To(HaveLen(1))
@@ -159,7 +159,7 @@ var _ = Describe("LogicFlowDefinition Controller", func() {
 			reconcileDefAndFetch(ctx, r, defNN)
 
 			var cm corev1.ConfigMap
-			cmNN := types.NamespacedName{Name: ConfigMapPrefix + defName, Namespace: "default"}
+			cmNN := types.NamespacedName{Name: ConfigMapPrefix + defName, Namespace: testNamespace}
 			Expect(k8sClient.Get(ctx, cmNN, &cm)).To(Succeed())
 
 			Expect(cm.Data).To(HaveKey("payment-processor.json"))
@@ -211,7 +211,7 @@ var _ = Describe("LogicFlowDefinition Controller", func() {
 			reconcileDefAndFetch(ctx, r, defNN)
 
 			var cm corev1.ConfigMap
-			cmNN := types.NamespacedName{Name: ConfigMapPrefix + defName, Namespace: "default"}
+			cmNN := types.NamespacedName{Name: ConfigMapPrefix + defName, Namespace: testNamespace}
 			err := k8sClient.Get(ctx, cmNN, &cm)
 			Expect(errors.IsNotFound(err)).To(BeTrue())
 		})
@@ -247,7 +247,7 @@ var _ = Describe("LogicFlowDefinition Controller", func() {
 			reconcileDefAndFetch(ctx, r, defNN)
 
 			var cm corev1.ConfigMap
-			cmNN := types.NamespacedName{Name: ConfigMapPrefix + defName, Namespace: "default"}
+			cmNN := types.NamespacedName{Name: ConfigMapPrefix + defName, Namespace: testNamespace}
 			err := k8sClient.Get(ctx, cmNN, &cm)
 			Expect(errors.IsNotFound(err)).To(BeTrue())
 		})
@@ -301,7 +301,7 @@ var _ = Describe("LogicFlowDefinition Controller", func() {
 			Expect(updated.Status.WorkflowNamespace).To(Equal("ns2"))
 
 			var cm corev1.ConfigMap
-			cmNN := types.NamespacedName{Name: ConfigMapPrefix + defName, Namespace: "default"}
+			cmNN := types.NamespacedName{Name: ConfigMapPrefix + defName, Namespace: testNamespace}
 			Expect(k8sClient.Get(ctx, cmNN, &cm)).To(Succeed())
 			Expect(cm.Data).To(HaveKey("wf-v2.json"))
 			Expect(cm.Labels[LabelWorkflowName]).To(Equal("wf-v2"))
@@ -353,14 +353,14 @@ var _ = Describe("LogicFlowDefinition Controller", func() {
 	Context("CR not found", func() {
 		It("should return success for a missing CR", func() {
 			r := newDefReconciler()
-			nn := types.NamespacedName{Name: "does-not-exist-def", Namespace: "default"}
+			nn := types.NamespacedName{Name: "does-not-exist-def", Namespace: testNamespace}
 
 			result, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
 
 			var cm corev1.ConfigMap
-			err = k8sClient.Get(ctx, types.NamespacedName{Name: ConfigMapPrefix + "does-not-exist-def", Namespace: "default"}, &cm)
+			err = k8sClient.Get(ctx, types.NamespacedName{Name: ConfigMapPrefix + "does-not-exist-def", Namespace: testNamespace}, &cm)
 			Expect(errors.IsNotFound(err)).To(BeTrue())
 		})
 	})

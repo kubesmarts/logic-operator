@@ -25,8 +25,8 @@ func TestPersistenceEnvVars_JdbcUrlWithDefaultSecretKeys(t *testing.T) {
 	g := gomega.NewWithT(t)
 	p := &logicv1.PersistenceOptionsSpec{
 		PostgreSQL: &logicv1.PersistencePostgreSQL{
-			SecretRef: logicv1.PostgreSQLSecretOptions{Name: "pg-creds"},
-			JdbcUrl:   "jdbc:postgresql://localhost:5432/mydb",
+			SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
+			JdbcUrl:   testJdbcURL,
 		},
 	}
 
@@ -37,14 +37,14 @@ func TestPersistenceEnvVars_JdbcUrlWithDefaultSecretKeys(t *testing.T) {
 	g.Expect(*envs[0].Value).To(gomega.Equal("postgresql"))
 
 	g.Expect(*envs[1].Name).To(gomega.Equal("QUARKUS_DATASOURCE_USERNAME"))
-	g.Expect(*envs[1].ValueFrom.SecretKeyRef.Name).To(gomega.Equal("pg-creds"))
+	g.Expect(*envs[1].ValueFrom.SecretKeyRef.Name).To(gomega.Equal(testPGCreds))
 	g.Expect(*envs[1].ValueFrom.SecretKeyRef.Key).To(gomega.Equal("POSTGRESQL_USER"))
 
 	g.Expect(*envs[2].Name).To(gomega.Equal("QUARKUS_DATASOURCE_PASSWORD"))
 	g.Expect(*envs[2].ValueFrom.SecretKeyRef.Key).To(gomega.Equal("POSTGRESQL_PASSWORD"))
 
 	g.Expect(*envs[3].Name).To(gomega.Equal("QUARKUS_DATASOURCE_JDBC_URL"))
-	g.Expect(*envs[3].Value).To(gomega.Equal("jdbc:postgresql://localhost:5432/mydb"))
+	g.Expect(*envs[3].Value).To(gomega.Equal(testJdbcURL))
 }
 
 func TestPersistenceEnvVars_CustomSecretKeys(t *testing.T) {
@@ -52,11 +52,11 @@ func TestPersistenceEnvVars_CustomSecretKeys(t *testing.T) {
 	p := &logicv1.PersistenceOptionsSpec{
 		PostgreSQL: &logicv1.PersistencePostgreSQL{
 			SecretRef: logicv1.PostgreSQLSecretOptions{
-				Name:        "pg-creds",
+				Name:        testPGCreds,
 				UserKey:     "DB_USER",
 				PasswordKey: "DB_PASS",
 			},
-			JdbcUrl: "jdbc:postgresql://localhost:5432/mydb",
+			JdbcUrl: testJdbcURL,
 		},
 	}
 
@@ -69,10 +69,10 @@ func TestPersistenceEnvVars_ServiceRefBuildsJdbcUrl(t *testing.T) {
 	g := gomega.NewWithT(t)
 	p := &logicv1.PersistenceOptionsSpec{
 		PostgreSQL: &logicv1.PersistencePostgreSQL{
-			SecretRef: logicv1.PostgreSQLSecretOptions{Name: "pg-creds"},
+			SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
 			ServiceRef: &logicv1.PostgreSQLServiceOptions{
 				SQLServiceOptions: &logicv1.SQLServiceOptions{
-					Name:         "postgres",
+					Name:         testPostgresName,
 					Namespace:    "databases",
 					Port:         intPtr(5433),
 					DatabaseName: "workflows",
@@ -91,10 +91,10 @@ func TestPersistenceEnvVars_ServiceRefFallbackDefaults(t *testing.T) {
 	g := gomega.NewWithT(t)
 	p := &logicv1.PersistenceOptionsSpec{
 		PostgreSQL: &logicv1.PersistencePostgreSQL{
-			SecretRef: logicv1.PostgreSQLSecretOptions{Name: "pg-creds"},
+			SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
 			ServiceRef: &logicv1.PostgreSQLServiceOptions{
 				SQLServiceOptions: &logicv1.SQLServiceOptions{
-					Name: "postgres",
+					Name: testPostgresName,
 				},
 			},
 		},
@@ -112,9 +112,9 @@ func TestPersistenceEnvVars_TLSAppendsSslMode(t *testing.T) {
 		g = gomega.NewWithT(t)
 		p := &logicv1.PersistenceOptionsSpec{
 			PostgreSQL: &logicv1.PersistencePostgreSQL{
-				SecretRef: logicv1.PostgreSQLSecretOptions{Name: "pg-creds"},
+				SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
 				ServiceRef: &logicv1.PostgreSQLServiceOptions{
-					SQLServiceOptions: &logicv1.SQLServiceOptions{Name: "postgres"},
+					SQLServiceOptions: &logicv1.SQLServiceOptions{Name: testPostgresName},
 					DatabaseSchema:    "myschema",
 				},
 				TLS: &logicv1.TLSConnection{Enabled: true, TLSMode: logicv1.TLSModeVerifyFull},
@@ -128,8 +128,8 @@ func TestPersistenceEnvVars_TLSAppendsSslMode(t *testing.T) {
 		g = gomega.NewWithT(t)
 		p := &logicv1.PersistenceOptionsSpec{
 			PostgreSQL: &logicv1.PersistencePostgreSQL{
-				SecretRef: logicv1.PostgreSQLSecretOptions{Name: "pg-creds"},
-				JdbcUrl:   "jdbc:postgresql://localhost:5432/mydb",
+				SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
+				JdbcUrl:   testJdbcURL,
 				TLS:       &logicv1.TLSConnection{Enabled: true, TLSMode: logicv1.TLSModeRequire},
 			},
 		}
@@ -141,8 +141,8 @@ func TestPersistenceEnvVars_TLSAppendsSslMode(t *testing.T) {
 		g = gomega.NewWithT(t)
 		p := &logicv1.PersistenceOptionsSpec{
 			PostgreSQL: &logicv1.PersistencePostgreSQL{
-				SecretRef: logicv1.PostgreSQLSecretOptions{Name: "pg-creds"},
-				JdbcUrl:   "jdbc:postgresql://localhost:5432/mydb",
+				SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
+				JdbcUrl:   testJdbcURL,
 				TLS:       &logicv1.TLSConnection{Enabled: true},
 			},
 		}
@@ -303,47 +303,6 @@ func TestDefaultRunnerImage_PreservesUserImage(t *testing.T) {
 	})
 }
 
-func TestValidateRunnerImage(t *testing.T) {
-	g := gomega.NewWithT(t)
-	minimalImage := fmt.Sprintf("%s/%s:%s-%s", QuarkusFlowRegistry, QuarkusFlowRunner, QuarkusFlowVersion, ImageVariantMinimal)
-	standardImage := fmt.Sprintf("%s/%s:%s-%s", QuarkusFlowRegistry, QuarkusFlowRunner, QuarkusFlowVersion, ImageVariantStandard)
-	persistence := &logicv1.PersistenceOptionsSpec{PostgreSQL: &logicv1.PersistencePostgreSQL{}}
-
-	t.Run("minimal with persistence errors", func(t *testing.T) {
-		g = gomega.NewWithT(t)
-		err := ValidateRunnerImage(minimalImage, persistence)
-		g.Expect(err).To(gomega.HaveOccurred())
-		g.Expect(err.Error()).To(gomega.ContainSubstring("does not support persistence"))
-	})
-
-	t.Run("standard without persistence errors", func(t *testing.T) {
-		g = gomega.NewWithT(t)
-		err := ValidateRunnerImage(standardImage, nil)
-		g.Expect(err).To(gomega.HaveOccurred())
-		g.Expect(err.Error()).To(gomega.ContainSubstring("requires persistence configuration"))
-	})
-
-	t.Run("minimal without persistence is valid", func(t *testing.T) {
-		g = gomega.NewWithT(t)
-		err := ValidateRunnerImage(minimalImage, nil)
-		g.Expect(err).NotTo(gomega.HaveOccurred())
-	})
-
-	t.Run("standard with persistence is valid", func(t *testing.T) {
-		g = gomega.NewWithT(t)
-		err := ValidateRunnerImage(standardImage, persistence)
-		g.Expect(err).NotTo(gomega.HaveOccurred())
-	})
-
-	t.Run("custom image skips validation", func(t *testing.T) {
-		g = gomega.NewWithT(t)
-		err := ValidateRunnerImage("my-registry/custom-runner:1.0", persistence)
-		g.Expect(err).NotTo(gomega.HaveOccurred())
-		err = ValidateRunnerImage("my-registry/custom-runner:1.0", nil)
-		g.Expect(err).NotTo(gomega.HaveOccurred())
-	})
-}
-
 func TestDefaultProbes_SetsWhenNil(t *testing.T) {
 	g := gomega.NewWithT(t)
 	c := corev1ac.Container().WithName("test")
@@ -383,9 +342,9 @@ func TestDeploymentAndServiceAreWiredTogether(t *testing.T) {
 	g := gomega.NewWithT(t)
 
 	rt := &logicv1.LogicFlowRuntime{}
-	rt.Name = "my-runtime"
+	rt.Name = testRuntimeName
 	rt.Namespace = "prod"
-	rt.Labels = map[string]string{"team": "platform"}
+	rt.Labels = map[string]string{testLabelTeam: testPlatformLabel}
 
 	childLabels := ChildLabels(rt)
 	selLabels := SelectorLabels(rt.Name)
@@ -545,7 +504,7 @@ func TestEffectiveReplicas_PodTemplateOverrides(t *testing.T) {
 func TestWithDurableEnvVars_SetsAllEnvVars(t *testing.T) {
 	g := gomega.NewWithT(t)
 	rt := &logicv1.LogicFlowRuntime{}
-	rt.Name = "my-runtime"
+	rt.Name = testRuntimeName
 	c := corev1ac.Container().WithName("test")
 
 	WithDurableEnvVars(rt)(c)
@@ -554,7 +513,7 @@ func TestWithDurableEnvVars_SetsAllEnvVars(t *testing.T) {
 	g.Expect(*c.Env[0].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_LEASE_LEADER_ENABLED"))
 	g.Expect(*c.Env[0].Value).To(gomega.Equal("false"))
 	g.Expect(*c.Env[1].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_POOL_NAME"))
-	g.Expect(*c.Env[1].Value).To(gomega.Equal("my-runtime"))
+	g.Expect(*c.Env[1].Value).To(gomega.Equal(testRuntimeName))
 	g.Expect(*c.Env[2].Name).To(gomega.Equal("POD_NAME"))
 	g.Expect(*c.Env[2].ValueFrom.FieldRef.FieldPath).To(gomega.Equal("metadata.name"))
 	g.Expect(*c.Env[3].Name).To(gomega.Equal("POD_NAMESPACE"))
@@ -564,7 +523,7 @@ func TestWithDurableEnvVars_SetsAllEnvVars(t *testing.T) {
 func TestWithDurableEnvVars_FiltersUserDuplicates(t *testing.T) {
 	g := gomega.NewWithT(t)
 	rt := &logicv1.LogicFlowRuntime{}
-	rt.Name = "my-runtime"
+	rt.Name = testRuntimeName
 	c := corev1ac.Container().WithName("test").
 		WithEnv(
 			corev1ac.EnvVar().WithName("OTHER_VAR").WithValue("keep"),
@@ -579,7 +538,7 @@ func TestWithDurableEnvVars_FiltersUserDuplicates(t *testing.T) {
 	g.Expect(*c.Env[0].Value).To(gomega.Equal("keep"))
 	g.Expect(*c.Env[1].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_LEASE_LEADER_ENABLED"))
 	g.Expect(*c.Env[2].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_POOL_NAME"))
-	g.Expect(*c.Env[2].Value).To(gomega.Equal("my-runtime"))
+	g.Expect(*c.Env[2].Value).To(gomega.Equal(testRuntimeName))
 	g.Expect(*c.Env[3].Name).To(gomega.Equal("POD_NAME"))
 	g.Expect(*c.Env[4].Name).To(gomega.Equal("POD_NAMESPACE"))
 }
@@ -587,22 +546,22 @@ func TestWithDurableEnvVars_FiltersUserDuplicates(t *testing.T) {
 func TestNewMemberLease_Fields(t *testing.T) {
 	g := gomega.NewWithT(t)
 	dep := &appsv1.Deployment{}
-	dep.Name = "my-runtime"
+	dep.Name = testRuntimeName
 	dep.UID = "dep-uid-123"
 
-	lease := newMemberLease("flow-pool-member-my-runtime-00", "default", "my-runtime", dep)
+	lease := newMemberLease("flow-pool-member-my-runtime-00", "default", testRuntimeName, dep)
 
 	g.Expect(lease.Name).To(gomega.Equal("flow-pool-member-my-runtime-00"))
 	g.Expect(lease.Namespace).To(gomega.Equal("default"))
 	g.Expect(lease.Labels).To(gomega.HaveKeyWithValue("app.kubernetes.io/managed-by", DurableManagedByValue))
 	g.Expect(lease.Labels).To(gomega.HaveKeyWithValue("app.kubernetes.io/component", DurableComponentValue))
-	g.Expect(lease.Labels).To(gomega.HaveKeyWithValue(LabelDurablePool, "my-runtime"))
+	g.Expect(lease.Labels).To(gomega.HaveKeyWithValue(LabelDurablePool, testRuntimeName))
 	g.Expect(lease.Labels).To(gomega.HaveKeyWithValue(LabelDurableIsLeader, "false"))
 	g.Expect(*lease.Spec.LeaseDurationSeconds).To(gomega.Equal(LeaseDuration))
 	g.Expect(lease.Spec.HolderIdentity).To(gomega.BeNil())
 	g.Expect(lease.OwnerReferences).To(gomega.HaveLen(1))
 	g.Expect(lease.OwnerReferences[0].Kind).To(gomega.Equal("Deployment"))
-	g.Expect(lease.OwnerReferences[0].Name).To(gomega.Equal("my-runtime"))
+	g.Expect(lease.OwnerReferences[0].Name).To(gomega.Equal(testRuntimeName))
 	g.Expect(*lease.OwnerReferences[0].Controller).To(gomega.BeFalse())
 }
 

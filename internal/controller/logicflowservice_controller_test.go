@@ -38,7 +38,7 @@ var _ = Describe("LogicFlowService Controller", func() {
 
 		typeNamespacedName := types.NamespacedName{
 			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+			Namespace: testNamespace, // TODO(user):Modify as needed
 		}
 		logicflowservice := &logicv1.LogicFlowService{}
 
@@ -49,7 +49,7 @@ var _ = Describe("LogicFlowService Controller", func() {
 				resource := &logicv1.LogicFlowService{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      resourceName,
-						Namespace: "default",
+						Namespace: testNamespace,
 					},
 					// TODO(user): Specify other spec details if needed.
 				}

@@ -85,7 +85,7 @@ func TestWebhookIntegration(t *testing.T) {
 	for time.Now().Before(deadline) {
 		conn, err := tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{InsecureSkipVerify: true})
 		if err == nil {
-			conn.Close()
+			_ = conn.Close()
 			break
 		}
 		time.Sleep(200 * time.Millisecond)
@@ -96,13 +96,16 @@ func TestWebhookIntegration(t *testing.T) {
 		t.Fatalf("create client: %v", err)
 	}
 
-	// --- LogicFlowDefinition ---
+	testLFDWebhooks(t, ctx, k8sClient)
+	testLFRWebhooks(t, ctx, k8sClient)
+}
 
+func testLFDWebhooks(t *testing.T, ctx context.Context, k8sClient client.Client) {
 	t.Run("LFD/valid create succeeds", func(t *testing.T) {
 		def := &LogicFlowDefinition{
-			ObjectMeta: metav1.ObjectMeta{Name: "valid-def", Namespace: "default"},
+			ObjectMeta: metav1.ObjectMeta{Name: "valid-def", Namespace: testNamespace},
 			Spec: LogicFlowDefinitionSpec{
-				RuntimeRef: corev1.LocalObjectReference{Name: "my-runtime"},
+				RuntimeRef: corev1.LocalObjectReference{Name: testRuntimeName},
 				Flow:       validFlowRaw(),
 			},
 		}
@@ -114,9 +117,9 @@ func TestWebhookIntegration(t *testing.T) {
 
 	t.Run("LFD/invalid flow rejected", func(t *testing.T) {
 		def := &LogicFlowDefinition{
-			ObjectMeta: metav1.ObjectMeta{Name: "bad-flow-def", Namespace: "default"},
+			ObjectMeta: metav1.ObjectMeta{Name: "bad-flow-def", Namespace: testNamespace},
 			Spec: LogicFlowDefinitionSpec{
-				RuntimeRef: corev1.LocalObjectReference{Name: "my-runtime"},
+				RuntimeRef: corev1.LocalObjectReference{Name: testRuntimeName},
 				Flow:       invalidFlowRaw(),
 			},
 		}
@@ -132,7 +135,7 @@ func TestWebhookIntegration(t *testing.T) {
 
 	t.Run("LFD/empty runtimeRef rejected", func(t *testing.T) {
 		def := &LogicFlowDefinition{
-			ObjectMeta: metav1.ObjectMeta{Name: "no-ref-def", Namespace: "default"},
+			ObjectMeta: metav1.ObjectMeta{Name: "no-ref-def", Namespace: testNamespace},
 			Spec: LogicFlowDefinitionSpec{
 				RuntimeRef: corev1.LocalObjectReference{Name: ""},
 				Flow:       validFlowRaw(),
@@ -150,9 +153,9 @@ func TestWebhookIntegration(t *testing.T) {
 
 	t.Run("LFD/runtimeRef change rejected (immutable)", func(t *testing.T) {
 		def := &LogicFlowDefinition{
-			ObjectMeta: metav1.ObjectMeta{Name: "immut-def", Namespace: "default"},
+			ObjectMeta: metav1.ObjectMeta{Name: "immut-def", Namespace: testNamespace},
 			Spec: LogicFlowDefinitionSpec{
-				RuntimeRef: corev1.LocalObjectReference{Name: "my-runtime"},
+				RuntimeRef: corev1.LocalObjectReference{Name: testRuntimeName},
 				Flow:       validFlowRaw(),
 			},
 		}
@@ -177,9 +180,9 @@ func TestWebhookIntegration(t *testing.T) {
 
 	t.Run("LFD/metadata update allowed", func(t *testing.T) {
 		def := &LogicFlowDefinition{
-			ObjectMeta: metav1.ObjectMeta{Name: "meta-def", Namespace: "default"},
+			ObjectMeta: metav1.ObjectMeta{Name: "meta-def", Namespace: testNamespace},
 			Spec: LogicFlowDefinitionSpec{
-				RuntimeRef: corev1.LocalObjectReference{Name: "my-runtime"},
+				RuntimeRef: corev1.LocalObjectReference{Name: testRuntimeName},
 				Flow:       validFlowRaw(),
 			},
 		}
@@ -196,12 +199,12 @@ func TestWebhookIntegration(t *testing.T) {
 			t.Errorf("expected metadata update to succeed: %v", err)
 		}
 	})
+}
 
-	// --- LogicFlowRuntime ---
-
+func testLFRWebhooks(t *testing.T, ctx context.Context, k8sClient client.Client) {
 	t.Run("LFR/valid empty spec succeeds", func(t *testing.T) {
 		rt := &LogicFlowRuntime{
-			ObjectMeta: metav1.ObjectMeta{Name: "valid-rt", Namespace: "default"},
+			ObjectMeta: metav1.ObjectMeta{Name: "valid-rt", Namespace: testNamespace},
 			Spec:       LogicFlowRuntimeSpec{},
 		}
 		if err := k8sClient.Create(ctx, rt); err != nil {
@@ -212,7 +215,7 @@ func TestWebhookIntegration(t *testing.T) {
 
 	t.Run("LFR/API_KEY without keys rejected", func(t *testing.T) {
 		rt := &LogicFlowRuntime{
-			ObjectMeta: metav1.ObjectMeta{Name: "bad-apikey-rt", Namespace: "default"},
+			ObjectMeta: metav1.ObjectMeta{Name: "bad-apikey-rt", Namespace: testNamespace},
 			Spec: LogicFlowRuntimeSpec{
 				Security: RuntimeSecuritySpec{Type: RuntimeSecurityAPIKey},
 			},
@@ -229,7 +232,7 @@ func TestWebhookIntegration(t *testing.T) {
 
 	t.Run("LFR/OIDC without config rejected", func(t *testing.T) {
 		rt := &LogicFlowRuntime{
-			ObjectMeta: metav1.ObjectMeta{Name: "bad-oidc-rt", Namespace: "default"},
+			ObjectMeta: metav1.ObjectMeta{Name: "bad-oidc-rt", Namespace: testNamespace},
 			Spec: LogicFlowRuntimeSpec{
 				Security: RuntimeSecuritySpec{Type: RuntimeSecurityOIDC},
 			},
@@ -246,7 +249,7 @@ func TestWebhookIntegration(t *testing.T) {
 
 	t.Run("LFR/minimal image with persistence rejected", func(t *testing.T) {
 		rt := &LogicFlowRuntime{
-			ObjectMeta: metav1.ObjectMeta{Name: "bad-image-rt", Namespace: "default"},
+			ObjectMeta: metav1.ObjectMeta{Name: "bad-image-rt", Namespace: testNamespace},
 			Spec: LogicFlowRuntimeSpec{
 				RuntimeSpec: RuntimeSpec{
 					ApplicationSpec: ApplicationSpec{
@@ -254,7 +257,7 @@ func TestWebhookIntegration(t *testing.T) {
 					},
 					Persistence: &PersistenceOptionsSpec{
 						PostgreSQL: &PersistencePostgreSQL{
-							SecretRef: PostgreSQLSecretOptions{Name: "pg-secret"},
+							SecretRef: PostgreSQLSecretOptions{Name: testPGSecret},
 							JdbcUrl:   "jdbc:postgresql://localhost:5432/test",
 						},
 					},
@@ -273,7 +276,7 @@ func TestWebhookIntegration(t *testing.T) {
 
 	t.Run("LFR/API_KEY with valid keys succeeds", func(t *testing.T) {
 		rt := &LogicFlowRuntime{
-			ObjectMeta: metav1.ObjectMeta{Name: "good-apikey-rt", Namespace: "default"},
+			ObjectMeta: metav1.ObjectMeta{Name: "good-apikey-rt", Namespace: testNamespace},
 			Spec: LogicFlowRuntimeSpec{
 				Security: RuntimeSecuritySpec{
 					Type: RuntimeSecurityAPIKey,

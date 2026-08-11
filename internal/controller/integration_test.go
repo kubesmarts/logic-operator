@@ -45,7 +45,7 @@ var _ = Describe("Cross-controller integration", func() {
 
 			// Verify ConfigMap exists with runtime-ref label
 			var cm corev1.ConfigMap
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: cmName, Namespace: "default"}, &cm)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: cmName, Namespace: testNamespace}, &cm)).To(Succeed())
 			Expect(cm.Labels[LabelRuntimeRef]).To(Equal(rtName))
 
 			// Step 2: Reconcile Runtime — discovers the ConfigMap
@@ -263,7 +263,7 @@ var _ = Describe("Cross-controller integration", func() {
 			Expect(rtCond.Status).To(Equal(metav1.ConditionFalse))
 
 			// No ConfigMap created for the invalid definition
-			invalidCmNN := types.NamespacedName{Name: ConfigMapPrefix + invalidDefName, Namespace: "default"}
+			invalidCmNN := types.NamespacedName{Name: ConfigMapPrefix + invalidDefName, Namespace: testNamespace}
 			var cm corev1.ConfigMap
 			err := k8sClient.Get(ctx, invalidCmNN, &cm)
 			Expect(errors.IsNotFound(err)).To(BeTrue())

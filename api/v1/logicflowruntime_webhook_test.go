@@ -104,7 +104,7 @@ func TestLogicFlowRuntimeValidator_ValidateCreate(t *testing.T) {
 						},
 						Persistence: &PersistenceOptionsSpec{
 							PostgreSQL: &PersistencePostgreSQL{
-								SecretRef: PostgreSQLSecretOptions{Name: "pg-secret"},
+								SecretRef: PostgreSQLSecretOptions{Name: testPGSecret},
 							},
 						},
 					},
@@ -135,7 +135,7 @@ func TestLogicFlowRuntimeValidator_ValidateCreate(t *testing.T) {
 						},
 						Persistence: &PersistenceOptionsSpec{
 							PostgreSQL: &PersistencePostgreSQL{
-								SecretRef: PostgreSQLSecretOptions{Name: "pg-secret"},
+								SecretRef: PostgreSQLSecretOptions{Name: testPGSecret},
 							},
 						},
 					},

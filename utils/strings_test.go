@@ -25,6 +25,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+const (
+	testJSONExt      = ".json"
+	testWorkflow     = "myworkflow"
+	testWorkflowFile = "myworkflow.sw.json"
+)
+
 func TestRemoveFileExtension(t *testing.T) {
 	type args struct {
 		fileName string
@@ -35,7 +41,7 @@ func TestRemoveFileExtension(t *testing.T) {
 		want string
 	}{
 		{name: "Basic", args: struct{ fileName string }{fileName: "myfile.json"}, want: "myfile"},
-		{name: "Just the extension", args: struct{ fileName string }{fileName: ".json"}, want: ""},
+		{name: "Just the extension", args: struct{ fileName string }{fileName: testJSONExt}, want: ""},
 		{name: "Many extension separators", args: struct{ fileName string }{fileName: "my.file.awesome.json"}, want: "my.file.awesome"},
 		{name: "No extension", args: struct{ fileName string }{fileName: "myfileisrad"}, want: "myfileisrad"},
 	}
@@ -56,11 +62,11 @@ func TestRemoveKnownExtension(t *testing.T) {
 		args args
 		want string
 	}{
-		{name: "Basic", args: args{fileName: "myworkflow.sw.json", extension: ".sw.json"}, want: "myworkflow"},
-		{name: "No Extension", args: args{fileName: "myworkflow", extension: ".sw.json"}, want: "myworkflow"},
-		{name: "No Extension Extension", args: args{fileName: "myworkflow.sw.json", extension: ""}, want: "myworkflow.sw.json"},
-		{name: "Mess Extension", args: args{fileName: "myworkflow.sw.json", extension: ".json"}, want: "myworkflow.sw"},
-		{name: "No filename", args: args{fileName: "", extension: ".json"}, want: ""},
+		{name: "Basic", args: args{fileName: testWorkflowFile, extension: ".sw.json"}, want: testWorkflow},
+		{name: "No Extension", args: args{fileName: testWorkflow, extension: ".sw.json"}, want: testWorkflow},
+		{name: "No Extension Extension", args: args{fileName: testWorkflowFile, extension: ""}, want: testWorkflowFile},
+		{name: "Mess Extension", args: args{fileName: testWorkflowFile, extension: testJSONExt}, want: "myworkflow.sw"},
+		{name: "No filename", args: args{fileName: "", extension: testJSONExt}, want: ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
