@@ -27,17 +27,16 @@ import (
 // Forward reference pattern: Service → Definition (no bidirectional references).
 // The runtime is discovered transitively from the referenced definitions.
 type LogicFlowServiceSpec struct {
+	// DefaultDefinition routes 100% traffic to a single LogicFlowDefinition.
+	// Mutually exclusive with Traffic.
+	// +optional
+	DefaultDefinition *corev1.LocalObjectReference `json:"defaultDefinition,omitempty"`
+
 	// Traffic distributes requests across workflow versions.
-	// Mutually exclusive with DefaultVersion.
+	// Mutually exclusive with DefaultDefinition.
 	// Weights must sum to 100.
 	// +optional
 	Traffic []TrafficSpec `json:"traffic,omitempty"`
-
-	// DefaultVersion auto-routes 100% traffic to a single workflow version.
-	// Mutually exclusive with Traffic.
-	// Simplifies single-version exposure.
-	// +optional
-	DefaultVersion string `json:"defaultVersion,omitempty"`
 
 	// Ingress configures external HTTP access.
 	// +required

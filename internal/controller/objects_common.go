@@ -20,10 +20,7 @@ const (
 	LabelManagedBy          = "logic-operator"
 	LabelPartOf             = "logic-platform"
 
-	ConfigMapPrefix      = "lfd-"
-	LabelRuntimeRef      = "logic.kubesmarts.org/runtime-ref"
-	LabelWorkflowName    = "logic.kubesmarts.org/workflow-name"
-	LabelWorkflowVersion = "logic.kubesmarts.org/workflow-version"
+	ConfigMapPrefix = "lfd-"
 
 	LabelKeyName      = "app.kubernetes.io/name"
 	LabelKeyManagedBy = "app.kubernetes.io/managed-by"

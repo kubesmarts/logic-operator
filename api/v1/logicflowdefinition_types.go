@@ -28,6 +28,13 @@ import (
 
 const LogicFlowDefinitionKind = "LogicFlowDefinition"
 
+const (
+	LabelRuntimeRef        = "logic.kubesmarts.org/runtime-ref"
+	LabelWorkflowName      = "logic.kubesmarts.org/workflow-name"
+	LabelWorkflowVersion   = "logic.kubesmarts.org/workflow-version"
+	LabelWorkflowNamespace = "logic.kubesmarts.org/workflow-namespace"
+)
+
 // LogicFlowDefinitionSpec defines the desired state of LogicFlowDefinition.
 //
 // Immutable workflow version referencing a LogicFlowRuntime for execution.

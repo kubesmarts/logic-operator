@@ -98,7 +98,7 @@ func (r *LogicFlowRuntimeReconciler) listConfigMaps(ctx context.Context, rt *log
 	var cmList corev1.ConfigMapList
 	if err := r.List(ctx, &cmList,
 		client.InNamespace(rt.Namespace),
-		client.MatchingLabels{LabelRuntimeRef: rt.Name},
+		client.MatchingLabels{logicv1.LabelRuntimeRef: rt.Name},
 	); err != nil {
 		return nil, err
 	}
@@ -312,13 +312,13 @@ func configMapRefs(configMaps []corev1.ConfigMap) []corev1.LocalObjectReference 
 func definitionsFromConfigMaps(configMaps []corev1.ConfigMap) []logicv1.RuntimeDefinitionStatus {
 	defs := make([]logicv1.RuntimeDefinitionStatus, 0, len(configMaps))
 	for i := range configMaps {
-		name := configMaps[i].Labels[LabelWorkflowName]
+		name := configMaps[i].Labels[logicv1.LabelWorkflowName]
 		if name == "" {
 			continue
 		}
 		defs = append(defs, logicv1.RuntimeDefinitionStatus{
 			Name:    name,
-			Version: configMaps[i].Labels[LabelWorkflowVersion],
+			Version: configMaps[i].Labels[logicv1.LabelWorkflowVersion],
 		})
 	}
 	return defs
@@ -376,7 +376,7 @@ func (r *LogicFlowRuntimeReconciler) updateStatusSvc(ctx context.Context, rt *lo
 }
 
 func (r *LogicFlowRuntimeReconciler) mapConfigMapToRuntime(ctx context.Context, obj client.Object) []reconcile.Request {
-	rtName := obj.GetLabels()[LabelRuntimeRef]
+	rtName := obj.GetLabels()[logicv1.LabelRuntimeRef]
 	if rtName == "" {
 		return nil
 	}
@@ -387,7 +387,7 @@ func (r *LogicFlowRuntimeReconciler) mapConfigMapToRuntime(ctx context.Context, 
 
 func runtimeRefLabelPredicate() predicate.Predicate {
 	return predicate.NewPredicateFuncs(func(obj client.Object) bool {
-		_, ok := obj.GetLabels()[LabelRuntimeRef]
+		_, ok := obj.GetLabels()[logicv1.LabelRuntimeRef]
 		return ok
 	})
 }

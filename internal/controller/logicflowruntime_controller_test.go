@@ -85,13 +85,13 @@ func createFlowConfigMap(ctx context.Context, name, runtimeRef, workflowName, wo
 				testLabelKeyName:            name,
 				testLabelKeyManagedBy:       LabelManagedBy,
 				"app.kubernetes.io/part-of": LabelPartOf,
-				LabelRuntimeRef:             runtimeRef,
-				LabelWorkflowName:           workflowName,
-				LabelWorkflowVersion:        workflowVersion,
+				logicv1.LabelRuntimeRef:             runtimeRef,
+				logicv1.LabelWorkflowName:           workflowName,
+				logicv1.LabelWorkflowVersion:        workflowVersion,
 			},
 		},
 		Data: map[string]string{
-			workflowName + ".json": `{"document":{"name":"` + workflowName + `"}}`,
+			workflowName + ".yaml": "document:\n  name: " + workflowName + "\n",
 		},
 	}
 	Expect(k8sClient.Create(ctx, cm)).To(Succeed())
@@ -604,8 +604,8 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 			vm := findVolumeMount(c, cmName)
 			Expect(vm).NotTo(BeNil(), "volumeMount for ConfigMap not found")
-			Expect(vm.MountPath).To(Equal(WorkflowMountPath + "/payment-processor.json"))
-			Expect(vm.SubPath).To(Equal("payment-processor.json"))
+			Expect(vm.MountPath).To(Equal(WorkflowMountPath + "/payment-processor.yaml"))
+			Expect(vm.SubPath).To(Equal("payment-processor.yaml"))
 			Expect(vm.ReadOnly).To(BeTrue())
 		})
 

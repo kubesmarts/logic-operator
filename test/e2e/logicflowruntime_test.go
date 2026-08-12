@@ -194,8 +194,8 @@ func logicFlowRuntimeLifecycleTests() {
 		It("should execute the hello-world workflow via the runner API", func() {
 			By("creating a curl pod to invoke the workflow")
 			curlPodName := "curl-workflow"
-			svcURL := fmt.Sprintf("http://%s.%s.svc:80/q/flow/exec/examples/hello-world?wait=true",
-				testRuntimeName, namespace)
+			svcURL := fmt.Sprintf("http://%s.%s.svc:80/q/flow/exec/%s/hello-world?wait=true",
+				testRuntimeName, namespace, namespace)
 			curlArgs := "curl -s --retry 5 --retry-delay 3 --retry-all-errors" +
 				" -X POST -H 'Content-Type: application/json'" +
 				` -d '{"name":"world"}' '` + svcURL + `'`

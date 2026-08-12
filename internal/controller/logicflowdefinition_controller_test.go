@@ -40,8 +40,12 @@ func newDefReconciler() *LogicFlowDefinitionReconciler {
 }
 
 func reconcileDefAndFetch(ctx context.Context, r *LogicFlowDefinitionReconciler, nn types.NamespacedName) *logicv1.LogicFlowDefinition {
-	_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
-	Expect(err).NotTo(HaveOccurred())
+	// First reconcile sets workflow labels (early return).
+	// Second reconcile creates ConfigMap and updates status.
+	for range 2 {
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+		Expect(err).NotTo(HaveOccurred())
+	}
 	var def logicv1.LogicFlowDefinition
 	Expect(k8sClient.Get(ctx, nn, &def)).To(Succeed())
 	return &def
@@ -135,9 +139,9 @@ var _ = Describe("LogicFlowDefinition Controller", func() {
 			Expect(cm.Labels).To(HaveKeyWithValue(testLabelKeyName, defName))
 			Expect(cm.Labels).To(HaveKeyWithValue(testLabelKeyManagedBy, LabelManagedBy))
 			Expect(cm.Labels).To(HaveKeyWithValue("app.kubernetes.io/part-of", LabelPartOf))
-			Expect(cm.Labels).To(HaveKeyWithValue(LabelRuntimeRef, rtName))
-			Expect(cm.Labels).To(HaveKeyWithValue(LabelWorkflowName, "payment-processor"))
-			Expect(cm.Labels).To(HaveKeyWithValue(LabelWorkflowVersion, "1.0.0"))
+			Expect(cm.Labels).To(HaveKeyWithValue(logicv1.LabelRuntimeRef, rtName))
+			Expect(cm.Labels).To(HaveKeyWithValue(logicv1.LabelWorkflowName, "payment-processor"))
+			Expect(cm.Labels).To(HaveKeyWithValue(logicv1.LabelWorkflowVersion, "1.0.0"))
 		})
 
 		It("should set owner references on the ConfigMap", func() {
@@ -162,8 +166,8 @@ var _ = Describe("LogicFlowDefinition Controller", func() {
 			cmNN := types.NamespacedName{Name: ConfigMapPrefix + defName, Namespace: testNamespace}
 			Expect(k8sClient.Get(ctx, cmNN, &cm)).To(Succeed())
 
-			Expect(cm.Data).To(HaveKey("payment-processor.json"))
-			Expect(cm.Data["payment-processor.json"]).To(ContainSubstring(`"name":"payment-processor"`))
+			Expect(cm.Data).To(HaveKey("payment-processor.yaml"))
+			Expect(cm.Data["payment-processor.yaml"]).To(ContainSubstring("name: payment-processor"))
 		})
 
 		It("should set status fields on first reconcile", func() {
@@ -172,7 +176,7 @@ var _ = Describe("LogicFlowDefinition Controller", func() {
 			Expect(def.Status.ObservedGeneration).To(Equal(def.Generation))
 			Expect(def.Status.WorkflowName).To(Equal("payment-processor"))
 			Expect(def.Status.WorkflowVersion).To(Equal("1.0.0"))
-			Expect(def.Status.WorkflowNamespace).To(Equal("payments"))
+			Expect(def.Status.WorkflowNamespace).To(Equal(testNamespace))
 			Expect(def.Status.ConfigMapRef).NotTo(BeNil())
 			Expect(def.Status.ConfigMapRef.Name).To(Equal(ConfigMapPrefix + defName))
 		})
@@ -298,14 +302,14 @@ var _ = Describe("LogicFlowDefinition Controller", func() {
 
 			Expect(updated.Status.WorkflowName).To(Equal("wf-v2"))
 			Expect(updated.Status.WorkflowVersion).To(Equal("2.0.0"))
-			Expect(updated.Status.WorkflowNamespace).To(Equal("ns2"))
+			Expect(updated.Status.WorkflowNamespace).To(Equal(testNamespace))
 
 			var cm corev1.ConfigMap
 			cmNN := types.NamespacedName{Name: ConfigMapPrefix + defName, Namespace: testNamespace}
 			Expect(k8sClient.Get(ctx, cmNN, &cm)).To(Succeed())
-			Expect(cm.Data).To(HaveKey("wf-v2.json"))
-			Expect(cm.Labels[LabelWorkflowName]).To(Equal("wf-v2"))
-			Expect(cm.Labels[LabelWorkflowVersion]).To(Equal("2.0.0"))
+			Expect(cm.Data).To(HaveKey("wf-v2.yaml"))
+			Expect(cm.Labels[logicv1.LabelWorkflowName]).To(Equal("wf-v2"))
+			Expect(cm.Labels[logicv1.LabelWorkflowVersion]).To(Equal("2.0.0"))
 		})
 
 		It("should update ObservedGeneration after spec change", func() {
