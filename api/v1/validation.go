@@ -45,10 +45,10 @@ func ValidateSecuritySpec(sec RuntimeSecuritySpec) error {
 		if sec.OIDC == nil {
 			return fmt.Errorf("spec.security.oidc is required when security type is OIDC")
 		}
-		if sec.OIDC.AuthServerUrl == "" {
+		if sec.OIDC.AuthServerURL == "" {
 			return fmt.Errorf("spec.security.oidc.authServerUrl is required when security type is OIDC")
 		}
-		if sec.OIDC.ClientId == "" {
+		if sec.OIDC.ClientID == "" {
 			return fmt.Errorf("spec.security.oidc.clientId is required when security type is OIDC")
 		}
 	}

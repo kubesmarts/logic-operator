@@ -379,7 +379,7 @@ func (r *LogicFlowRuntimeReconciler) updateStatusSvc(ctx context.Context, rt *lo
 	return nil
 }
 
-func (r *LogicFlowRuntimeReconciler) mapConfigMapToRuntime(ctx context.Context, obj client.Object) []reconcile.Request {
+func (r *LogicFlowRuntimeReconciler) mapConfigMapToRuntime(_ context.Context, obj client.Object) []reconcile.Request {
 	rtName := obj.GetLabels()[logicv1.LabelRuntimeRef]
 	if rtName == "" {
 		return nil

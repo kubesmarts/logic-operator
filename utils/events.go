@@ -29,12 +29,12 @@ import (
 // SendCloudEvent Sends a cloud event to the given url using the http protocol binding. By default, events are sent in
 // binary mode.
 func SendCloudEvent(event *cloudevents.Event, url string) error {
-	return SendCloudEventWithContext(event, context.TODO(), url)
+	return SendCloudEventWithContext(context.TODO(), event, url)
 }
 
 // SendCloudEventWithContext Sends a cloud event to the given url using the http protocol binding. By default, events
 // are sent in binary mode.
-func SendCloudEventWithContext(event *cloudevents.Event, ctx context.Context, url string) error {
+func SendCloudEventWithContext(ctx context.Context, event *cloudevents.Event, url string) error {
 	targetCtx := cloudevents.ContextWithTarget(ctx, url)
 	p, err := cloudevents.NewHTTP()
 	if err != nil {
@@ -47,15 +47,14 @@ func SendCloudEventWithContext(event *cloudevents.Event, ctx context.Context, ur
 	res := c.Send(targetCtx, *event)
 	if cloudevents.IsUndelivered(res) {
 		return fmt.Errorf("failed to send cloud event to url: %s, err: %s", url, res.Error())
-	} else {
-		var httpResult *cehttp.Result
-		if cloudevents.ResultAs(res, &httpResult) {
-			if !resultOK(httpResult) {
-				return fmt.Errorf("failed to send cloud event to url: %s, err: %s", url, httpResult.Error())
-			}
-		} else {
-			return fmt.Errorf("failed to send cloud event to url: %s, Send did not return an HTTP response: %s", url, res)
+	}
+	var httpResult *cehttp.Result
+	if cloudevents.ResultAs(res, &httpResult) {
+		if !resultOK(httpResult) {
+			return fmt.Errorf("failed to send cloud event to url: %s, err: %s", url, httpResult.Error())
 		}
+	} else {
+		return fmt.Errorf("failed to send cloud event to url: %s, Send did not return an HTTP response: %s", url, res)
 	}
 	return nil
 }

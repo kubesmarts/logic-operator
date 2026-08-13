@@ -26,7 +26,7 @@ func TestPersistenceEnvVars_JdbcUrlWithDefaultSecretKeys(t *testing.T) {
 	p := &logicv1.PersistenceOptionsSpec{
 		PostgreSQL: &logicv1.PersistencePostgreSQL{
 			SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
-			JdbcUrl:   testJdbcURL,
+			JdbcURL:   testJdbcURL,
 		},
 	}
 
@@ -56,7 +56,7 @@ func TestPersistenceEnvVars_CustomSecretKeys(t *testing.T) {
 				UserKey:     "DB_USER",
 				PasswordKey: "DB_PASS",
 			},
-			JdbcUrl: testJdbcURL,
+			JdbcURL: testJdbcURL,
 		},
 	}
 
@@ -129,7 +129,7 @@ func TestPersistenceEnvVars_TLSAppendsSslMode(t *testing.T) {
 		p := &logicv1.PersistenceOptionsSpec{
 			PostgreSQL: &logicv1.PersistencePostgreSQL{
 				SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
-				JdbcUrl:   testJdbcURL,
+				JdbcURL:   testJdbcURL,
 				TLS:       &logicv1.TLSConnection{Enabled: true, TLSMode: logicv1.TLSModeRequire},
 			},
 		}
@@ -142,7 +142,7 @@ func TestPersistenceEnvVars_TLSAppendsSslMode(t *testing.T) {
 		p := &logicv1.PersistenceOptionsSpec{
 			PostgreSQL: &logicv1.PersistencePostgreSQL{
 				SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
-				JdbcUrl:   testJdbcURL,
+				JdbcURL:   testJdbcURL,
 				TLS:       &logicv1.TLSConnection{Enabled: true},
 			},
 		}
@@ -225,8 +225,8 @@ func TestSecurityEnvVars_OIDC(t *testing.T) {
 		sec := logicv1.RuntimeSecuritySpec{
 			Type: logicv1.RuntimeSecurityOIDC,
 			OIDC: &logicv1.OIDCAuthSpec{
-				AuthServerUrl: "https://keycloak.example.com/realms/flow",
-				ClientId:      "flow-app",
+				AuthServerURL: "https://keycloak.example.com/realms/flow",
+				ClientID:      "flow-app",
 				ClientSecret:  logicv1.SecretKeySelector{Name: "oidc-secret", Key: "client-secret"},
 				RolesClaim:    "realm_access.roles",
 			},
@@ -247,8 +247,8 @@ func TestSecurityEnvVars_OIDC(t *testing.T) {
 		sec := logicv1.RuntimeSecuritySpec{
 			Type: logicv1.RuntimeSecurityOIDC,
 			OIDC: &logicv1.OIDCAuthSpec{
-				AuthServerUrl: "https://keycloak.example.com/realms/flow",
-				ClientId:      "flow-app",
+				AuthServerURL: "https://keycloak.example.com/realms/flow",
+				ClientID:      "flow-app",
 				ClientSecret:  logicv1.SecretKeySelector{Name: "oidc-secret", Key: "secret"},
 				RolesClaim:    "roles",
 			},

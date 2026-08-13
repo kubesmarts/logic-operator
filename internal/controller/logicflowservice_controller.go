@@ -207,6 +207,7 @@ func (r *LogicFlowServiceReconciler) applyRoute(
 ) error {
 	desired := routeForDefault(svc, rt, wfNamespace, wfName, version)
 	svc.Status.RouteRef = &corev1.LocalObjectReference{Name: desired.Name}
+	//nolint:staticcheck // OpenShift Route API has no apply configurations; deprecated Patch+client.Apply is the only option
 	return r.Patch(ctx, desired, client.Apply, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
 }
 
@@ -321,7 +322,7 @@ func (r *LogicFlowServiceReconciler) resolveRuntime(ctx context.Context, svc *lo
 	return &rt, nil
 }
 
-func (r *LogicFlowServiceReconciler) updateStatus(ctx context.Context, svc *logicv1.LogicFlowService, rt *logicv1.LogicFlowRuntime, wfNamespace, wfName string) error {
+func (r *LogicFlowServiceReconciler) updateStatus(ctx context.Context, svc *logicv1.LogicFlowService, rt *logicv1.LogicFlowRuntime, _, _ string) error {
 	svc.Status.ObservedGeneration = svc.Generation
 	svc.Status.RuntimeRef = &corev1.LocalObjectReference{Name: rt.Name}
 	svc.Status.Traffic = make([]logicv1.TrafficStatus, 0)
@@ -341,7 +342,7 @@ func (r *LogicFlowServiceReconciler) updateStatus(ctx context.Context, svc *logi
 		}
 	}
 
-	url, err := r.resolveURL(ctx, svc, wfNamespace, wfName)
+	url, err := r.resolveURL(ctx, svc)
 	if err != nil {
 		return err
 	}
@@ -350,7 +351,7 @@ func (r *LogicFlowServiceReconciler) updateStatus(ctx context.Context, svc *logi
 	return r.Status().Update(ctx, svc)
 }
 
-func (r *LogicFlowServiceReconciler) resolveURL(ctx context.Context, svc *logicv1.LogicFlowService, wfNamespace, wfName string) (string, error) {
+func (r *LogicFlowServiceReconciler) resolveURL(ctx context.Context, svc *logicv1.LogicFlowService) (string, error) {
 	scheme := "http"
 	if svc.Spec.Ingress.TLS.Enabled {
 		scheme = "https"

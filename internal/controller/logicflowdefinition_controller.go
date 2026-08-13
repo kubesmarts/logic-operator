@@ -80,7 +80,7 @@ func (r *LogicFlowDefinitionReconciler) Reconcile(ctx context.Context, req ctrl.
 	}
 	logicv1.SetCondition(&def.Status.Conditions, logicv1.ConditionFlowParsed, metav1.ConditionTrue, def.Generation, logicv1.ReasonReady, "")
 
-	if changed, err := r.updateFlowIdLabels(ctx, &def, wf); err != nil {
+	if changed, err := r.updateFlowIDLabels(ctx, &def, wf); err != nil {
 		return ctrl.Result{}, err
 	} else if changed {
 		return ctrl.Result{}, r.updateStatus(ctx, &def, wf)
@@ -141,7 +141,7 @@ func (r *LogicFlowDefinitionReconciler) updateStatus(ctx context.Context, def *l
 	return r.Status().Update(ctx, def)
 }
 
-func (r *LogicFlowDefinitionReconciler) updateFlowIdLabels(ctx context.Context, def *logicv1.LogicFlowDefinition, wf *model.Workflow) (bool, error) {
+func (r *LogicFlowDefinitionReconciler) updateFlowIDLabels(ctx context.Context, def *logicv1.LogicFlowDefinition, wf *model.Workflow) (bool, error) {
 	if def.Labels == nil {
 		def.Labels = make(map[string]string)
 	}
@@ -156,7 +156,7 @@ func (r *LogicFlowDefinitionReconciler) updateFlowIdLabels(ctx context.Context, 
 	def.Labels[logicv1.LabelWorkflowVersion] = wf.Document.Version
 	def.Labels[logicv1.LabelWorkflowNamespace] = def.Namespace
 	def.Labels[logicv1.LabelRuntimeRef] = def.Spec.RuntimeRef.Name
-	if err := r.Client.Patch(ctx, def, patch); err != nil {
+	if err := r.Patch(ctx, def, patch); err != nil {
 		return false, err
 	}
 	return true, nil

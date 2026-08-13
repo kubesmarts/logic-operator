@@ -20,7 +20,7 @@ func testServiceValidator(objs ...runtime.Object) *LogicFlowServiceValidator {
 	return &LogicFlowServiceValidator{Reader: builder.Build()}
 }
 
-func testDefinition(name, runtimeRef, workflowName, version string) *LogicFlowDefinition {
+func testDefinition(name, runtimeRef, workflowName string) *LogicFlowDefinition {
 	return &LogicFlowDefinition{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -89,10 +89,10 @@ func traffic(defName string, weight int32) TrafficSpec {
 }
 
 func TestLogicFlowServiceValidator_ValidateCreate(t *testing.T) {
-	def1 := testDefinition("def-v1", testRuntimeName, "payment", "1.0.0")
-	def2 := testDefinition("def-v2", testRuntimeName, "payment", "2.0.0")
-	defOtherRT := testDefinition("def-other-rt", "other-runtime", "payment", "1.0.0")
-	defOtherWF := testDefinition("def-other-wf", testRuntimeName, "order", "1.0.0")
+	def1 := testDefinition("def-v1", testRuntimeName, "payment")
+	def2 := testDefinition("def-v2", testRuntimeName, "payment")
+	defOtherRT := testDefinition("def-other-rt", "other-runtime", "payment")
+	defOtherWF := testDefinition("def-other-wf", testRuntimeName, "order")
 
 	tests := []struct {
 		name    string
@@ -258,7 +258,7 @@ func TestLogicFlowServiceValidator_ValidateCreate(t *testing.T) {
 }
 
 func TestLogicFlowServiceValidator_ValidateUpdate(t *testing.T) {
-	def1 := testDefinition("def-v1", testRuntimeName, "payment", "1.0.0")
+	def1 := testDefinition("def-v1", testRuntimeName, "payment")
 
 	base := testService(withDefaultDefinition("def-v1"))
 

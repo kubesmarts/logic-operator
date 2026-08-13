@@ -58,8 +58,8 @@ func TestLogicFlowRuntimeValidator_ValidateCreate(t *testing.T) {
 					Security: RuntimeSecuritySpec{
 						Type: RuntimeSecurityOIDC,
 						OIDC: &OIDCAuthSpec{
-							AuthServerUrl: "https://keycloak.example.com/realms/flow",
-							ClientId:      "flow-client",
+							AuthServerURL: "https://keycloak.example.com/realms/flow",
+							ClientID:      "flow-client",
 							ClientSecret:  SecretKeySelector{Name: "oidc-secret"},
 						},
 					},
@@ -85,8 +85,8 @@ func TestLogicFlowRuntimeValidator_ValidateCreate(t *testing.T) {
 					Security: RuntimeSecuritySpec{
 						Type: RuntimeSecurityOIDC,
 						OIDC: &OIDCAuthSpec{
-							AuthServerUrl: "",
-							ClientId:      "flow-client",
+							AuthServerURL: "",
+							ClientID:      "flow-client",
 							ClientSecret:  SecretKeySelector{Name: "oidc-secret"},
 						},
 					},

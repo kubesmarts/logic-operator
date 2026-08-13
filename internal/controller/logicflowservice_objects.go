@@ -247,7 +247,7 @@ func httpRouteForService(
 		parentRef = parentRef.WithNamespace(gatewayv1.Namespace(*gw.Namespace))
 	}
 
-	var backendRefs []*gatewayv1ac.HTTPBackendRefApplyConfiguration
+	backendRefs := make([]*gatewayv1ac.HTTPBackendRefApplyConfiguration, 0, len(targets))
 	for _, t := range targets {
 		rewritePath := quarkusFlowPath(wfNamespace, wfName, t.version)
 		ref := gatewayv1ac.HTTPBackendRef().

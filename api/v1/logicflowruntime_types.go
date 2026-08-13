@@ -199,13 +199,13 @@ type APIKeySpec struct {
 
 // OIDCAuthSpec configures OpenID Connect authentication.
 type OIDCAuthSpec struct {
-	// AuthServerUrl is the OIDC provider URL.
+	// AuthServerURL is the OIDC provider URL.
 	// +required
-	AuthServerUrl string `json:"authServerUrl"`
+	AuthServerURL string `json:"authServerUrl"`
 
-	// ClientId is the OAuth2 client ID.
+	// ClientID is the OAuth2 client ID.
 	// +required
-	ClientId string `json:"clientId"`
+	ClientID string `json:"clientId"`
 
 	// ClientSecret references the OAuth2 client secret.
 	// +required

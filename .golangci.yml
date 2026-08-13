@@ -1,6 +1,8 @@
 version: "2"
+
 run:
   allow-parallel-runners: true
+
 linters:
   default: none
   enable:
@@ -8,11 +10,9 @@ linters:
     - dupl
     - errcheck
     - ginkgolinter
-    - goconst
     - gocyclo
     - govet
     - ineffassign
-    - lll
     - misspell
     - nakedret
     - prealloc
@@ -24,25 +24,34 @@ linters:
   settings:
     revive:
       rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
         - name: comment-spacings
         - name: import-shadowing
+        - name: indent-error-flow
+        - name: var-naming
+        - name: var-declaration
+        - name: context-as-argument
+        - name: unused-parameter
+        - name: dot-imports
   exclusions:
-    generated: lax
     rules:
-      - linters:
-          - lll
-        path: api/*
-      - linters:
+      # ginkgo/gomega dot-imports are idiomatic in test files
+      - path: (_test\.go|test/)
+        linters:
+          - revive
+        text: "dot-imports"
+      # duplications are expected in controller reconcile loops
+      - path: "internal/"
+        linters:
           - dupl
-          - lll
-        path: internal/*
-      - linters:
-          - lll
-        path: utils/*
     paths:
-      - third_party$
-      - builtin$
-      - examples$
+      - third_party
+      - builtin
+      - examples
+
 formatters:
   enable:
     - gofmt

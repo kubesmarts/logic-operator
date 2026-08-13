@@ -117,11 +117,11 @@ func TestWebhookIntegration(t *testing.T) {
 		t.Fatalf("create client: %v", err)
 	}
 
-	testLFDWebhooks(t, ctx, k8sClient)
-	testLFRWebhooks(t, ctx, k8sClient)
+	testLFDWebhooks(ctx, t, k8sClient)
+	testLFRWebhooks(ctx, t, k8sClient)
 }
 
-func testLFDWebhooks(t *testing.T, ctx context.Context, k8sClient client.Client) {
+func testLFDWebhooks(ctx context.Context, t *testing.T, k8sClient client.Client) {
 	t.Run("LFD/valid create succeeds", func(t *testing.T) {
 		def := &LogicFlowDefinition{
 			ObjectMeta: metav1.ObjectMeta{Name: "valid-def", Namespace: testNamespace},
@@ -222,7 +222,7 @@ func testLFDWebhooks(t *testing.T, ctx context.Context, k8sClient client.Client)
 	})
 }
 
-func testLFRWebhooks(t *testing.T, ctx context.Context, k8sClient client.Client) {
+func testLFRWebhooks(ctx context.Context, t *testing.T, k8sClient client.Client) {
 	t.Run("LFR/valid empty spec succeeds", func(t *testing.T) {
 		rt := &LogicFlowRuntime{
 			ObjectMeta: metav1.ObjectMeta{Name: "valid-rt", Namespace: testNamespace},
@@ -279,7 +279,7 @@ func testLFRWebhooks(t *testing.T, ctx context.Context, k8sClient client.Client)
 					Persistence: &PersistenceOptionsSpec{
 						PostgreSQL: &PersistencePostgreSQL{
 							SecretRef: PostgreSQLSecretOptions{Name: testPGSecret},
-							JdbcUrl:   "jdbc:postgresql://localhost:5432/test",
+							JdbcURL:   "jdbc:postgresql://localhost:5432/test",
 						},
 					},
 				},

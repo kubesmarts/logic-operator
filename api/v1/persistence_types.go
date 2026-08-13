@@ -132,7 +132,7 @@ type PersistencePostgreSQL struct {
 	// PostgreSql JDBC URL. Mutually exclusive to serviceRef.
 	// e.g. "jdbc:postgresql://host:port/database?currentSchema=data-index-service"
 	// +optional
-	JdbcUrl string `json:"jdbcUrl,omitempty"`
+	JdbcURL string `json:"jdbcUrl,omitempty"`
 	// TLS configuration for PostgreSQL connections.
 	// When enabled, the operator will append SSL parameters to the JDBC URL.
 	// +optional

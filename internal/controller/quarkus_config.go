@@ -117,23 +117,23 @@ func persistenceEnvVars(p *logicv1.PersistenceOptionsSpec, namespace string) []*
 		envFromSecret("QUARKUS_DATASOURCE_PASSWORD", pg.SecretRef.Name, passwordKey),
 	)
 
-	jdbcUrl := pg.JdbcUrl
-	if jdbcUrl == "" && pg.ServiceRef != nil {
-		jdbcUrl = buildJdbcUrl(pg.ServiceRef, namespace)
+	jdbcURL := pg.JdbcURL
+	if jdbcURL == "" && pg.ServiceRef != nil {
+		jdbcURL = buildJdbcURL(pg.ServiceRef, namespace)
 	}
 	if pg.TLS != nil && pg.TLS.Enabled {
 		mode := string(pg.TLS.TLSMode)
 		if mode == "" {
 			mode = string(logicv1.TLSModePrefer)
 		}
-		if strings.Contains(jdbcUrl, "?") {
-			jdbcUrl += "&sslmode=" + mode
+		if strings.Contains(jdbcURL, "?") {
+			jdbcURL += "&sslmode=" + mode
 		} else {
-			jdbcUrl += "?sslmode=" + mode
+			jdbcURL += "?sslmode=" + mode
 		}
 	}
-	if jdbcUrl != "" {
-		envs = append(envs, envLiteral("QUARKUS_DATASOURCE_JDBC_URL", jdbcUrl))
+	if jdbcURL != "" {
+		envs = append(envs, envLiteral("QUARKUS_DATASOURCE_JDBC_URL", jdbcURL))
 	}
 
 	return envs
@@ -263,8 +263,8 @@ func oidcEnvVars(oidc *logicv1.OIDCAuthSpec) []*corev1ac.EnvVarApplyConfiguratio
 	}
 
 	envs = append(envs,
-		envLiteral("QUARKUS_OIDC_AUTH_SERVER_URL", oidc.AuthServerUrl),
-		envLiteral("QUARKUS_OIDC_CLIENT_ID", oidc.ClientId),
+		envLiteral("QUARKUS_OIDC_AUTH_SERVER_URL", oidc.AuthServerURL),
+		envLiteral("QUARKUS_OIDC_CLIENT_ID", oidc.ClientID),
 		envFromSecret("QUARKUS_OIDC_CREDENTIALS_SECRET", oidc.ClientSecret.Name, secretKey),
 	)
 
@@ -275,7 +275,7 @@ func oidcEnvVars(oidc *logicv1.OIDCAuthSpec) []*corev1ac.EnvVarApplyConfiguratio
 	return envs
 }
 
-func buildJdbcUrl(ref *logicv1.PostgreSQLServiceOptions, fallbackNamespace string) string {
+func buildJdbcURL(ref *logicv1.PostgreSQLServiceOptions, fallbackNamespace string) string {
 	if ref.SQLServiceOptions == nil {
 		return ""
 	}
