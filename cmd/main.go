@@ -22,6 +22,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/kubesmarts/logic-operator/utils"
+	"github.com/kubesmarts/logic-operator/utils/gatewayapi"
+	"github.com/kubesmarts/logic-operator/utils/openshift"
+
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -155,11 +159,6 @@ func main() {
 	// If the certificate is not specified, controller-runtime will automatically
 	// generate self-signed certificates for the metrics server. While convenient for development and testing,
 	// this setup is not recommended for production.
-	//
-	// TODO(user): If you enable certManager, uncomment the following lines:
-	// - [METRICS-WITH-CERTS] at config/default/kustomization.yaml to generate and use certificates
-	// managed by cert-manager for the metrics server.
-	// - [PROMETHEUS-WITH-CERTS] at config/prometheus/kustomization.yaml for TLS certification.
 	if len(metricsCertPath) > 0 {
 		setupLog.Info("Initializing metrics certificate watcher using provided certificates",
 			"metrics-cert-path", metricsCertPath, "metrics-cert-name", metricsCertName, "metrics-cert-key", metricsCertKey)
@@ -179,7 +178,8 @@ func main() {
 		})
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	cfg := ctrl.GetConfigOrDie()
+	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
 		WebhookServer:          webhookServer,
@@ -201,6 +201,15 @@ func main() {
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
+	}
+
+	// Set the flag to distinct our cluster type and available APIs we might need.
+	utils.SetNoStandardsAPIsAvailability(cfg)
+	if utils.IsGatewayAPIAvailable() {
+		gatewayapi.MustAddToScheme(scheme)
+	}
+	if utils.IsOpenShift() {
+		openshift.MustAddToScheme(scheme)
 	}
 
 	if err := (&controller.LogicPlatformReconciler{
@@ -232,7 +241,7 @@ func main() {
 		os.Exit(1)
 	}
 	if err := builder.WebhookManagedBy(mgr, &logicv1.LogicFlowDefinition{}).
-		WithValidator(&logicv1.LogicFlowDefinitionValidator{}).
+		WithValidator(&logicv1.LogicFlowDefinitionValidator{Reader: mgr.GetClient()}).
 		Complete(); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "LogicFlowDefinition")
 		os.Exit(1)
@@ -241,6 +250,12 @@ func main() {
 		WithValidator(&logicv1.LogicFlowRuntimeValidator{}).
 		Complete(); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "LogicFlowRuntime")
+		os.Exit(1)
+	}
+	if err := builder.WebhookManagedBy(mgr, &logicv1.LogicFlowService{}).
+		WithValidator(&logicv1.LogicFlowServiceValidator{Reader: mgr.GetClient()}).
+		Complete(); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "LogicFlowService")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

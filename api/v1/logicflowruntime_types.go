@@ -86,9 +86,6 @@ type RuntimeDefinitionStatus struct {
 	// Name of the workflow.
 	Name string `json:"name"`
 
-	// Service is the HTTP endpoint path.
-	Service string `json:"service"`
-
 	// Version of the workflow.
 	// +optional
 	Version string `json:"version,omitempty"`
@@ -202,13 +199,13 @@ type APIKeySpec struct {
 
 // OIDCAuthSpec configures OpenID Connect authentication.
 type OIDCAuthSpec struct {
-	// AuthServerUrl is the OIDC provider URL.
+	// AuthServerURL is the OIDC provider URL.
 	// +required
-	AuthServerUrl string `json:"authServerUrl"`
+	AuthServerURL string `json:"authServerUrl"`
 
-	// ClientId is the OAuth2 client ID.
+	// ClientID is the OAuth2 client ID.
 	// +required
-	ClientId string `json:"clientId"`
+	ClientID string `json:"clientId"`
 
 	// ClientSecret references the OAuth2 client secret.
 	// +required

@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -21,6 +22,20 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 )
 
+func getFirstFoundEnvTestBinaryDir() string {
+	basePath := filepath.Join("..", "..", "bin", "k8s")
+	entries, err := os.ReadDir(basePath)
+	if err != nil {
+		return ""
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			return filepath.Join(basePath, entry.Name())
+		}
+	}
+	return ""
+}
+
 func TestWebhookIntegration(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
@@ -33,6 +48,7 @@ func TestWebhookIntegration(t *testing.T) {
 	testEnv := &envtest.Environment{
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: true,
+		BinaryAssetsDirectory: getFirstFoundEnvTestBinaryDir(),
 		WebhookInstallOptions: envtest.WebhookInstallOptions{
 			Paths: []string{filepath.Join("..", "..", "config", "webhook")},
 		},
@@ -60,7 +76,7 @@ func TestWebhookIntegration(t *testing.T) {
 	}
 
 	if err := builder.WebhookManagedBy(mgr, &LogicFlowDefinition{}).
-		WithValidator(&LogicFlowDefinitionValidator{}).
+		WithValidator(&LogicFlowDefinitionValidator{Reader: mgr.GetClient()}).
 		Complete(); err != nil {
 		t.Fatalf("register LFD webhook: %v", err)
 	}
@@ -68,6 +84,11 @@ func TestWebhookIntegration(t *testing.T) {
 		WithValidator(&LogicFlowRuntimeValidator{}).
 		Complete(); err != nil {
 		t.Fatalf("register LFR webhook: %v", err)
+	}
+	if err := builder.WebhookManagedBy(mgr, &LogicFlowService{}).
+		WithValidator(&LogicFlowServiceValidator{Reader: mgr.GetClient()}).
+		Complete(); err != nil {
+		t.Fatalf("register LFS webhook: %v", err)
 	}
 
 	go func() {
@@ -96,11 +117,11 @@ func TestWebhookIntegration(t *testing.T) {
 		t.Fatalf("create client: %v", err)
 	}
 
-	testLFDWebhooks(t, ctx, k8sClient)
-	testLFRWebhooks(t, ctx, k8sClient)
+	testLFDWebhooks(ctx, t, k8sClient)
+	testLFRWebhooks(ctx, t, k8sClient)
 }
 
-func testLFDWebhooks(t *testing.T, ctx context.Context, k8sClient client.Client) {
+func testLFDWebhooks(ctx context.Context, t *testing.T, k8sClient client.Client) {
 	t.Run("LFD/valid create succeeds", func(t *testing.T) {
 		def := &LogicFlowDefinition{
 			ObjectMeta: metav1.ObjectMeta{Name: "valid-def", Namespace: testNamespace},
@@ -201,7 +222,7 @@ func testLFDWebhooks(t *testing.T, ctx context.Context, k8sClient client.Client)
 	})
 }
 
-func testLFRWebhooks(t *testing.T, ctx context.Context, k8sClient client.Client) {
+func testLFRWebhooks(ctx context.Context, t *testing.T, k8sClient client.Client) {
 	t.Run("LFR/valid empty spec succeeds", func(t *testing.T) {
 		rt := &LogicFlowRuntime{
 			ObjectMeta: metav1.ObjectMeta{Name: "valid-rt", Namespace: testNamespace},
@@ -258,7 +279,7 @@ func testLFRWebhooks(t *testing.T, ctx context.Context, k8sClient client.Client)
 					Persistence: &PersistenceOptionsSpec{
 						PostgreSQL: &PersistencePostgreSQL{
 							SecretRef: PostgreSQLSecretOptions{Name: testPGSecret},
-							JdbcUrl:   "jdbc:postgresql://localhost:5432/test",
+							JdbcURL:   "jdbc:postgresql://localhost:5432/test",
 						},
 					},
 				},

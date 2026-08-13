@@ -75,8 +75,8 @@ func HPAIsWorking(hpa *autoscalingv2.HorizontalPodAutoscaler) bool {
 
 // HPAEqualsBySpec returns true if to HorizontalPodAutoscaler has the same Spec, false in any other case.
 func HPAEqualsBySpec(hpa1, hpa2 *autoscalingv2.HorizontalPodAutoscaler) bool {
-	var hpa1Spec *autoscalingv2.HorizontalPodAutoscalerSpec = nil
-	var hpa2Spec *autoscalingv2.HorizontalPodAutoscalerSpec = nil
+	var hpa1Spec *autoscalingv2.HorizontalPodAutoscalerSpec
+	var hpa2Spec *autoscalingv2.HorizontalPodAutoscalerSpec
 	if hpa1 != nil {
 		hpa1Spec = &hpa1.Spec
 	}

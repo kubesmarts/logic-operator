@@ -9574,10 +9574,10 @@ spec:
                     description: OIDC configures OpenID Connect authentication.
                     properties:
                       authServerUrl:
-                        description: AuthServerUrl is the OIDC provider URL.
+                        description: AuthServerURL is the OIDC provider URL.
                         type: string
                       clientId:
-                        description: ClientId is the OAuth2 client ID.
+                        description: ClientID is the OAuth2 client ID.
                         type: string
                       clientSecret:
                         description: ClientSecret references the OAuth2 client secret.
@@ -9705,15 +9705,11 @@ spec:
                     name:
                       description: Name of the workflow.
                       type: string
-                    service:
-                      description: Service is the HTTP endpoint path.
-                      type: string
                     version:
                       description: Version of the workflow.
                       type: string
                   required:
                   - name
-                  - service
                   type: object
                 type: array
               deploymentRef:

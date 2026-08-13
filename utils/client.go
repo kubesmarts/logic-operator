@@ -54,11 +54,11 @@ func SetDynamicClient(cli *dynamic.DynamicClient) {
 
 func GetDiscoveryClient(cfg *rest.Config) (discovery.DiscoveryInterface, error) {
 	if discoveryClient == nil {
-		if cli, err := discovery.NewDiscoveryClientForConfig(cfg); err != nil {
+		cli, err := discovery.NewDiscoveryClientForConfig(cfg)
+		if err != nil {
 			return nil, err
-		} else {
-			discoveryClient = cli
 		}
+		discoveryClient = cli
 	}
 	return discoveryClient, nil
 }

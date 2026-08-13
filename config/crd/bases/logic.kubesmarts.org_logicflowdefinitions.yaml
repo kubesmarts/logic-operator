@@ -175,9 +175,8 @@ spec:
                   flow.document.name.
                 type: string
               workflowNamespace:
-                description: |-
-                  WorkflowNamespace is the DSL namespace extracted from flow.document.namespace.
-                  Not the Kubernetes namespace.
+                description: WorkflowNamespace is the Kubernetes namespace used for
+                  flow path resolution.
                 type: string
               workflowVersion:
                 description: WorkflowVersion is the version extracted from flow.document.version.

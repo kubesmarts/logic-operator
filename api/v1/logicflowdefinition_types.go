@@ -28,6 +28,13 @@ import (
 
 const LogicFlowDefinitionKind = "LogicFlowDefinition"
 
+const (
+	LabelRuntimeRef        = "logic.kubesmarts.org/runtime-ref"
+	LabelWorkflowName      = "logic.kubesmarts.org/workflow-name"
+	LabelWorkflowVersion   = "logic.kubesmarts.org/workflow-version"
+	LabelWorkflowNamespace = "logic.kubesmarts.org/workflow-namespace"
+)
+
 // LogicFlowDefinitionSpec defines the desired state of LogicFlowDefinition.
 //
 // Immutable workflow version referencing a LogicFlowRuntime for execution.
@@ -69,8 +76,7 @@ type LogicFlowDefinitionStatus struct {
 	// +optional
 	WorkflowVersion string `json:"workflowVersion,omitempty"`
 
-	// WorkflowNamespace is the DSL namespace extracted from flow.document.namespace.
-	// Not the Kubernetes namespace.
+	// WorkflowNamespace is the Kubernetes namespace used for flow path resolution.
 	// +optional
 	WorkflowNamespace string `json:"workflowNamespace,omitempty"`
 

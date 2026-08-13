@@ -82,16 +82,16 @@ func createFlowConfigMap(ctx context.Context, name, runtimeRef, workflowName, wo
 			Name:      name,
 			Namespace: testNamespace,
 			Labels: map[string]string{
-				testLabelKeyName:            name,
-				testLabelKeyManagedBy:       LabelManagedBy,
-				"app.kubernetes.io/part-of": LabelPartOf,
-				LabelRuntimeRef:             runtimeRef,
-				LabelWorkflowName:           workflowName,
-				LabelWorkflowVersion:        workflowVersion,
+				testLabelKeyName:             name,
+				testLabelKeyManagedBy:        LabelManagedBy,
+				"app.kubernetes.io/part-of":  LabelPartOf,
+				logicv1.LabelRuntimeRef:      runtimeRef,
+				logicv1.LabelWorkflowName:    workflowName,
+				logicv1.LabelWorkflowVersion: workflowVersion,
 			},
 		},
 		Data: map[string]string{
-			workflowName + ".json": `{"document":{"name":"` + workflowName + `"}}`,
+			workflowName + ".yaml": "document:\n  name: " + workflowName + "\n",
 		},
 	}
 	Expect(k8sClient.Create(ctx, cm)).To(Succeed())
@@ -132,7 +132,7 @@ func persistenceSpec() logicv1.LogicFlowRuntimeSpec {
 			Persistence: &logicv1.PersistenceOptionsSpec{
 				PostgreSQL: &logicv1.PersistencePostgreSQL{
 					SecretRef: logicv1.PostgreSQLSecretOptions{Name: "pg-creds"},
-					JdbcUrl:   "jdbc:postgresql://pg.default.svc:5432/logicflow",
+					JdbcURL:   "jdbc:postgresql://pg.default.svc:5432/logicflow",
 				},
 			},
 		},
@@ -273,7 +273,7 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 					Persistence: &logicv1.PersistenceOptionsSpec{
 						PostgreSQL: &logicv1.PersistencePostgreSQL{
 							SecretRef: logicv1.PostgreSQLSecretOptions{Name: "pg-creds"},
-							JdbcUrl:   "jdbc:postgresql://pg.default.svc:5432/logicflow",
+							JdbcURL:   "jdbc:postgresql://pg.default.svc:5432/logicflow",
 						},
 					},
 				},
@@ -314,9 +314,9 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 			Expect(password).NotTo(BeNil())
 			Expect(password.ValueFrom.SecretKeyRef.Name).To(Equal("pg-creds"))
 
-			jdbcUrl := findEnvVar(envs, "QUARKUS_DATASOURCE_JDBC_URL")
-			Expect(jdbcUrl).NotTo(BeNil())
-			Expect(jdbcUrl.Value).To(Equal("jdbc:postgresql://pg.default.svc:5432/logicflow"))
+			jdbcURL := findEnvVar(envs, "QUARKUS_DATASOURCE_JDBC_URL")
+			Expect(jdbcURL).NotTo(BeNil())
+			Expect(jdbcURL.Value).To(Equal("jdbc:postgresql://pg.default.svc:5432/logicflow"))
 		})
 	})
 
@@ -604,8 +604,8 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 			vm := findVolumeMount(c, cmName)
 			Expect(vm).NotTo(BeNil(), "volumeMount for ConfigMap not found")
-			Expect(vm.MountPath).To(Equal(WorkflowMountPath + "/payment-processor.json"))
-			Expect(vm.SubPath).To(Equal("payment-processor.json"))
+			Expect(vm.MountPath).To(Equal(WorkflowMountPath + "/payment-processor.yaml"))
+			Expect(vm.SubPath).To(Equal("payment-processor.yaml"))
 			Expect(vm.ReadOnly).To(BeTrue())
 		})
 
@@ -615,7 +615,6 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 			Expect(rt.Status.Definitions).To(HaveLen(1))
 			Expect(rt.Status.Definitions[0].Name).To(Equal("payment-processor"))
 			Expect(rt.Status.Definitions[0].Version).To(Equal("1.0.0"))
-			Expect(rt.Status.Definitions[0].Service).To(BeEmpty())
 		})
 
 		It("should populate status.configMapRefs", func() {

@@ -30,15 +30,26 @@ const (
 )
 
 const (
-	ConditionRuntimeRefValid = "RuntimeRefValid"
-	ConditionFlowParsed      = "FlowParsed"
-	ConditionConfigMapReady  = "ConfigMapReady"
+	ConditionRuntimeRefValid   = "RuntimeRefValid"
+	ConditionFlowParsed        = "FlowParsed"
+	ConditionConfigMapReady    = "ConfigMapReady"
+	ConditionRuntimeConsistent = "RuntimeConsistent"
 )
 
 const (
 	ReasonRuntimeNotFound = "RuntimeNotFound"
+	ReasonRuntimeConflict = "RuntimeConflict"
 	ReasonParseError      = "ParseError"
-	ReasonSSAApplyFailed  = "ReasonSSAApplyFailed"
+	ReasonSSAApplyFailed  = "SSAApplyFailed"
+)
+
+const (
+	ConditionIngressReady = "IngressReady"
+)
+
+const (
+	ReasonGatewayRefRequired   = "GatewayRefRequired"
+	ReasonIngressMisconfigured = "IngressMisconfigured"
 )
 
 // SetCondition sets a condition on a Conditions slice, handling insert/update
@@ -50,6 +61,15 @@ func SetCondition(conditions *[]metav1.Condition, conditionType string, status m
 		ObservedGeneration: observedGeneration,
 		Reason:             reason,
 		Message:            message,
+	})
+}
+
+func SetConditionTrue(conditions *[]metav1.Condition, conditionType string, observedGeneration int64, reason string) {
+	meta.SetStatusCondition(conditions, metav1.Condition{
+		Type:               conditionType,
+		Status:             metav1.ConditionTrue,
+		ObservedGeneration: observedGeneration,
+		Reason:             reason,
 	})
 }
 

@@ -16,7 +16,7 @@ func isKnownRunnerImage(image string) bool {
 	return strings.HasPrefix(image, FlowRunnerRegistry+"/"+FlowRunnerImage+":")
 }
 
-func hasPersistence(p *PersistenceOptionsSpec) bool {
+func HasPersistence(p *PersistenceOptionsSpec) bool {
 	return p != nil && p.PostgreSQL != nil
 }
 
@@ -25,10 +25,10 @@ func ValidateRunnerImage(image string, persistence *PersistenceOptionsSpec) erro
 		return nil
 	}
 
-	if strings.HasSuffix(image, "-"+ImageVariantMinimal) && hasPersistence(persistence) {
+	if strings.HasSuffix(image, "-"+ImageVariantMinimal) && HasPersistence(persistence) {
 		return fmt.Errorf("image %q does not support persistence; use the %s variant or remove persistence config", image, ImageVariantStandard)
 	}
-	if strings.HasSuffix(image, "-"+ImageVariantStandard) && !hasPersistence(persistence) {
+	if strings.HasSuffix(image, "-"+ImageVariantStandard) && !HasPersistence(persistence) {
 		return fmt.Errorf("image %q requires persistence configuration; set spec.persistence or use the %s variant", image, ImageVariantMinimal)
 	}
 
@@ -45,10 +45,10 @@ func ValidateSecuritySpec(sec RuntimeSecuritySpec) error {
 		if sec.OIDC == nil {
 			return fmt.Errorf("spec.security.oidc is required when security type is OIDC")
 		}
-		if sec.OIDC.AuthServerUrl == "" {
+		if sec.OIDC.AuthServerURL == "" {
 			return fmt.Errorf("spec.security.oidc.authServerUrl is required when security type is OIDC")
 		}
-		if sec.OIDC.ClientId == "" {
+		if sec.OIDC.ClientID == "" {
 			return fmt.Errorf("spec.security.oidc.clientId is required when security type is OIDC")
 		}
 	}

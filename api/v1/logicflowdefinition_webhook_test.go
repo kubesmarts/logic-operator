@@ -7,6 +7,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 const (
@@ -43,8 +44,16 @@ func invalidFlowRaw() runtime.RawExtension {
 	}
 }
 
+func testValidator() *LogicFlowDefinitionValidator {
+	scheme := runtime.NewScheme()
+	_ = AddToScheme(scheme)
+	return &LogicFlowDefinitionValidator{
+		Reader: fake.NewClientBuilder().WithScheme(scheme).Build(),
+	}
+}
+
 func TestLogicFlowDefinitionValidator_ValidateCreate(t *testing.T) {
-	v := &LogicFlowDefinitionValidator{}
+	v := testValidator()
 	ctx := context.Background()
 
 	tests := []struct {
@@ -105,7 +114,7 @@ func TestLogicFlowDefinitionValidator_ValidateCreate(t *testing.T) {
 }
 
 func TestLogicFlowDefinitionValidator_ValidateUpdate(t *testing.T) {
-	v := &LogicFlowDefinitionValidator{}
+	v := testValidator()
 	ctx := context.Background()
 
 	base := &LogicFlowDefinition{
@@ -181,7 +190,7 @@ func TestLogicFlowDefinitionValidator_ValidateUpdate(t *testing.T) {
 }
 
 func TestLogicFlowDefinitionValidator_ValidateDelete(t *testing.T) {
-	v := &LogicFlowDefinitionValidator{}
+	v := testValidator()
 	_, err := v.ValidateDelete(context.Background(), &LogicFlowDefinition{})
 	if err != nil {
 		t.Errorf("ValidateDelete() unexpected error: %v", err)

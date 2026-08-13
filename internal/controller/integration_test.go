@@ -46,7 +46,7 @@ var _ = Describe("Cross-controller integration", func() {
 			// Verify ConfigMap exists with runtime-ref label
 			var cm corev1.ConfigMap
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: cmName, Namespace: testNamespace}, &cm)).To(Succeed())
-			Expect(cm.Labels[LabelRuntimeRef]).To(Equal(rtName))
+			Expect(cm.Labels[logicv1.LabelRuntimeRef]).To(Equal(rtName))
 
 			// Step 2: Reconcile Runtime — discovers the ConfigMap
 			rt := reconcileAndFetch(ctx, rtRec, rtNN)
@@ -61,8 +61,8 @@ var _ = Describe("Cross-controller integration", func() {
 
 			vm := findVolumeMount(mainContainer(&dep), cmName)
 			Expect(vm).NotTo(BeNil(), "expected volumeMount for ConfigMap %s", cmName)
-			Expect(vm.MountPath).To(Equal(WorkflowMountPath + "/payment-processor.json"))
-			Expect(vm.SubPath).To(Equal("payment-processor.json"))
+			Expect(vm.MountPath).To(Equal(WorkflowMountPath + "/payment-processor.yaml"))
+			Expect(vm.SubPath).To(Equal("payment-processor.yaml"))
 			Expect(vm.ReadOnly).To(BeTrue())
 
 			// Verify Runtime status
