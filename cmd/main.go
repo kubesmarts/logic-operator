@@ -22,6 +22,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/kubesmarts/logic-operator/utils"
+	"github.com/kubesmarts/logic-operator/utils/gatewayapi"
+	"github.com/kubesmarts/logic-operator/utils/openshift"
+
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -174,7 +178,8 @@ func main() {
 		})
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	cfg := ctrl.GetConfigOrDie()
+	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
 		WebhookServer:          webhookServer,
@@ -196,6 +201,15 @@ func main() {
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
+	}
+
+	// Set the flag to distinct our cluster type and available APIs we might need.
+	utils.SetNoStandardsAPIsAvailability(cfg)
+	if utils.IsGatewayAPIAvailable() {
+		gatewayapi.MustAddToScheme(scheme)
+	}
+	if utils.IsOpenShift() {
+		openshift.MustAddToScheme(scheme)
 	}
 
 	if err := (&controller.LogicPlatformReconciler{

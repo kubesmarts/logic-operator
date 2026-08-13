@@ -21,6 +21,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const LogicFlowServiceKind = "LogicFlowService"
+
 // LogicFlowServiceSpec defines the desired state of LogicFlowService.
 //
 // Provides stable external HTTP access to workflows with traffic splitting and TLS.
@@ -66,31 +68,24 @@ type TrafficSpec struct {
 }
 
 // IngressSpec configures external HTTP/HTTPS access.
+// Creates an Ingress (Kubernetes), Route (OpenShift), or HTTPRoute (Gateway API).
 type IngressSpec struct {
-	// Enabled determines whether to create Ingress/Route.
-	// +optional
-	// +kubebuilder:default=true
-	Enabled bool `json:"enabled,omitempty"`
-
-	// ControllerType determines which controller to target.
-	// Auto-detected if not specified (OpenShift → openshift, K8s → nginx).
-	// Immutable on OpenShift (cannot switch between Route and Ingress).
-	// On K8s, can be changed between supported Ingress controllers.
-	// +optional
-	// +kubebuilder:validation:Enum=nginx;openshift
-	ControllerType string `json:"controllerType,omitempty"`
-
 	// Host is the external hostname.
+	// Required when GatewayRef is not set.
 	// +optional
 	Host string `json:"host,omitempty"`
 
-	// IngressClassName specifies the IngressClass resource name.
-	// Only used when controllerType=nginx (ignored for openshift).
+	// IngressClassName selects the Ingress controller (Kubernetes Ingress mode).
 	// +optional
 	IngressClassName *string `json:"ingressClassName,omitempty"`
 
-	// Annotations for the Ingress/Route resource (user-provided).
-	// Operator adds path rewriting annotations automatically.
+	// GatewayRef selects the Gateway for HTTPRoute creation (Gateway API mode).
+	// When set, an HTTPRoute is created instead of Ingress/Route.
+	// Required for traffic splitting on OpenShift.
+	// +optional
+	GatewayRef *GatewayRef `json:"gatewayRef,omitempty"`
+
+	// Annotations for the Ingress/Route/HTTPRoute resource (user-provided).
 	// +optional
 	Annotations map[string]string `json:"annotations,omitempty"`
 
@@ -143,6 +138,17 @@ type CertManagerIssuerRef struct {
 	Group string `json:"group,omitempty"`
 }
 
+// GatewayRef references a Gateway for HTTPRoute parentRefs.
+type GatewayRef struct {
+	// Name of the Gateway.
+	// +required
+	Name string `json:"name"`
+
+	// Namespace of the Gateway (defaults to the service's namespace).
+	// +optional
+	Namespace *string `json:"namespace,omitempty"`
+}
+
 // LogicFlowServiceStatus defines the observed state of LogicFlowService.
 type LogicFlowServiceStatus struct {
 	// ObservedGeneration tracks the last reconciled spec generation.
@@ -160,6 +166,10 @@ type LogicFlowServiceStatus struct {
 	// RouteRef references the created Route (OpenShift only).
 	// +optional
 	RouteRef *corev1.LocalObjectReference `json:"routeRef,omitempty"`
+
+	// HTTPRouteRef references the created HTTPRoute (Gateway API).
+	// +optional
+	HTTPRouteRef *corev1.LocalObjectReference `json:"httpRouteRef,omitempty"`
 
 	// URL is the full external URL for this service.
 	// +optional

@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/kubesmarts/logic-operator/utils"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 // +kubebuilder:webhook:path=/validate-logic-kubesmarts-org-v1-logicflowservice,mutating=false,failurePolicy=fail,sideEffects=None,groups=logic.kubesmarts.org,resources=logicflowservices,verbs=create;update,versions=v1,name=vlogicflowservice-v1.kb.io,admissionReviewVersions=v1
 
+// +kubebuilder:object:generate=false
 type LogicFlowServiceValidator struct {
 	Reader client.Reader
 }
@@ -21,10 +23,8 @@ func (v *LogicFlowServiceValidator) ValidateCreate(ctx context.Context, obj *Log
 }
 
 func (v *LogicFlowServiceValidator) ValidateUpdate(ctx context.Context, oldObj, newObj *LogicFlowService) (admission.Warnings, error) {
-	oldType := oldObj.Spec.Ingress.ControllerType
-	newType := newObj.Spec.Ingress.ControllerType
-	if oldType != newType && (oldType == "openshift" || newType == "openshift") {
-		return nil, fmt.Errorf("spec.ingress.controllerType: cannot switch between openshift and other controller types")
+	if err := v.validateGatewayRefImmutable(oldObj, newObj); err != nil {
+		return nil, err
 	}
 	return nil, v.validate(ctx, newObj)
 }
@@ -65,8 +65,11 @@ func (v *LogicFlowServiceValidator) validateTrafficConfig(obj *LogicFlowService)
 }
 
 func (v *LogicFlowServiceValidator) validateIngress(obj *LogicFlowService) error {
-	if obj.Spec.Ingress.Enabled && obj.Spec.Ingress.Host == "" {
-		return fmt.Errorf("spec.ingress.host is required when ingress is enabled")
+	if obj.Spec.Ingress.GatewayRef == nil && !utils.IsOpenShift() && obj.Spec.Ingress.Host == "" {
+		return fmt.Errorf("spec.ingress.host is required for nginx Ingress mode")
+	}
+	if obj.Spec.Ingress.IngressClassName != nil && *obj.Spec.Ingress.IngressClassName != "nginx" {
+		return fmt.Errorf("spec.ingress.ingressClassName only supports \"nginx\", got %q", *obj.Spec.Ingress.IngressClassName)
 	}
 	return nil
 }
@@ -133,6 +136,15 @@ func (v *LogicFlowServiceValidator) resolveDefinitionRefs(obj *LogicFlowService)
 		refs = append(refs, t.DefinitionRef.Name)
 	}
 	return refs
+}
+
+func (v *LogicFlowServiceValidator) validateGatewayRefImmutable(oldObj, newObj *LogicFlowService) error {
+	hadGatewayRef := oldObj.Spec.Ingress.GatewayRef != nil
+	hasGatewayRef := newObj.Spec.Ingress.GatewayRef != nil
+	if hadGatewayRef != hasGatewayRef {
+		return fmt.Errorf("spec.ingress.gatewayRef is immutable once set; create a new LogicFlowService to change networking mode")
+	}
+	return nil
 }
 
 func (v *LogicFlowServiceValidator) resolveWorkflowName(def *LogicFlowDefinition) string {

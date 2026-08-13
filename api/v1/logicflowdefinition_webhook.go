@@ -10,6 +10,7 @@ import (
 
 // +kubebuilder:webhook:path=/validate-logic-kubesmarts-org-v1-logicflowdefinition,mutating=false,failurePolicy=fail,sideEffects=None,groups=logic.kubesmarts.org,resources=logicflowdefinitions,verbs=create;update,versions=v1,name=vlogicflowdefinition-v1.kb.io,admissionReviewVersions=v1
 
+// +kubebuilder:object:generate=false
 type LogicFlowDefinitionValidator struct {
 	Reader client.Reader
 }

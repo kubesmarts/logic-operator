@@ -30,10 +30,10 @@ const (
 )
 
 const (
-	ConditionRuntimeRefValid    = "RuntimeRefValid"
-	ConditionFlowParsed         = "FlowParsed"
-	ConditionConfigMapReady     = "ConfigMapReady"
-	ConditionRuntimeConsistent  = "RuntimeConsistent"
+	ConditionRuntimeRefValid   = "RuntimeRefValid"
+	ConditionFlowParsed        = "FlowParsed"
+	ConditionConfigMapReady    = "ConfigMapReady"
+	ConditionRuntimeConsistent = "RuntimeConsistent"
 )
 
 const (
@@ -41,6 +41,17 @@ const (
 	ReasonRuntimeConflict = "RuntimeConflict"
 	ReasonParseError      = "ParseError"
 	ReasonSSAApplyFailed  = "ReasonSSAApplyFailed"
+)
+
+const (
+	ConditionDefinitionsReady = "DefinitionsReady"
+	ConditionIngressReady     = "IngressReady"
+	ConditionTLSReady         = "TLSReady"
+)
+
+const (
+	ReasonGatewayRefRequired   = "GatewayRefRequired"
+	ReasonIngressMisconfigured = "IngressMisconfigured"
 )
 
 // SetCondition sets a condition on a Conditions slice, handling insert/update

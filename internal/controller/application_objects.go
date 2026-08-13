@@ -4,55 +4,11 @@ import (
 	"encoding/json"
 
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
-	appsv1 "k8s.io/api/apps/v1"
-	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	appsv1ac "k8s.io/client-go/applyconfigurations/apps/v1"
 	corev1ac "k8s.io/client-go/applyconfigurations/core/v1"
 	metav1ac "k8s.io/client-go/applyconfigurations/meta/v1"
 )
-
-const (
-	ContainerNameRunner     = "logic-runner"
-	FieldOwnerLogicOperator = "logic-operator"
-	LabelManagedBy          = "logic-operator"
-	LabelPartOf             = "logic-platform"
-
-	ConfigMapPrefix = "lfd-"
-
-	LabelKeyName      = "app.kubernetes.io/name"
-	LabelKeyManagedBy = "app.kubernetes.io/managed-by"
-)
-
-func ChildLabels(owner metav1.Object) map[string]string {
-	labels := make(map[string]string)
-	for k, v := range owner.GetLabels() {
-		labels[k] = v
-	}
-	labels[LabelKeyName] = owner.GetName()
-	labels[LabelKeyManagedBy] = LabelManagedBy
-	labels["app.kubernetes.io/part-of"] = LabelPartOf
-	return labels
-}
-
-func SelectorLabels(name string) map[string]string {
-	return map[string]string{
-		LabelKeyName:      name,
-		LabelKeyManagedBy: LabelManagedBy,
-	}
-}
-
-func OwnerRef(owner metav1.Object, kind string) *metav1ac.OwnerReferenceApplyConfiguration {
-	return metav1ac.OwnerReference().
-		WithAPIVersion(logicv1.GroupVersion.String()).
-		WithKind(kind).
-		WithName(owner.GetName()).
-		WithUID(owner.GetUID()).
-		WithBlockOwnerDeletion(true).
-		WithController(true)
-}
 
 // ContainerOption decorates the main container before it's placed in the pod spec.
 type ContainerOption func(*corev1ac.ContainerApplyConfiguration)
@@ -282,16 +238,6 @@ func convertSliceTo[S any, D any](src []S) []*D {
 	return result
 }
 
-func MergeMaps(maps ...map[string]string) map[string]string {
-	result := make(map[string]string)
-	for _, m := range maps {
-		for k, v := range m {
-			result[k] = v
-		}
-	}
-	return result
-}
-
 func effectiveReplicas(app *logicv1.ApplicationSpec) int32 {
 	if app.PodTemplate.Replicas != nil {
 		return *app.PodTemplate.Replicas
@@ -300,19 +246,6 @@ func effectiveReplicas(app *logicv1.ApplicationSpec) int32 {
 		return *app.Replicas
 	}
 	return 1
-}
-
-func durableDeploymentStrategy(replicas int32) *appsv1ac.DeploymentStrategyApplyConfiguration {
-	if replicas <= 1 {
-		return appsv1ac.DeploymentStrategy().
-			WithType(appsv1.RecreateDeploymentStrategyType)
-	}
-	one := intstr.FromInt32(1)
-	return appsv1ac.DeploymentStrategy().
-		WithType(appsv1.RollingUpdateDeploymentStrategyType).
-		WithRollingUpdate(appsv1ac.RollingUpdateDeployment().
-			WithMaxUnavailable(one).
-			WithMaxSurge(one))
 }
 
 func restrictedContainerSecurity() *corev1ac.SecurityContextApplyConfiguration {
@@ -327,49 +260,4 @@ func restrictedPodSecurity() *corev1ac.PodSecurityContextApplyConfiguration {
 		WithRunAsNonRoot(true).
 		WithSeccompProfile(corev1ac.SeccompProfile().
 			WithType(corev1.SeccompProfileTypeRuntimeDefault))
-}
-
-func memberLeaseLabels(poolName string) map[string]string {
-	return map[string]string{
-		"app.kubernetes.io/managed-by": DurableManagedByValue,
-		"app.kubernetes.io/component":  DurableComponentValue,
-		LabelDurablePool:               poolName,
-		LabelDurableIsLeader:           "false",
-	}
-}
-
-func newMemberLease(name, namespace, poolName string, dep *appsv1.Deployment) *coordinationv1.Lease {
-	duration := LeaseDuration
-	controller := false
-	return &coordinationv1.Lease{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-			Labels:    memberLeaseLabels(poolName),
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: "apps/v1",
-					Kind:       "Deployment",
-					Name:       dep.Name,
-					UID:        dep.UID,
-					Controller: &controller,
-				},
-			},
-		},
-		Spec: coordinationv1.LeaseSpec{
-			LeaseDurationSeconds: &duration,
-		},
-	}
-}
-
-// FlowVolumes returns pod-level Volume entries for ConfigMaps.
-func FlowVolumes(configMaps []corev1.ConfigMap) []*corev1ac.VolumeApplyConfiguration {
-	vols := make([]*corev1ac.VolumeApplyConfiguration, 0, len(configMaps))
-	for i := range configMaps {
-		vols = append(vols, corev1ac.Volume().
-			WithName(configMaps[i].Name).
-			WithConfigMap(corev1ac.ConfigMapVolumeSource().
-				WithName(configMaps[i].Name)))
-	}
-	return vols
 }

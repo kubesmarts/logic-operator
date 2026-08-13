@@ -86,31 +86,33 @@ spec:
                   annotations:
                     additionalProperties:
                       type: string
-                    description: |-
-                      Annotations for the Ingress/Route resource (user-provided).
-                      Operator adds path rewriting annotations automatically.
+                    description: Annotations for the Ingress/Route/HTTPRoute resource
+                      (user-provided).
                     type: object
-                  controllerType:
+                  gatewayRef:
                     description: |-
-                      ControllerType determines which controller to target.
-                      Auto-detected if not specified (OpenShift → openshift, K8s → nginx).
-                      Immutable on OpenShift (cannot switch between Route and Ingress).
-                      On K8s, can be changed between supported Ingress controllers.
-                    enum:
-                    - nginx
-                    - openshift
-                    type: string
-                  enabled:
-                    default: true
-                    description: Enabled determines whether to create Ingress/Route.
-                    type: boolean
+                      GatewayRef selects the Gateway for HTTPRoute creation (Gateway API mode).
+                      When set, an HTTPRoute is created instead of Ingress/Route.
+                      Required for traffic splitting on OpenShift.
+                    properties:
+                      name:
+                        description: Name of the Gateway.
+                        type: string
+                      namespace:
+                        description: Namespace of the Gateway (defaults to the service's
+                          namespace).
+                        type: string
+                    required:
+                    - name
+                    type: object
                   host:
-                    description: Host is the external hostname.
+                    description: |-
+                      Host is the external hostname.
+                      Required when GatewayRef is not set.
                     type: string
                   ingressClassName:
-                    description: |-
-                      IngressClassName specifies the IngressClass resource name.
-                      Only used when controllerType=nginx (ignored for openshift).
+                    description: IngressClassName selects the Ingress controller (Kubernetes
+                      Ingress mode).
                     type: string
                   tls:
                     description: TLS configures HTTPS.
@@ -267,6 +269,21 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              httpRouteRef:
+                description: HTTPRouteRef references the created HTTPRoute (Gateway
+                  API).
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               ingressRef:
                 description: IngressRef references the created Ingress resource.
                 properties:

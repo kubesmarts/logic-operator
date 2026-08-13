@@ -41,8 +41,7 @@ func testService(opts ...func(*LogicFlowService)) *LogicFlowService {
 		ObjectMeta: metav1.ObjectMeta{Name: "test-svc", Namespace: testNamespace},
 		Spec: LogicFlowServiceSpec{
 			Ingress: IngressSpec{
-				Enabled: true,
-				Host:    "test.example.com",
+				Host: "test.example.com",
 			},
 		},
 	}
@@ -70,15 +69,9 @@ func withHost(host string) func(*LogicFlowService) {
 	}
 }
 
-func withIngressDisabled() func(*LogicFlowService) {
+func withGatewayRef(name string) func(*LogicFlowService) {
 	return func(svc *LogicFlowService) {
-		svc.Spec.Ingress.Enabled = false
-	}
-}
-
-func withControllerType(ct string) func(*LogicFlowService) {
-	return func(svc *LogicFlowService) {
-		svc.Spec.Ingress.ControllerType = ct
+		svc.Spec.Ingress.GatewayRef = &GatewayRef{Name: name}
 	}
 }
 
@@ -144,16 +137,34 @@ func TestLogicFlowServiceValidator_ValidateCreate(t *testing.T) {
 			errMsg:  "must sum to 100, got 90",
 		},
 		{
-			name:    "missing host with ingress enabled",
+			name:    "missing host in nginx mode",
 			objs:    []runtime.Object{def1},
 			svc:     testService(withDefaultDefinition("def-v1"), withHost("")),
 			wantErr: true,
-			errMsg:  "spec.ingress.host is required",
+			errMsg:  "spec.ingress.host is required for nginx Ingress mode",
 		},
 		{
-			name: "no host required when ingress disabled",
+			name: "no host required when gatewayRef is set",
 			objs: []runtime.Object{def1},
-			svc:  testService(withDefaultDefinition("def-v1"), withHost(""), withIngressDisabled()),
+			svc:  testService(withDefaultDefinition("def-v1"), withHost(""), withGatewayRef("my-gateway")),
+		},
+		{
+			name: "ingressClassName nginx is valid",
+			objs: []runtime.Object{def1},
+			svc: testService(withDefaultDefinition("def-v1"), func(s *LogicFlowService) {
+				className := "nginx"
+				s.Spec.Ingress.IngressClassName = &className
+			}),
+		},
+		{
+			name: "ingressClassName non-nginx rejected",
+			objs: []runtime.Object{def1},
+			svc: testService(withDefaultDefinition("def-v1"), func(s *LogicFlowService) {
+				className := "traefik"
+				s.Spec.Ingress.IngressClassName = &className
+			}),
+			wantErr: true,
+			errMsg:  "only supports \"nginx\"",
 		},
 		{
 			name:    "definition not found",
@@ -262,37 +273,6 @@ func TestLogicFlowServiceValidator_ValidateUpdate(t *testing.T) {
 			name:   "no-op update allowed",
 			oldObj: base,
 			newObj: base.DeepCopy(),
-		},
-		{
-			name:   "nginx to nginx allowed",
-			oldObj: testService(withDefaultDefinition("def-v1"), withControllerType("nginx")),
-			newObj: testService(withDefaultDefinition("def-v1"), withControllerType("nginx")),
-		},
-		{
-			name:    "openshift to nginx rejected",
-			oldObj:  testService(withDefaultDefinition("def-v1"), withControllerType("openshift")),
-			newObj:  testService(withDefaultDefinition("def-v1"), withControllerType("nginx")),
-			wantErr: true,
-			errMsg:  "cannot switch between openshift",
-		},
-		{
-			name:    "nginx to openshift rejected",
-			oldObj:  testService(withDefaultDefinition("def-v1"), withControllerType("nginx")),
-			newObj:  testService(withDefaultDefinition("def-v1"), withControllerType("openshift")),
-			wantErr: true,
-			errMsg:  "cannot switch between openshift",
-		},
-		{
-			name:    "openshift to empty rejected",
-			oldObj:  testService(withDefaultDefinition("def-v1"), withControllerType("openshift")),
-			newObj:  testService(withDefaultDefinition("def-v1")),
-			wantErr: true,
-			errMsg:  "cannot switch between openshift",
-		},
-		{
-			name:   "empty to nginx allowed",
-			oldObj: testService(withDefaultDefinition("def-v1")),
-			newObj: testService(withDefaultDefinition("def-v1"), withControllerType("nginx")),
 		},
 	}
 

@@ -82,12 +82,12 @@ func createFlowConfigMap(ctx context.Context, name, runtimeRef, workflowName, wo
 			Name:      name,
 			Namespace: testNamespace,
 			Labels: map[string]string{
-				testLabelKeyName:            name,
-				testLabelKeyManagedBy:       LabelManagedBy,
-				"app.kubernetes.io/part-of": LabelPartOf,
-				logicv1.LabelRuntimeRef:             runtimeRef,
-				logicv1.LabelWorkflowName:           workflowName,
-				logicv1.LabelWorkflowVersion:        workflowVersion,
+				testLabelKeyName:             name,
+				testLabelKeyManagedBy:        LabelManagedBy,
+				"app.kubernetes.io/part-of":  LabelPartOf,
+				logicv1.LabelRuntimeRef:      runtimeRef,
+				logicv1.LabelWorkflowName:    workflowName,
+				logicv1.LabelWorkflowVersion: workflowVersion,
 			},
 		},
 		Data: map[string]string{

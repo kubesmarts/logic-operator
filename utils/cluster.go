@@ -27,15 +27,20 @@ import (
 )
 
 var isOpenShift = false
+var isGatewayAPIAvailable = false
 
 // IsOpenShift is a global flag that can be safely called across reconciliation cycles, defined at the controller manager start.
 func IsOpenShift() bool {
 	return isOpenShift
 }
 
-// SetIsOpenShift sets the global flag isOpenShift by the controller manager.
+func IsGatewayAPIAvailable() bool {
+	return isGatewayAPIAvailable
+}
+
+// SetNoStandardsAPIsAvailability sets the global flag isOpenShift by the controller manager.
 // We don't need to keep fetching the API every reconciliation cycle that we need to know about the platform.
-func SetIsOpenShift(cfg *rest.Config) {
+func SetNoStandardsAPIsAvailability(cfg *rest.Config) {
 	if cfg == nil {
 		panic("Rest Config struct is nil, impossible to get cluster information")
 	}
@@ -52,6 +57,13 @@ func SetIsOpenShift(cfg *rest.Config) {
 	for _, v := range apiList.Groups {
 		if v.Name == "route.openshift.io" {
 			isOpenShift = true
+			continue
+		}
+		if v.Name == "gateway.networking.k8s.io" {
+			isGatewayAPIAvailable = true
+			continue
+		}
+		if isOpenShift && isGatewayAPIAvailable {
 			break
 		}
 	}

@@ -33,6 +33,8 @@ import (
 	sigsyaml "sigs.k8s.io/yaml"
 )
 
+const ConfigMapPrefix = "lfd-"
+
 // LogicFlowDefinitionReconciler reconciles a LogicFlowDefinition object
 type LogicFlowDefinitionReconciler struct {
 	client.Client
