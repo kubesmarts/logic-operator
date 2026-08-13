@@ -23,10 +23,6 @@ func runnerImage(variant string) string {
 	return fmt.Sprintf("%s/%s:%s-%s", QuarkusFlowRegistry, QuarkusFlowRunner, QuarkusFlowVersion, variant)
 }
 
-func hasPersistence(p *logicv1.PersistenceOptionsSpec) bool {
-	return p != nil && p.PostgreSQL != nil
-}
-
 func QuarkusService(owner metav1.Object, ownerKind string) *corev1ac.ServiceApplyConfiguration {
 	svc := corev1ac.Service(owner.GetName(), owner.GetNamespace()).
 		WithOwnerReferences(OwnerRef(owner, ownerKind)).
@@ -52,7 +48,7 @@ func DefaultRunnerImage(persistence *logicv1.PersistenceOptionsSpec) ContainerOp
 		if c.Image != nil && *c.Image != "" {
 			return
 		}
-		if hasPersistence(persistence) {
+		if logicv1.HasPersistence(persistence) {
 			c.WithImage(runnerImage(ImageVariantStandard))
 		} else {
 			c.WithImage(runnerImage(ImageVariantMinimal))

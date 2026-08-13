@@ -615,7 +615,6 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 			Expect(rt.Status.Definitions).To(HaveLen(1))
 			Expect(rt.Status.Definitions[0].Name).To(Equal("payment-processor"))
 			Expect(rt.Status.Definitions[0].Version).To(Equal("1.0.0"))
-			Expect(rt.Status.Definitions[0].Service).To(BeEmpty())
 		})
 
 		It("should populate status.configMapRefs", func() {

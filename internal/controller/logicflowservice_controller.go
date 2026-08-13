@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/kubesmarts/logic-operator/utils"
 	routev1 "github.com/openshift/api/route/v1"
@@ -74,6 +75,13 @@ func (r *LogicFlowServiceReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	wfName := defs[0].Labels[logicv1.LabelWorkflowName]
 	wfNamespace := defs[0].Labels[logicv1.LabelWorkflowNamespace]
 
+	if wfName == "" || wfNamespace == "" {
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+
+	// Set conditions to true, let the reconciliation turn to false if needed, update status by the end
+	logicv1.SetConditionTrue(&svc.Status.Conditions, logicv1.ConditionIngressReady, svc.Generation, logicv1.ReasonReady)
+
 	if err := r.applyNetworking(ctx, &svc, rt, defs, wfNamespace, wfName); err != nil {
 		log.Error(err, "failed to apply networking")
 		return ctrl.Result{}, err
@@ -93,6 +101,10 @@ func (r *LogicFlowServiceReconciler) applyNetworking(
 	defs []logicv1.LogicFlowDefinition,
 	wfNamespace, wfName string,
 ) error {
+	svc.Status.IngressRef = nil
+	svc.Status.RouteRef = nil
+	svc.Status.HTTPRouteRef = nil
+
 	if svc.Spec.Ingress.GatewayRef == nil && !utils.IsOpenShift() && svc.Spec.Ingress.Host == "" {
 		logicv1.SetCondition(&svc.Status.Conditions, logicv1.ConditionIngressReady,
 			metav1.ConditionFalse, svc.Generation,
@@ -106,6 +118,9 @@ func (r *LogicFlowServiceReconciler) applyNetworking(
 	}
 
 	if svc.Spec.DefaultDefinition != nil {
+		if err := r.deleteStaleCanaryIngresses(ctx, svc); err != nil {
+			return err
+		}
 		version := defs[0].Labels[logicv1.LabelWorkflowVersion]
 		if utils.IsOpenShift() {
 			return r.applyRoute(ctx, svc, rt, wfNamespace, wfName, version)
@@ -142,6 +157,18 @@ func (r *LogicFlowServiceReconciler) applyDefaultIngress(
 	ingress := ingressForService(svc, rt, wfNamespace, wfName, version)
 	svc.Status.IngressRef = &corev1.LocalObjectReference{Name: *ingress.Name}
 	return r.Apply(ctx, ingress, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
+}
+
+func (r *LogicFlowServiceReconciler) deleteStaleCanaryIngresses(ctx context.Context, svc *logicv1.LogicFlowService) error {
+	for _, suffix := range []string{"-canary", "-direct"} {
+		ingress := &networkingv1.Ingress{}
+		ingress.Name = svc.Name + suffix
+		ingress.Namespace = svc.Namespace
+		if err := r.Delete(ctx, ingress); err != nil && !apierrors.IsNotFound(err) {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *LogicFlowServiceReconciler) applyCanaryIngresses(
@@ -212,14 +239,16 @@ func splitTrafficTargets(svc *logicv1.LogicFlowService, defs []logicv1.LogicFlow
 		}
 	}
 
-	canaryIdx := 1 - primaryIdx
 	primary = trafficTarget{
 		version: defs[primaryIdx].Labels[logicv1.LabelWorkflowVersion],
 		weight:  svc.Spec.Traffic[primaryIdx].Weight,
 	}
-	canary = trafficTarget{
-		version: defs[canaryIdx].Labels[logicv1.LabelWorkflowVersion],
-		weight:  svc.Spec.Traffic[canaryIdx].Weight,
+	canaryIdx := 1 - primaryIdx
+	if canaryIdx < len(svc.Spec.Traffic) {
+		canary = trafficTarget{
+			version: defs[canaryIdx].Labels[logicv1.LabelWorkflowVersion],
+			weight:  svc.Spec.Traffic[canaryIdx].Weight,
+		}
 	}
 	return
 }

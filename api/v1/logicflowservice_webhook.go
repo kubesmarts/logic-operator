@@ -142,7 +142,7 @@ func (v *LogicFlowServiceValidator) validateGatewayRefImmutable(oldObj, newObj *
 	hadGatewayRef := oldObj.Spec.Ingress.GatewayRef != nil
 	hasGatewayRef := newObj.Spec.Ingress.GatewayRef != nil
 	if hadGatewayRef != hasGatewayRef {
-		return fmt.Errorf("spec.ingress.gatewayRef is immutable once set; create a new LogicFlowService to change networking mode")
+		return fmt.Errorf("spec.ingress.gatewayRef cannot be added or removed after creation; create a new LogicFlowService to change networking mode")
 	}
 	return nil
 }

@@ -26,10 +26,13 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	corev1ac "k8s.io/client-go/applyconfigurations/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	sigsyaml "sigs.k8s.io/yaml"
 )
 
@@ -80,25 +83,23 @@ func (r *LogicFlowDefinitionReconciler) Reconcile(ctx context.Context, req ctrl.
 	if changed, err := r.updateFlowIdLabels(ctx, &def, wf); err != nil {
 		return ctrl.Result{}, err
 	} else if changed {
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, r.updateStatus(ctx, &def, wf)
 	}
 
-	if err := r.checkRuntimeConsistency(ctx, &def, wf); err != nil {
+	conflict, err := r.checkRuntimeConsistency(ctx, &def, wf)
+	if err != nil {
 		return ctrl.Result{}, err
 	}
-
-	if err := r.applyConfigMap(ctx, &def, wf); err != nil {
-		log.Error(err, "failed to apply ConfigMap")
-		logicv1.SetCondition(&def.Status.Conditions, logicv1.ConditionConfigMapReady, metav1.ConditionFalse, def.Generation, logicv1.ReasonSSAApplyFailed, err.Error())
-		return ctrl.Result{}, r.Status().Update(ctx, &def)
-	}
-	logicv1.SetCondition(&def.Status.Conditions, logicv1.ConditionConfigMapReady, metav1.ConditionTrue, def.Generation, logicv1.ReasonReady, "")
-
-	if err := r.updateStatus(ctx, &def, wf); err != nil {
-		return ctrl.Result{}, err
+	if !conflict {
+		if err := r.applyConfigMap(ctx, &def, wf); err != nil {
+			log.Error(err, "failed to apply ConfigMap")
+			logicv1.SetCondition(&def.Status.Conditions, logicv1.ConditionConfigMapReady, metav1.ConditionFalse, def.Generation, logicv1.ReasonSSAApplyFailed, err.Error())
+		} else {
+			logicv1.SetCondition(&def.Status.Conditions, logicv1.ConditionConfigMapReady, metav1.ConditionTrue, def.Generation, logicv1.ReasonReady, "")
+		}
 	}
 
-	return ctrl.Result{}, nil
+	return ctrl.Result{}, r.updateStatus(ctx, &def, wf)
 }
 
 func configMapName(def *logicv1.LogicFlowDefinition) string {
@@ -146,20 +147,22 @@ func (r *LogicFlowDefinitionReconciler) updateFlowIdLabels(ctx context.Context, 
 	}
 	if def.Labels[logicv1.LabelWorkflowName] == wf.Document.Name &&
 		def.Labels[logicv1.LabelWorkflowVersion] == wf.Document.Version &&
-		def.Labels[logicv1.LabelWorkflowNamespace] == def.Namespace {
+		def.Labels[logicv1.LabelWorkflowNamespace] == def.Namespace &&
+		def.Labels[logicv1.LabelRuntimeRef] == def.Spec.RuntimeRef.Name {
 		return false, nil
 	}
 	patch := client.MergeFrom(def.DeepCopy())
 	def.Labels[logicv1.LabelWorkflowName] = wf.Document.Name
 	def.Labels[logicv1.LabelWorkflowVersion] = wf.Document.Version
 	def.Labels[logicv1.LabelWorkflowNamespace] = def.Namespace
+	def.Labels[logicv1.LabelRuntimeRef] = def.Spec.RuntimeRef.Name
 	if err := r.Client.Patch(ctx, def, patch); err != nil {
 		return false, err
 	}
 	return true, nil
 }
 
-func (r *LogicFlowDefinitionReconciler) checkRuntimeConsistency(ctx context.Context, def *logicv1.LogicFlowDefinition, wf *model.Workflow) error {
+func (r *LogicFlowDefinitionReconciler) checkRuntimeConsistency(ctx context.Context, def *logicv1.LogicFlowDefinition, wf *model.Workflow) (bool, error) {
 	var siblings logicv1.LogicFlowDefinitionList
 	if err := r.List(ctx, &siblings,
 		client.InNamespace(def.Namespace),
@@ -168,7 +171,7 @@ func (r *LogicFlowDefinitionReconciler) checkRuntimeConsistency(ctx context.Cont
 			logicv1.LabelWorkflowNamespace: def.Namespace,
 		},
 	); err != nil {
-		return err
+		return false, err
 	}
 	for i := range siblings.Items {
 		if siblings.Items[i].Name == def.Name {
@@ -179,17 +182,37 @@ func (r *LogicFlowDefinitionReconciler) checkRuntimeConsistency(ctx context.Cont
 				fmt.Sprintf("workflow %s/%s has conflicting runtimes: %q vs %q",
 					def.Namespace, wf.Document.Name,
 					def.Spec.RuntimeRef.Name, siblings.Items[i].Spec.RuntimeRef.Name))
-			return r.Status().Update(ctx, def)
+			return true, nil
 		}
 	}
 	logicv1.SetCondition(&def.Status.Conditions, logicv1.ConditionRuntimeConsistent, metav1.ConditionTrue, def.Generation, logicv1.ReasonReady, "")
-	return nil
+	return false, nil
+}
+
+func (r *LogicFlowDefinitionReconciler) mapRuntimeToDefinitions(ctx context.Context, obj client.Object) []reconcile.Request {
+	var defs logicv1.LogicFlowDefinitionList
+	if err := r.List(ctx, &defs,
+		client.InNamespace(obj.GetNamespace()),
+		client.MatchingLabels{logicv1.LabelRuntimeRef: obj.GetName()},
+	); err != nil {
+		return nil
+	}
+	requests := make([]reconcile.Request, len(defs.Items))
+	for i := range defs.Items {
+		requests[i] = reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: defs.Items[i].Name, Namespace: defs.Items[i].Namespace},
+		}
+	}
+	return requests
 }
 
 func (r *LogicFlowDefinitionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&logicv1.LogicFlowDefinition{}).
 		Owns(&corev1.ConfigMap{}).
+		Watches(&logicv1.LogicFlowRuntime{},
+			handler.EnqueueRequestsFromMapFunc(r.mapRuntimeToDefinitions),
+		).
 		Named("logicflowdefinition").
 		Complete(r)
 }

@@ -40,13 +40,11 @@ const (
 	ReasonRuntimeNotFound = "RuntimeNotFound"
 	ReasonRuntimeConflict = "RuntimeConflict"
 	ReasonParseError      = "ParseError"
-	ReasonSSAApplyFailed  = "ReasonSSAApplyFailed"
+	ReasonSSAApplyFailed  = "SSAApplyFailed"
 )
 
 const (
-	ConditionDefinitionsReady = "DefinitionsReady"
-	ConditionIngressReady     = "IngressReady"
-	ConditionTLSReady         = "TLSReady"
+	ConditionIngressReady = "IngressReady"
 )
 
 const (
@@ -63,6 +61,15 @@ func SetCondition(conditions *[]metav1.Condition, conditionType string, status m
 		ObservedGeneration: observedGeneration,
 		Reason:             reason,
 		Message:            message,
+	})
+}
+
+func SetConditionTrue(conditions *[]metav1.Condition, conditionType string, observedGeneration int64, reason string) {
+	meta.SetStatusCondition(conditions, metav1.Condition{
+		Type:               conditionType,
+		Status:             metav1.ConditionTrue,
+		ObservedGeneration: observedGeneration,
+		Reason:             reason,
 	})
 }
 

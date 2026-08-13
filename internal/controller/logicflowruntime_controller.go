@@ -73,18 +73,22 @@ func (r *LogicFlowRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	if err := r.applyDeployment(ctx, &rt, configMaps); err != nil {
 		log.Error(err, "failed to apply Deployment")
+		return ctrl.Result{}, err
 	}
 
 	if err := r.reconcilePodRBAC(ctx, &rt); err != nil {
 		log.Error(err, "failed to reconcile pod RBAC")
+		return ctrl.Result{}, err
 	}
 
 	if err := r.reconcileLeases(ctx, &rt); err != nil {
 		log.Error(err, "failed to reconcile leases")
+		return ctrl.Result{}, err
 	}
 
 	if err := r.applyService(ctx, &rt); err != nil {
 		log.Error(err, "failed to apply Service")
+		return ctrl.Result{}, err
 	}
 
 	if err := r.updateStatus(ctx, &rt, configMaps); err != nil {

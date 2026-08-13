@@ -76,8 +76,7 @@ type LogicFlowDefinitionStatus struct {
 	// +optional
 	WorkflowVersion string `json:"workflowVersion,omitempty"`
 
-	// WorkflowNamespace is the DSL namespace extracted from flow.document.namespace.
-	// Not the Kubernetes namespace.
+	// WorkflowNamespace is the Kubernetes namespace used for flow path resolution.
 	// +optional
 	WorkflowNamespace string `json:"workflowNamespace,omitempty"`
 

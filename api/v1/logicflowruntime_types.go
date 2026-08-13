@@ -86,9 +86,6 @@ type RuntimeDefinitionStatus struct {
 	// Name of the workflow.
 	Name string `json:"name"`
 
-	// Service is the HTTP endpoint path.
-	Service string `json:"service"`
-
 	// Version of the workflow.
 	// +optional
 	Version string `json:"version,omitempty"`
