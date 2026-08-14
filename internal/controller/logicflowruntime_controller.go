@@ -119,6 +119,7 @@ func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *lo
 		DefaultRunnerImage(rt.Spec.Persistence),
 		WithPersistenceEnvVars(rt.Spec.Persistence, rt.Namespace),
 		WithSecurityEnvVars(rt.Spec.Security),
+		WithMetricsEnvVars(),
 		DefaultProbes(),
 		WithFlowSourcePath(),
 		WithFlowVolumeMounts(configMaps),
