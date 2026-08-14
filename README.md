@@ -90,10 +90,44 @@ curl -X POST http://hello.lvh.me/ \
   -d '{"name": "World"}'
 ```
 
+### Enable Persistence (PostgreSQL + Durable Workflows)
+
+Deploy a 3-replica runtime with PostgreSQL persistence and a sleepy workflow for testing durable execution:
+
+```sh
+kubectl apply -k config/samples/persistence/
+```
+
+This creates a PostgreSQL instance, a 3-replica runtime with lease-based sharding, and a `sleepy-workflow` (30s wait task). Test durable recovery:
+
+```sh
+# Fire a workflow
+curl -X POST http://localhost:8080/q/flow/exec/default/sleepy-workflow/1.0.0 \
+  -H "Content-Type: application/json" -d '{"name": "durable-test"}'
+
+# Kill the pod — the workflow resumes on another replica
+kubectl delete pod -l app.kubernetes.io/name=hello-runtime --wait=false
+```
+
+### Enable Monitoring (Prometheus + Grafana)
+
+Deploy Prometheus and Grafana with a pre-configured "Logic Flow Runtime" dashboard:
+
+```sh
+kubectl apply -k config/samples/monitoring/
+```
+
+- **Grafana**: http://grafana.lvh.me (anonymous access, no login required)
+- **Prometheus**: http://prometheus.lvh.me
+
+Open Grafana and navigate to **Dashboards > Logic Operator > Logic Flow Runtime**. The dashboard shows workflow start/completion rates, active instance gauges, task duration histograms, and per-pod distribution. Metrics appear after the first workflow execution.
+
 To clean up:
 
 ```sh
 make kind-undemo    # remove sample CRs
+kubectl delete -k config/samples/monitoring/ --ignore-not-found=true
+kubectl delete -k config/samples/persistence/ --ignore-not-found=true
 make kind-delete    # delete the KIND cluster
 ```
 
