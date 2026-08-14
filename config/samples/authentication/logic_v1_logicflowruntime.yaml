@@ -1,0 +1,17 @@
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowRuntime
+metadata:
+  labels:
+    app.kubernetes.io/name: logic-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: hello-runtime
+spec:
+  security:
+    type: API_KEY
+    apiKey:
+      keys:
+        - name: dev-key
+          secretRef:
+            name: dev-api-key
+          roles:
+            - flow-invoker

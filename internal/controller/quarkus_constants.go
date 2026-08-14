@@ -25,5 +25,5 @@ const (
 	DurableComponentValue = "durable"
 	DurableManagedByValue = "quarkus-flow"
 
-	ClusterRoleDurable = "logic-flow-runtime-durable"
+	ClusterRoleDurable = "logic-operator-logic-flow-runtime-durable"
 )

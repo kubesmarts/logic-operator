@@ -4,7 +4,7 @@ metadata:
   labels:
     app.kubernetes.io/name: logic-operator
     app.kubernetes.io/managed-by: kustomize
-  name: hello-world-v1-0-0
+  name: sleepy-workflow-v1-0-0
 spec:
   runtimeRef:
     name: hello-runtime
@@ -12,9 +12,15 @@ spec:
     document:
       dsl: '1.0.0'
       namespace: examples
-      name: hello-world
+      name: sleepy-workflow
       version: '1.0.0'
     do:
       - greet:
           set:
-            message: '${ "Hi, " + .name + "!" }'
+            message: '${ "Hello, " + .name + "! Sleeping for 30s..." }'
+      - nap:
+          wait:
+            seconds: 30
+      - wakeUp:
+          set:
+            message: '${ "Done! " + .name + " woke up after sleeping." }'

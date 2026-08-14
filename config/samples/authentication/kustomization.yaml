@@ -1,0 +1,3 @@
+resources:
+- api-key-secret.yaml
+- logic_v1_logicflowruntime.yaml

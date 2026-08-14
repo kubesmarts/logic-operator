@@ -209,6 +209,7 @@ type TrafficStatus struct {
 // +kubebuilder:printcolumn:name="Host",type=string,JSONPath=`.spec.ingress.host`
 // +kubebuilder:printcolumn:name="Runtime",type=string,JSONPath=`.status.runtimeRef.name`
 // +kubebuilder:printcolumn:name="TLS",type=boolean,JSONPath=`.spec.ingress.tls.enabled`
+// +kubebuilder:printcolumn:name="URL",type=string,JSONPath=`.status.url`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 type LogicFlowService struct {
 	metav1.TypeMeta   `json:",inline"`

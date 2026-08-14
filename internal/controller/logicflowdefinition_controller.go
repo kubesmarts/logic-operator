@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"time"
 
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
 	"github.com/open-workflow-specification/sdk-go/v4/model"
@@ -58,19 +59,6 @@ func (r *LogicFlowDefinitionReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Validate runtimeRef exists
-	var rt logicv1.LogicFlowRuntime
-	rtKey := client.ObjectKey{Name: def.Spec.RuntimeRef.Name, Namespace: def.Namespace}
-	if err := r.Get(ctx, rtKey, &rt); err != nil {
-		if apierrors.IsNotFound(err) {
-			log.Info("referenced LogicFlowRuntime not found", "runtimeRef", def.Spec.RuntimeRef.Name)
-			logicv1.SetCondition(&def.Status.Conditions, logicv1.ConditionRuntimeRefValid, metav1.ConditionFalse, def.Generation, logicv1.ReasonRuntimeNotFound, fmt.Sprintf("LogicFlowRuntime %q not found", def.Spec.RuntimeRef.Name))
-			return ctrl.Result{}, r.Status().Update(ctx, &def)
-		}
-		return ctrl.Result{}, err
-	}
-	logicv1.SetCondition(&def.Status.Conditions, logicv1.ConditionRuntimeRefValid, metav1.ConditionTrue, def.Generation, logicv1.ReasonReady, "")
-
 	// Parse flow document
 	wf, err := def.Spec.ParseFlow()
 	if err != nil {
@@ -83,7 +71,7 @@ func (r *LogicFlowDefinitionReconciler) Reconcile(ctx context.Context, req ctrl.
 	if changed, err := r.updateFlowIDLabels(ctx, &def, wf); err != nil {
 		return ctrl.Result{}, err
 	} else if changed {
-		return ctrl.Result{}, r.updateStatus(ctx, &def, wf)
+		return ctrl.Result{RequeueAfter: time.Second * 3}, r.updateStatus(ctx, &def, wf)
 	}
 
 	conflict, err := r.checkRuntimeConsistency(ctx, &def, wf)
@@ -98,6 +86,19 @@ func (r *LogicFlowDefinitionReconciler) Reconcile(ctx context.Context, req ctrl.
 			logicv1.SetCondition(&def.Status.Conditions, logicv1.ConditionConfigMapReady, metav1.ConditionTrue, def.Generation, logicv1.ReasonReady, "")
 		}
 	}
+
+	// Validate runtimeRef exists
+	var rt logicv1.LogicFlowRuntime
+	rtKey := client.ObjectKey{Name: def.Spec.RuntimeRef.Name, Namespace: def.Namespace}
+	if err := r.Get(ctx, rtKey, &rt); err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Info("referenced LogicFlowRuntime not found", "runtimeRef", def.Spec.RuntimeRef.Name)
+			logicv1.SetCondition(&def.Status.Conditions, logicv1.ConditionRuntimeRefValid, metav1.ConditionFalse, def.Generation, logicv1.ReasonRuntimeNotFound, fmt.Sprintf("LogicFlowRuntime %q not found", def.Spec.RuntimeRef.Name))
+			return ctrl.Result{RequeueAfter: time.Second * 30}, r.updateStatus(ctx, &def, wf)
+		}
+		return ctrl.Result{}, err
+	}
+	logicv1.SetCondition(&def.Status.Conditions, logicv1.ConditionRuntimeRefValid, metav1.ConditionTrue, def.Generation, logicv1.ReasonReady, "")
 
 	return ctrl.Result{}, r.updateStatus(ctx, &def, wf)
 }

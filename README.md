@@ -63,6 +63,33 @@ kubectl port-forward svc/hello-runtime 8080:80
 curl http://localhost:8080/q/openapi
 ```
 
+### Enable API-KEY Authentication
+
+To secure the runtime with API-KEY authentication, apply the authentication overlay on top of the demo:
+
+```sh
+kubectl apply -k config/samples/authentication/
+kubectl rollout restart deployment/hello-runtime
+kubectl rollout status deployment/hello-runtime --timeout=120s
+```
+
+Unauthenticated requests are now rejected:
+
+```sh
+curl -s -o /dev/null -w "%{http_code}" -X POST http://hello.lvh.me/ \
+  -H "Content-Type: application/json" -d '{"name": "World"}'
+# 401
+```
+
+Pass the API key as a Bearer token:
+
+```sh
+curl -X POST http://hello.lvh.me/ \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer logic-operator-dev-token" \
+  -d '{"name": "World"}'
+```
+
 To clean up:
 
 ```sh

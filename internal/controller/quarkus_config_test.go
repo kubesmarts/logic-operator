@@ -189,7 +189,7 @@ func TestSecurityEnvVars_APIKey(t *testing.T) {
 		}
 
 		envs := securityEnvVars(sec)
-		g.Expect(envs).To(gomega.HaveLen(3))
+		g.Expect(envs).To(gomega.HaveLen(4))
 
 		g.Expect(*envs[0].Value).To(gomega.Equal("api-key"))
 
@@ -199,6 +199,9 @@ func TestSecurityEnvVars_APIKey(t *testing.T) {
 
 		g.Expect(*envs[2].Name).To(gomega.Equal(`QUARKUS_FLOW_RUNNER_SECURITY_API_KEYS__"service-a"__ROLES`))
 		g.Expect(*envs[2].Value).To(gomega.Equal("flow-admin,flow-invoker"))
+
+		g.Expect(*envs[3].Name).To(gomega.Equal(`QUARKUS_FLOW_RUNNER_SECURITY_API_KEYS__"service-a"__NAMESPACES`))
+		g.Expect(*envs[3].Value).To(gomega.Equal("*"))
 	})
 
 	t.Run("multiple keys", func(t *testing.T) {
@@ -213,7 +216,7 @@ func TestSecurityEnvVars_APIKey(t *testing.T) {
 			},
 		}
 		envs := securityEnvVars(sec)
-		g.Expect(envs).To(gomega.HaveLen(5)) // type + 2*(secret+roles)
+		g.Expect(envs).To(gomega.HaveLen(7)) // type + 2*(secret+roles+namespaces)
 	})
 }
 
