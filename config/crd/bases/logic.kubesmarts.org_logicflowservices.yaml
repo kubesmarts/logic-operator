@@ -13,7 +13,7 @@ spec:
     plural: logicflowservices
     shortNames:
     - lfs
-    - flowservice
+    - flowsvc
     singular: logicflowservice
   scope: Namespaced
   versions:

@@ -1,10 +1,10 @@
 # Logic Operator
 
-A Kubernetes operator for managing serverless logic workflows powered by Quarkus Flow.
+A Kubernetes operator for managing Serverless Logic workflows powered by Quarkus Flow.
 
 ## Description
 
-The Logic Operator provides a Kubernetes-native way to deploy, manage, and scale serverless logic workflows. Built on top of Quarkus Flow, it offers four core CRDs for defining and orchestrating workflow-based applications:
+The Logic Operator provides a Kubernetes-native way to deploy, manage, and scale Serverless Logic workflows. Built on top of Quarkus Flow, it offers four core CRDs for defining and orchestrating workflow-based applications:
 
 - **LogicPlatform**: Platform-wide configuration and shared services
 - **LogicFlowService**: Application definitions for workflow deployments
@@ -16,108 +16,93 @@ This is v2.0 of the operator, representing a complete architectural overhaul wit
 ## Getting Started
 
 ### Prerequisites
-- go version v1.26.0+
-- docker version 17.03+
-- kubectl version v1.11.3+
-- Access to a Kubernetes v1.11.3+ cluster
 
-### To Deploy on the cluster
-**Build and push your image to the location specified by `IMG`:**
+- [Go](https://go.dev/dl/) v1.26+
+- [Docker](https://docs.docker.com/get-docker/) v17.03+
+- [kubectl](https://kubernetes.io/docs/tasks/tools/) v1.30+
+- [KIND](https://kind.sigs.k8s.io/docs/user/quick-start/#installation) v0.20+
 
-```sh
-make docker-build docker-push IMG=<some-registry>/logic-operator:tag
-```
+### Quickstart (KIND)
 
-**NOTE:** This image ought to be published in the personal registry you specified.
-And it is required to have access to pull the image from the working environment.
-Make sure you have the proper permission to the registry if the above commands don’t work.
-
-**Install the CRDs into the cluster:**
+Get a fully working operator with sample workflows in three commands:
 
 ```sh
-make install
+make kind-create    # create KIND cluster with ingress-nginx + cert-manager
+make kind-deploy    # build, load, and deploy the operator
+make kind-demo      # apply sample CRs (Runtime + Definition + Service)
 ```
 
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
+Check that everything is running:
 
 ```sh
-make deploy IMG=<some-registry>/logic-operator:tag
+kubectl get logicflowruntimes,logicflowdefinitions,logicflowservices
 ```
 
-> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
-privileges or be logged in as admin.
-
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
+The sample deploys a `hello-world` workflow you can invoke once the runtime pod is ready:
 
 ```sh
-kubectl apply -k config/samples/
+kubectl wait --for=condition=available deployment/hello-runtime --timeout=120s
+curl -X POST http://hello.lvh.me/ \
+  -H "Content-Type: application/json" \
+  -d ‘{"name": "World"}’
 ```
 
->**NOTE**: Ensure that the samples has default values to test it out.
+> `lvh.me` resolves to `127.0.0.1` — no `/etc/hosts` editing needed.
 
-### To Uninstall
-**Delete the instances (CRs) from the cluster:**
+The runtime is also exposed directly at `http://runtime.lvh.me/` for accessing OpenAPI specs, health checks, and dashboards:
+
+```sh
+curl http://runtime.lvh.me/q/openapi   # OpenAPI spec
+curl http://runtime.lvh.me/q/health    # health checks
+```
+
+Alternatively, you can port-forward the runtime service without ingress:
+
+```sh
+kubectl port-forward svc/hello-runtime 8080:80
+curl http://localhost:8080/q/openapi
+```
+
+To clean up:
+
+```sh
+make kind-undemo    # remove sample CRs
+make kind-delete    # delete the KIND cluster
+```
+
+### Available Make targets
+
+| Target | Description |
+|--------|-------------|
+| `make kind-create` | Create KIND cluster with ingress and cert-manager |
+| `make kind-deploy` | Build image, load into KIND, deploy operator |
+| `make kind-demo` | Apply sample CRs |
+| `make kind-undemo` | Remove sample CRs |
+| `make kind-delete` | Delete the KIND cluster |
+| `make run` | Run the operator out-of-cluster (day-to-day development) |
+| `make test` | Run unit and integration tests |
+| `make lint` | Run golangci-lint |
+| `make test-e2e` | Run end-to-end tests (creates its own cluster) |
+
+Run `make help` for the full list.
+
+### Deploy to an existing cluster
+
+If you already have a Kubernetes cluster with cert-manager installed:
+
+```sh
+make install                                        # install CRDs
+make deploy IMG=<some-registry>/logic-operator:tag  # deploy the operator
+kubectl apply -k config/samples/                    # apply sample CRs
+```
+
+To uninstall:
 
 ```sh
 kubectl delete -k config/samples/
-```
-
-**Delete the APIs(CRDs) from the cluster:**
-
-```sh
+make undeploy
 make uninstall
 ```
-
-**UnDeploy the controller from the cluster:**
-
-```sh
-make undeploy
-```
-
-## Project Distribution
-
-Following the options to release and provide this solution to the users.
-
-### By providing a bundle with all YAML files
-
-1. Build the installer for the image built and published in the registry:
-
-```sh
-make build-installer IMG=<some-registry>/logic-operator:tag
-```
-
-**NOTE:** The makefile target mentioned above generates an 'install.yaml'
-file in the dist directory. This file contains all the resources built
-with Kustomize, which are necessary to install this project without its
-dependencies.
-
-2. Using the installer
-
-Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
-the project, i.e.:
-
-```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/logic-operator/<tag or branch>/dist/install.yaml
-```
-
-### By providing a Helm Chart
-
-1. Build the chart using the optional helm plugin
-
-```sh
-operator-sdk edit --plugins=helm/v1-alpha
-```
-
-2. See that a chart was generated under 'dist/chart', and users
-can obtain this solution from there.
-
-**NOTE:** If you change the project, you need to update the Helm Chart
-using the same command above to sync the latest changes. Furthermore,
-if you create webhooks, you need to use the above command with
-the '--force' flag and manually ensure that any custom configuration
-previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml'
-is manually re-applied afterwards.
 
 ## Contributing
 

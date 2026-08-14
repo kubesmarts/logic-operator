@@ -20,6 +20,14 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - serviceaccounts
   verbs:
   - create
@@ -48,6 +56,7 @@ rules:
   - delete
   - get
   - list
+  - update
   - watch
 - apiGroups:
   - gateway.networking.k8s.io

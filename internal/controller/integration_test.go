@@ -10,7 +10,6 @@ import (
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -256,23 +255,25 @@ var _ = Describe("Cross-controller integration", func() {
 		})
 
 		It("should only mount the valid Definition's ConfigMap", func() {
-			// The invalid Definition's reconcile should set RuntimeRefValid=False and not create a ConfigMap
+			// The invalid Definition's reconcile sets RuntimeRefValid=False but still creates a ConfigMap
+			// (ConfigMap apply happens before runtimeRef validation).
+			// The ConfigMap's LabelRuntimeRef points to "nonexistent-runtime", so the real runtime ignores it.
 			invalidDef := reconcileDefAndFetch(ctx, defRec, invalidDefNN)
 			rtCond := meta.FindStatusCondition(invalidDef.Status.Conditions, logicv1.ConditionRuntimeRefValid)
 			Expect(rtCond).NotTo(BeNil())
 			Expect(rtCond.Status).To(Equal(metav1.ConditionFalse))
 
-			// No ConfigMap created for the invalid definition
+			// ConfigMap exists but its LabelRuntimeRef is "nonexistent-runtime"
 			invalidCmNN := types.NamespacedName{Name: ConfigMapPrefix + invalidDefName, Namespace: testNamespace}
 			var cm corev1.ConfigMap
-			err := k8sClient.Get(ctx, invalidCmNN, &cm)
-			Expect(errors.IsNotFound(err)).To(BeTrue())
+			Expect(k8sClient.Get(ctx, invalidCmNN, &cm)).To(Succeed())
+			Expect(cm.Labels[logicv1.LabelRuntimeRef]).To(Equal("nonexistent-runtime"))
 
 			// Valid Definition creates its ConfigMap
 			validDef := reconcileDefAndFetch(ctx, defRec, validDefNN)
 			Expect(validDef.Status.ConfigMapRef).NotTo(BeNil())
 
-			// Runtime only sees the valid one
+			// Runtime only sees the valid one (filters by LabelRuntimeRef matching its own name)
 			rt := reconcileAndFetch(ctx, rtRec, rtNN)
 			Expect(rt.Status.Definitions).To(HaveLen(1))
 			Expect(rt.Status.Definitions[0].Name).To(Equal("valid-flow"))

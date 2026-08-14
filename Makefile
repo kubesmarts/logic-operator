@@ -141,6 +141,62 @@ test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expect
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 	@$(KIND) delete cluster --name $(KIND_CLUSTER)
 
+##@ Local Development (KIND)
+
+KIND_DEV_CLUSTER ?= logic-operator-dev
+CERT_MANAGER_VERSION ?= v1.16.3
+CERT_MANAGER_URL ?= https://github.com/cert-manager/cert-manager/releases/download/$(CERT_MANAGER_VERSION)/cert-manager.yaml
+INGRESS_NGINX_VERSION ?= v1.12.2
+INGRESS_NGINX_URL ?= https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-$(INGRESS_NGINX_VERSION)/deploy/static/provider/kind/deploy.yaml
+
+.PHONY: kind-create
+kind-create: ## Create a KIND cluster for local development.
+	@command -v $(KIND) >/dev/null 2>&1 || { \
+		echo "Kind is not installed. Please install Kind: https://kind.sigs.k8s.io/docs/user/quick-start/#installation"; \
+		exit 1; \
+	}
+	@case "$$($(KIND) get clusters)" in \
+		*"$(KIND_DEV_CLUSTER)"*) \
+			echo "Kind cluster '$(KIND_DEV_CLUSTER)' already exists. Skipping creation." ;; \
+		*) \
+			echo "Creating Kind cluster '$(KIND_DEV_CLUSTER)'..."; \
+			$(KIND) create cluster --name $(KIND_DEV_CLUSTER) --config hack/kind-config.yaml; \
+			echo "Installing ingress-nginx..."; \
+			$(KUBECTL) apply -f $(INGRESS_NGINX_URL); \
+			echo "Waiting for ingress-nginx to be ready..."; \
+			$(KUBECTL) wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=120s; \
+			echo "Installing cert-manager $(CERT_MANAGER_VERSION)..."; \
+			$(KUBECTL) apply -f $(CERT_MANAGER_URL); \
+			echo "Waiting for cert-manager to be ready..."; \
+			$(KUBECTL) wait --namespace cert-manager --for=condition=available deployment --all --timeout=120s ;; \
+	esac
+
+KIND_IMG ?= controller:dev
+
+.PHONY: kind-deploy
+kind-deploy: manifests generate kustomize ## Build, load, and deploy the operator into KIND.
+	$(CONTAINER_TOOL) build -t $(KIND_IMG) .
+	$(KIND) load docker-image $(KIND_IMG) --name $(KIND_DEV_CLUSTER)
+	cd config/manager && $(KUSTOMIZE) edit set image controller=$(KIND_IMG)
+	$(KUSTOMIZE) build config/default | $(KUBECTL) apply --server-side -f -
+	@echo "Waiting for operator deployment to be ready..."
+	@$(KUBECTL) wait --namespace logic-operator-system --for=condition=available deployment --all --timeout=120s
+	@echo "Operator deployed successfully."
+
+.PHONY: kind-demo
+kind-demo: ## Apply sample CRs (Runtime + Definition + Service) to the KIND cluster.
+	$(KUBECTL) apply -k config/samples/
+	@echo "Sample CRs applied. Check status with:"
+	@echo "  kubectl get logicflowruntimes,logicflowdefinitions,logicflowservices"
+
+.PHONY: kind-undemo
+kind-undemo: ## Remove sample CRs from the KIND cluster.
+	$(KUBECTL) delete -k config/samples/ --ignore-not-found=true
+
+.PHONY: kind-delete
+kind-delete: ## Delete the KIND development cluster.
+	$(KIND) delete cluster --name $(KIND_DEV_CLUSTER)
+
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
 	$(GOLANGCI_LINT) run
