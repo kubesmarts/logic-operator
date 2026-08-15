@@ -35,129 +35,106 @@ data:
     {
       "annotations": {"list": []},
       "editable": true,
-      "fiscalYearStartMonth": 0,
       "graphTooltip": 1,
-      "links": [],
+      "refresh": "10s",
       "panels": [
         {
-          "title": "Workflows Started (rate/min)",
-          "type": "timeseries",
-          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
-          "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"},
-          "targets": [
-            {
-              "expr": "sum(rate(quarkus_flow_workflow_started_total[1m])) by (workflow)",
-              "legendFormat": "{{workflow}}"
-            }
-          ],
-          "fieldConfig": {
-            "defaults": {"unit": "ops", "custom": {"drawStyle": "line", "fillOpacity": 10}},
-            "overrides": []
-          }
-        },
-        {
-          "title": "Workflows Completed (rate/min)",
-          "type": "timeseries",
-          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
-          "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"},
-          "targets": [
-            {
-              "expr": "sum(rate(quarkus_flow_workflow_completed_total[1m])) by (workflow)",
-              "legendFormat": "{{workflow}}"
-            }
-          ],
-          "fieldConfig": {
-            "defaults": {"unit": "ops", "custom": {"drawStyle": "line", "fillOpacity": 10}},
-            "overrides": []
-          }
-        },
-        {
-          "title": "Active Instances",
+          "id": 1,
+          "title": "Running",
           "type": "stat",
-          "gridPos": {"h": 4, "w": 8, "x": 0, "y": 8},
-          "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"},
-          "targets": [
-            {"expr": "sum(quarkus_flow_instance_running)", "legendFormat": "Running"},
-            {"expr": "sum(quarkus_flow_instance_waiting)", "legendFormat": "Waiting"},
-            {"expr": "sum(quarkus_flow_instance_suspended)", "legendFormat": "Suspended"}
-          ],
-          "options": {"graphMode": "area", "colorMode": "background_solid"},
-          "fieldConfig": {
-            "defaults": {},
-            "overrides": [
-              {"matcher": {"id": "byName", "options": "Running"}, "properties": [{"id": "color", "value": {"fixedColor": "green", "mode": "fixed"}}]},
-              {"matcher": {"id": "byName", "options": "Waiting"}, "properties": [{"id": "color", "value": {"fixedColor": "yellow", "mode": "fixed"}}]},
-              {"matcher": {"id": "byName", "options": "Suspended"}, "properties": [{"id": "color", "value": {"fixedColor": "orange", "mode": "fixed"}}]}
-            ]
-          }
+          "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
+          "targets": [{"expr": "sum(quarkus_flow_instance_running) or vector(0)", "instant": true}],
+          "options": {"graphMode": "area", "colorMode": "background_solid", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "fieldConfig": {"defaults": {"color": {"fixedColor": "green", "mode": "fixed"}, "noValue": "0"}}
         },
         {
-          "title": "Total Started / Completed / Faulted",
+          "id": 2,
+          "title": "Waiting",
           "type": "stat",
-          "gridPos": {"h": 4, "w": 8, "x": 8, "y": 8},
-          "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"},
-          "targets": [
-            {"expr": "sum(quarkus_flow_workflow_started_total) or vector(0)", "legendFormat": "Started"},
-            {"expr": "sum(quarkus_flow_workflow_completed_total) or vector(0)", "legendFormat": "Completed"},
-            {"expr": "sum(quarkus_flow_workflow_faulted_total) or vector(0)", "legendFormat": "Faulted"}
-          ],
-          "options": {"graphMode": "none", "colorMode": "background_solid"},
-          "fieldConfig": {
-            "defaults": {},
-            "overrides": [
-              {"matcher": {"id": "byName", "options": "Started"}, "properties": [{"id": "color", "value": {"fixedColor": "blue", "mode": "fixed"}}]},
-              {"matcher": {"id": "byName", "options": "Completed"}, "properties": [{"id": "color", "value": {"fixedColor": "green", "mode": "fixed"}}]},
-              {"matcher": {"id": "byName", "options": "Faulted"}, "properties": [{"id": "color", "value": {"fixedColor": "red", "mode": "fixed"}}]}
-            ]
-          }
+          "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0},
+          "targets": [{"expr": "sum(quarkus_flow_instance_waiting) or vector(0)", "instant": true}],
+          "options": {"graphMode": "area", "colorMode": "background_solid", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "fieldConfig": {"defaults": {"color": {"fixedColor": "yellow", "mode": "fixed"}, "noValue": "0"}}
         },
         {
-          "title": "Workflows per Pod",
+          "id": 3,
+          "title": "Suspended",
+          "type": "stat",
+          "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0},
+          "targets": [{"expr": "sum(quarkus_flow_instance_suspended) or vector(0)", "instant": true}],
+          "options": {"graphMode": "area", "colorMode": "background_solid", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "fieldConfig": {"defaults": {"color": {"fixedColor": "orange", "mode": "fixed"}, "noValue": "0"}}
+        },
+        {
+          "id": 4,
+          "title": "Started",
+          "type": "stat",
+          "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0},
+          "targets": [{"expr": "sum(quarkus_flow_workflow_started_total) or vector(0)", "instant": true}],
+          "options": {"graphMode": "none", "colorMode": "background_solid", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "fieldConfig": {"defaults": {"color": {"fixedColor": "blue", "mode": "fixed"}, "noValue": "0"}}
+        },
+        {
+          "id": 5,
+          "title": "Completed",
+          "type": "stat",
+          "gridPos": {"h": 4, "w": 4, "x": 16, "y": 0},
+          "targets": [{"expr": "sum(quarkus_flow_workflow_completed_total) or vector(0)", "instant": true}],
+          "options": {"graphMode": "none", "colorMode": "background_solid", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "fieldConfig": {"defaults": {"color": {"fixedColor": "green", "mode": "fixed"}, "noValue": "0"}}
+        },
+        {
+          "id": 6,
+          "title": "Faulted",
+          "type": "stat",
+          "gridPos": {"h": 4, "w": 4, "x": 20, "y": 0},
+          "targets": [{"expr": "sum(quarkus_flow_workflow_faulted_total) or vector(0)", "instant": true}],
+          "options": {"graphMode": "none", "colorMode": "background_solid", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "fieldConfig": {"defaults": {"color": {"fixedColor": "red", "mode": "fixed"}, "noValue": "0"}}
+        },
+        {
+          "id": 7,
+          "title": "Workflow Throughput (per second)",
           "type": "timeseries",
-          "gridPos": {"h": 4, "w": 8, "x": 16, "y": 8},
-          "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
           "targets": [
-            {
-              "expr": "sum(quarkus_flow_workflow_started_total) by (pod)",
-              "legendFormat": "{{pod}}"
-            }
+            {"expr": "sum(rate(quarkus_flow_workflow_started_total[1m])) by (workflow)", "legendFormat": "started: {{workflow}}"},
+            {"expr": "sum(rate(quarkus_flow_workflow_completed_total[1m])) by (workflow)", "legendFormat": "completed: {{workflow}}"}
           ],
-          "fieldConfig": {
-            "defaults": {"custom": {"drawStyle": "bars", "fillOpacity": 50}},
-            "overrides": []
-          }
+          "fieldConfig": {"defaults": {"unit": "ops", "custom": {"drawStyle": "line", "fillOpacity": 10, "pointSize": 5, "showPoints": "auto"}}}
         },
         {
+          "id": 8,
+          "title": "Active Instances Over Time",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+          "targets": [
+            {"expr": "sum(quarkus_flow_instance_running) by (workflow)", "legendFormat": "running: {{workflow}}"},
+            {"expr": "sum(quarkus_flow_instance_waiting) by (workflow)", "legendFormat": "waiting: {{workflow}}"},
+            {"expr": "sum(quarkus_flow_instance_suspended) by (workflow)", "legendFormat": "suspended: {{workflow}}"}
+          ],
+          "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 20, "stacking": {"mode": "normal"}, "pointSize": 5, "showPoints": "auto"}}}
+        },
+        {
+          "id": 9,
           "title": "Task Duration (p95)",
           "type": "timeseries",
           "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
-          "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"},
           "targets": [
-            {
-              "expr": "histogram_quantile(0.95, sum(rate(quarkus_flow_task_duration_seconds_bucket[5m])) by (le, task))",
-              "legendFormat": "{{task}}"
-            }
+            {"expr": "histogram_quantile(0.95, sum(rate(quarkus_flow_task_duration_seconds_bucket[5m])) by (le, task))", "legendFormat": "{{task}}"}
           ],
-          "fieldConfig": {
-            "defaults": {"unit": "s", "custom": {"drawStyle": "line", "fillOpacity": 10}},
-            "overrides": []
-          }
+          "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "fillOpacity": 10}}}
         },
         {
-          "title": "Workflow Duration (p95)",
-          "type": "timeseries",
+          "id": 10,
+          "title": "Workflows per Pod",
+          "type": "barchart",
           "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
-          "datasource": {"type": "prometheus", "uid": "PBFA97CFB590B2093"},
           "targets": [
-            {
-              "expr": "histogram_quantile(0.95, sum(rate(quarkus_flow_workflow_duration_seconds_bucket[5m])) by (le, workflow))",
-              "legendFormat": "{{workflow}}"
-            }
+            {"expr": "sum(quarkus_flow_workflow_started_total) by (pod)", "legendFormat": "{{pod}}", "instant": true}
           ],
-          "fieldConfig": {
-            "defaults": {"unit": "s", "custom": {"drawStyle": "line", "fillOpacity": 10}},
-            "overrides": []
-          }
+          "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}}},
+          "options": {"orientation": "horizontal", "showValue": "always", "xTickLabelRotation": 0}
         }
       ],
       "schemaVersion": 39,
