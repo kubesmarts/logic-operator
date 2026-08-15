@@ -1,0 +1,13 @@
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowService
+metadata:
+  labels:
+    app.kubernetes.io/name: logic-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: sleepy-workflow
+spec:
+  defaultDefinition:
+    name: sleepy-workflow-v1-0-0
+  ingress:
+    host: sleepy.lvh.me
+    ingressClassName: nginx

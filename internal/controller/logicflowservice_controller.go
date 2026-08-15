@@ -406,6 +406,9 @@ func (r *LogicFlowServiceReconciler) resolveHost(ctx context.Context, svc *logic
 		}
 		return "", err
 	}
+	if len(ingress.Spec.Rules) > 0 && ingress.Spec.Rules[0].Host != "" {
+		return ingress.Spec.Rules[0].Host, nil
+	}
 	for _, lb := range ingress.Status.LoadBalancer.Ingress {
 		if lb.Hostname != "" {
 			return lb.Hostname, nil
@@ -413,9 +416,6 @@ func (r *LogicFlowServiceReconciler) resolveHost(ctx context.Context, svc *logic
 		if lb.IP != "" {
 			return lb.IP, nil
 		}
-	}
-	if len(ingress.Spec.Rules) > 0 && ingress.Spec.Rules[0].Host != "" {
-		return ingress.Spec.Rules[0].Host, nil
 	}
 	return "", nil
 }

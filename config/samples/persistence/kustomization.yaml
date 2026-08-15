@@ -2,3 +2,4 @@ resources:
 - postgresql.yaml
 - logic_v1_logicflowruntime.yaml
 - logic_v1_logicflowdefinition_sleepy.yaml
+- logic_v1_logicflowservice_sleepy.yaml
