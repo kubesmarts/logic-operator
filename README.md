@@ -44,7 +44,7 @@ The sample deploys a `hello-world` workflow you can invoke once the runtime pod 
 kubectl wait --for=condition=available deployment/hello-runtime --timeout=120s
 curl -X POST http://hello.lvh.me/ \
   -H "Content-Type: application/json" \
-  -d ‘{"name": "World"}’
+  -d '{"name": "World"}'
 ```
 
 > `lvh.me` resolves to `127.0.0.1` — no `/etc/hosts` editing needed.

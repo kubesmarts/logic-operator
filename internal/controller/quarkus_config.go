@@ -180,8 +180,6 @@ func WithFlowVolumeMounts(configMaps []corev1.ConfigMap) ContainerOption {
 	}
 }
 
-// WithDurableEnvVars returns a ContainerOption that sets durable lease env vars.
-// Filters user-provided duplicates for immutable env vars before adding operator values.
 // WithMetricsEnvVars works around quarkus-flow#854: @LookupIfProperty requires
 // explicit "true" even though docs say metrics auto-enable when Micrometer is present.
 func WithMetricsEnvVars() ContainerOption {
@@ -190,6 +188,7 @@ func WithMetricsEnvVars() ContainerOption {
 	}
 }
 
+// WithDurableEnvVars sets durable lease env vars, filtering user-provided duplicates for immutable vars.
 func WithDurableEnvVars(rt *logicv1.LogicFlowRuntime) ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
 		immutable := map[string]bool{
