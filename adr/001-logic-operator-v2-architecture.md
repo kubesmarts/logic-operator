@@ -58,7 +58,7 @@ Refactor the Logic Operator to:
 1. **Drop SonataFlow** in favor of **Quarkus Flow** runtime
 2. **Support Serverless Workflow Specification v1.0.0** exclusively
 3. **Remove builder/container complexity** - use dynamic workflow loading
-4. **Implement new Data Index (MODE1)** - FluentBit + PostgreSQL + GraphQL
+4. **Implement new Data Index (MODE1)** - FluentD + PostgreSQL + GraphQL
 5. **Support multi-version workflows** - side-by-side version execution
 6. **Upgrade to latest Operator SDK**
 
@@ -88,7 +88,7 @@ Refactor the Logic Operator to:
 │                                                               │
 │  Controllers:                                                 │
 │  ├── LogicPlatformController                                 │
-│  │   ├── Manages FluentBit DaemonSet (Data Index)           │
+│  │   ├── Manages FluentD DaemonSet (Data Index)             │
 │  │   ├── Manages Data Index Service (GraphQL API)           │
 │  │   └── Provides runtime defaults                          │
 │  │                                                            │
@@ -290,12 +290,12 @@ status:
   
   # Data Index status
   dataIndex:
-    fluentBit:
+    fluentD:
       ready: true
       daemonSetRef:
-        name: logic-platform-fluentbit
+        name: logic-platform-fluentd
       nodes: 3
-      metricsEndpoint: http://logic-platform-fluentbit.prod.svc:2020/api/v1/metrics/prometheus
+      metricsEndpoint: http://logic-platform-fluentd.prod.svc:24231/metrics
     service:
       ready: true
       deploymentRef:
@@ -317,7 +317,7 @@ status:
   - type: Ready
     status: "True"
     lastTransitionTime: "2026-06-22T10:00:00Z"
-  - type: FluentBitReady
+  - type: FluentDReady
     status: "True"
   - type: DataIndexServiceReady
     status: "True"
@@ -714,7 +714,7 @@ Namespace: prod, staging, team-a
 
 #### PostgreSQL Schema
 
-**Staging Tables** (FluentBit writes):
+**Staging Tables** (FluentD writes; FluentBit also supported for testing):
 ```sql
 CREATE TABLE workflow_instance_events (
     tag VARCHAR(255),
