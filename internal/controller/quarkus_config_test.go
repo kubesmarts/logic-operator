@@ -607,12 +607,17 @@ func TestDurableDeploymentStrategy_MultiReplica(t *testing.T) {
 
 func TestWithMetricsEnvVars_NotInjectedAfterUpgrade(t *testing.T) {
 	// Regression: QUARKUS_FLOW_METRICS_ENABLED must not appear in any env var
-	// emitted by the option builders used in applyDeployment.
+	// emitted by the full non-persistent option set used in applyDeployment.
 	// In quarkus-flow 1.0.0+ metrics auto-enable when Micrometer is present.
 	g := gomega.NewWithT(t)
 	c := corev1ac.Container().WithName("test")
 
+	// Mirror the exact option set applyDeployment uses for a non-persistent runtime
+	// (Persistence == nil, so WithDurableEnvVars is not appended).
+	DefaultRunnerImage(nil)(c)
+	WithPersistenceEnvVars(nil, "")(c)
 	WithSecurityEnvVars(logicv1.RuntimeSecuritySpec{})(c)
+	DefaultProbes()(c)
 	WithFlowSourcePath()(c)
 	WithFlowVolumeMounts(nil)(c)
 
