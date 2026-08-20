@@ -7,7 +7,7 @@ import (
 const (
 	QuarkusFlowRegistry = logicv1.FlowRunnerRegistry
 	QuarkusFlowRunner   = logicv1.FlowRunnerImage
-	QuarkusFlowVersion  = "0.15.1"
+	QuarkusFlowVersion  = "1.0.0"
 
 	ImageVariantMinimal  = logicv1.ImageVariantMinimal
 	ImageVariantStandard = logicv1.ImageVariantStandard

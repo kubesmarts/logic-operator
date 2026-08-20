@@ -264,6 +264,11 @@ func TestSecurityEnvVars_OIDC(t *testing.T) {
 	})
 }
 
+func TestQuarkusFlowVersion_IsOnePointO(t *testing.T) {
+	g := gomega.NewWithT(t)
+	g.Expect(QuarkusFlowVersion).To(gomega.Equal("1.0.0"))
+}
+
 func TestDefaultRunnerImage_AutoSelect(t *testing.T) {
 	g := gomega.NewWithT(t)
 	minimalExpected := fmt.Sprintf("%s/%s:%s-%s", QuarkusFlowRegistry, QuarkusFlowRunner, QuarkusFlowVersion, ImageVariantMinimal)
