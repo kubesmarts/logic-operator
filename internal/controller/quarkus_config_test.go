@@ -440,7 +440,7 @@ func testConfigMaps() []corev1.ConfigMap {
 	}
 }
 
-func TestWithFlowVolumeMounts_AddsOneMountPerConfigMapKey(t *testing.T) {
+func TestWithFlowVolumeMounts_AddsMountPerConfigMap(t *testing.T) {
 	g := gomega.NewWithT(t)
 	c := corev1ac.Container().WithName("test")
 	cms := testConfigMaps()
@@ -448,13 +448,15 @@ func TestWithFlowVolumeMounts_AddsOneMountPerConfigMapKey(t *testing.T) {
 	WithFlowVolumeMounts(cms)(c)
 
 	g.Expect(c.VolumeMounts).To(gomega.HaveLen(2))
+	// First ConfigMap: lfd-order-flow → mounted as directory
 	g.Expect(*c.VolumeMounts[0].Name).To(gomega.Equal("lfd-order-flow"))
-	g.Expect(*c.VolumeMounts[0].MountPath).To(gomega.Equal(WorkflowMountPath + "/order-flow.json"))
-	g.Expect(*c.VolumeMounts[0].SubPath).To(gomega.Equal("order-flow.json"))
+	g.Expect(*c.VolumeMounts[0].MountPath).To(gomega.Equal(WorkflowMountPath + "/lfd-order-flow"))
+	g.Expect(c.VolumeMounts[0].SubPath).To(gomega.BeNil())
 	g.Expect(*c.VolumeMounts[0].ReadOnly).To(gomega.BeTrue())
+	// Second ConfigMap: lfd-payment-processor → mounted as directory
 	g.Expect(*c.VolumeMounts[1].Name).To(gomega.Equal("lfd-payment-processor"))
-	g.Expect(*c.VolumeMounts[1].MountPath).To(gomega.Equal(WorkflowMountPath + "/payment-processor.json"))
-	g.Expect(*c.VolumeMounts[1].SubPath).To(gomega.Equal("payment-processor.json"))
+	g.Expect(*c.VolumeMounts[1].MountPath).To(gomega.Equal(WorkflowMountPath + "/lfd-payment-processor"))
+	g.Expect(c.VolumeMounts[1].SubPath).To(gomega.BeNil())
 	g.Expect(*c.VolumeMounts[1].ReadOnly).To(gomega.BeTrue())
 }
 

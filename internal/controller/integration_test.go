@@ -60,8 +60,8 @@ var _ = Describe("Cross-controller integration", func() {
 
 			vm := findVolumeMount(mainContainer(&dep), cmName)
 			Expect(vm).NotTo(BeNil(), "expected volumeMount for ConfigMap %s", cmName)
-			Expect(vm.MountPath).To(Equal(WorkflowMountPath + "/payment-processor.yaml"))
-			Expect(vm.SubPath).To(Equal("payment-processor.yaml"))
+			Expect(vm.MountPath).To(Equal(WorkflowMountPath + "/" + cmName))
+			Expect(vm.SubPath).To(BeEmpty())
 			Expect(vm.ReadOnly).To(BeTrue())
 
 			// Verify Runtime status
