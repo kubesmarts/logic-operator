@@ -1,7 +1,8 @@
 # Logic Operator v2.0 - Design Specification
 
 **Date**: 2026-06-22  
-**Status**: Draft  
+**Last Updated**: 2026-08-20  
+**Status**: Active (Partially Implemented)  
 **Migration Strategy**: Clean Slate - New Operator
 
 ---
@@ -17,6 +18,35 @@
 7. [Deployment Topologies](#deployment-topologies)
 8. [Removed Components](#removed-components)
 9. [Implementation Phases](#implementation-phases)
+10. [Implementation Status](#implementation-status)
+
+---
+
+## Implementation Status
+
+> Updated 2026-08-20. Tracks what has been implemented relative to this design.
+
+| Area | Status | Implementation References |
+|------|--------|--------------------------|
+| LogicPlatform CRD | ✅ Implemented | `api/v1/logicplatform_types.go` |
+| LogicFlowRuntime CRD + Controller | ✅ Implemented | [Durable Leases](implementation/logicflowruntime-durable-leases.md), [ConfigMap Integration](implementation/logicflowruntime-configmap-integration.md) |
+| LogicFlowDefinition CRD + Controller | ✅ Implemented | [Controller Design](implementation/logicflowdefinition-controller.md) |
+| LogicFlowService CRD + Controller | ✅ Implemented | [Service Pattern](implementation/logicflowservice-pattern.md), [Handoff](handoff/2026-07-13-logicflowservice-implementation.md) |
+| Validating Admission Webhooks | ✅ Implemented | [Webhook Plan](implementation/webhook-validation-plan.md) |
+| Lease-based durable coordination | ✅ Implemented | [Durable Leases Design](implementation/logicflowruntime-durable-leases.md) |
+| HPA / Autoscaling | ✅ Implemented | [HPA Support](implementation/hpa-support.md) |
+| Metrics / Observability (basic) | ✅ Implemented | `internal/controller/` |
+| E2E Tests (minimal runtime lifecycle) | ✅ Implemented | [E2E Plan](implementation/e2e-minimal-runtime-plan.md) |
+| LogicPlatform Controller (local mode) | 🔄 In Progress | EPIC 5 (#8) |
+| Data Index Integration (FluentD + PostgreSQL + GraphQL) | ⏳ Pending | EPIC 6 (#9) |
+| Multi-version support & traffic splitting | ⏳ Pending | EPIC 8 (#11) |
+| LogicPlatform Centralized Mode | ⏳ Pending | EPIC 9 (#12) |
+| Migration Guide & Documentation | ⏳ Pending | EPIC 11 (#14) |
+| OLM / Production Readiness | ⏳ Pending | EPIC 12 (#15) |
+
+### Data Index Note
+
+The original design specified **FluentBit** for log collection. Based on implementation research, **FluentD** is the supported/production choice; FluentBit support is community-maintained and intended for testing only. The Data Index section below has been updated accordingly.
 
 ---
 
@@ -93,7 +123,7 @@ Refactor the Logic Operator to:
 │  ├── Persists state to PostgreSQL (via Data Index)          │
 │  └── Emits CloudEvents as JSON logs to stdout               │
 │                                                               │
-│  FluentBit (DaemonSet per namespace):                        │
+│  FluentD DaemonSet (production; FluentBit for testing only): │
 │  ├── Tails /var/log/containers/*_<namespace>_*.log          │
 │  ├── Filters: eventType=io.serverlessworkflow.*             │
 │  └── Streams to PostgreSQL staging tables                   │
@@ -188,9 +218,9 @@ spec:
   dataIndex:
     enabled: true
     
-    # FluentBit DaemonSet (mode=local or remote)
-    fluentBit:
-      image: fluent/fluent-bit:3.0
+    # FluentD DaemonSet (mode=local or remote; FluentBit image available for community/testing)
+    fluentD:
+      image: fluent/fluentd:v1.17
       resources:
         requests:
           memory: "128Mi"
@@ -632,7 +662,9 @@ status:
 
 ## Data Index Architecture
 
-### MODE1: FluentBit + PostgreSQL + GraphQL
+### MODE1: FluentD + PostgreSQL + GraphQL
+
+> **Note**: FluentD is the production-supported log collector. FluentBit is community-maintained and available for testing only.
 
 #### Architecture Flow
 
@@ -641,7 +673,7 @@ Quarkus Flow Runner
   ↓ Emits JSON structured logs to stdout
 Kubernetes /var/log/containers/*.log
   ↓ Container logs captured by K8s
-FluentBit DaemonSet
+FluentD DaemonSet (production) / FluentBit (community/testing)
   ├─ Tails /var/log/containers/*_<namespace>_*.log
   ├─ Filters: eventType=io.serverlessworkflow.*
   ├─ Routes by event type (started, completed, faulted)
@@ -662,7 +694,7 @@ Data Index Service
 ```
 Namespace: prod
 ├── LogicPlatform (mode: local)
-├── FluentBit DaemonSet → PostgreSQL prod
+├── FluentD DaemonSet → PostgreSQL prod
 ├── Data Index Service → PostgreSQL prod
 └── LogicFlowRuntimes
 ```
@@ -676,7 +708,7 @@ Namespace: logic-infra
 
 Namespace: prod, staging, team-a
 ├── LogicPlatform (mode: remote, dataIndexRef → logic-infra)
-├── FluentBit DaemonSet → PostgreSQL in logic-infra
+├── FluentD DaemonSet → PostgreSQL in logic-infra
 └── LogicFlowRuntimes
 ```
 
@@ -1178,31 +1210,31 @@ spec:
 
 ## Implementation Phases
 
-### Phase 1: Core CRDs & Controllers (Months 1-2)
+### Phase 1: Core CRDs & Controllers ✅ Complete
 
 **Deliverables**:
-- LogicPlatform CRD + Controller (local mode only)
-- LogicFlowRuntime CRD + Controller
-- LogicFlowDefinition CRD + Controller
-- LogicFlowService CRD + Controller
-- Basic e2e test (single workflow, single version)
+- [x] LogicPlatform CRD
+- [x] LogicFlowRuntime CRD + Controller (Deployment, Service, ConfigMap, Leases, RBAC)
+- [x] LogicFlowDefinition CRD + Controller (ConfigMap integration, immutability)
+- [x] LogicFlowService CRD + Controller
+- [x] Validating admission webhooks
+- [x] Lease-based durable workflow coordination
+- [x] HPA / autoscaling support
+- [x] Basic metrics exposure
+- [x] E2E tests (minimal runtime lifecycle)
 
-**Validation**:
-- Deploy single workflow to dev cluster
-- Verify runtime creates deployment + service + configmap
-- Verify workflow executes via REST API
-- Verify FluentBit → PostgreSQL → Data Index flow
+**See**: [Implementation ADRs](implementation/)
 
 ---
 
-### Phase 2: Data Index Integration (Month 2)
+### Phase 2: Data Index Integration ⏳ Pending (EPIC 6, #9)
 
 **Deliverables**:
-- FluentBit DaemonSet generation
-- Data Index Service deployment
-- PostgreSQL connection management
-- GraphQL API integration in controllers
-- Active instance querying before deletion
+- [ ] FluentD DaemonSet generation (LogicPlatform controller, local mode)
+- [ ] Data Index Service deployment
+- [ ] PostgreSQL connection management
+- [ ] GraphQL API integration in controllers
+- [ ] Active instance querying before deletion
 
 **Validation**:
 - Workflow events appear in Data Index
@@ -1211,13 +1243,13 @@ spec:
 
 ---
 
-### Phase 3: Versioning & Traffic Management (Month 3)
+### Phase 3: Versioning & Traffic Management ⏳ Pending (EPIC 8, #11)
 
 **Deliverables**:
-- Multi-version support (multiple LogicFlowDefinitions per service)
-- Traffic splitting (Ingress canary)
-- Version lifecycle management
-- Decommissioning workflow
+- [ ] Multi-version support (multiple LogicFlowDefinitions per service)
+- [ ] Traffic splitting (Ingress canary)
+- [ ] Version lifecycle management
+- [ ] Decommissioning workflow
 
 **Validation**:
 - Deploy v1.0.0 → Deploy v1.1.0 → Canary rollout → Decommission v1.0.0
@@ -1226,13 +1258,13 @@ spec:
 
 ---
 
-### Phase 4: Advanced Features (Months 4-5)
+### Phase 4: Advanced Features ⏳ Pending (EPICs 9-10, #12-#13)
 
 **Deliverables**:
-- Centralized Data Index (mode: central + remote)
-- Runtime autoscaling
-- Durable workflow lease coordination validation
-- Migration guide from SonataFlow
+- [ ] Centralized Data Index (mode: central + remote)
+- [ ] Runtime autoscaling (HPA wiring complete; controller integration pending)
+- [ ] Durable workflow lease coordination validation under load
+- [ ] Migration guide from SonataFlow
 
 **Validation**:
 - Multi-namespace setup with central Data Index
@@ -1241,14 +1273,14 @@ spec:
 
 ---
 
-### Phase 5: Production Readiness (Month 6)
+### Phase 5: Production Readiness ⏳ Pending (EPICs 11-12, #14-#15)
 
 **Deliverables**:
-- Security hardening (RBAC, pod security)
-- Observability (metrics, logging, tracing)
-- Documentation (user guide, API reference)
-- OLM bundle for OperatorHub
-- Upgrade testing
+- [ ] Security hardening (RBAC, pod security)
+- [ ] Observability (full metrics, logging, tracing)
+- [ ] Documentation (user guide, API reference)
+- [ ] OLM bundle for OperatorHub
+- [ ] Upgrade testing
 
 **Validation**:
 - Security audit passed
@@ -1259,9 +1291,3 @@ spec:
 ---
 
 ## End of Design Specification
-
-**Next Steps**:
-1. Review and approve design
-2. Create implementation plan with task breakdown
-3. Set up development environment
-4. Begin Phase 1 implementation
