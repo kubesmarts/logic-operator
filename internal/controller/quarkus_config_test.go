@@ -264,6 +264,11 @@ func TestSecurityEnvVars_OIDC(t *testing.T) {
 	})
 }
 
+func TestQuarkusFlowVersion_IsOnePointO(t *testing.T) {
+	g := gomega.NewWithT(t)
+	g.Expect(QuarkusFlowVersion).To(gomega.Equal("1.0.0"))
+}
+
 func TestDefaultRunnerImage_AutoSelect(t *testing.T) {
 	g := gomega.NewWithT(t)
 	minimalExpected := fmt.Sprintf("%s/%s:%s-%s", QuarkusFlowRegistry, QuarkusFlowRunner, QuarkusFlowVersion, ImageVariantMinimal)
@@ -435,7 +440,7 @@ func testConfigMaps() []corev1.ConfigMap {
 	}
 }
 
-func TestWithFlowVolumeMounts_AddsOneMountPerConfigMapKey(t *testing.T) {
+func TestWithFlowVolumeMounts_AddsMountPerConfigMap(t *testing.T) {
 	g := gomega.NewWithT(t)
 	c := corev1ac.Container().WithName("test")
 	cms := testConfigMaps()
@@ -443,13 +448,15 @@ func TestWithFlowVolumeMounts_AddsOneMountPerConfigMapKey(t *testing.T) {
 	WithFlowVolumeMounts(cms)(c)
 
 	g.Expect(c.VolumeMounts).To(gomega.HaveLen(2))
+	// First ConfigMap: lfd-order-flow → mounted as directory
 	g.Expect(*c.VolumeMounts[0].Name).To(gomega.Equal("lfd-order-flow"))
-	g.Expect(*c.VolumeMounts[0].MountPath).To(gomega.Equal(WorkflowMountPath + "/order-flow.json"))
-	g.Expect(*c.VolumeMounts[0].SubPath).To(gomega.Equal("order-flow.json"))
+	g.Expect(*c.VolumeMounts[0].MountPath).To(gomega.Equal(WorkflowMountPath + "/lfd-order-flow"))
+	g.Expect(c.VolumeMounts[0].SubPath).To(gomega.BeNil())
 	g.Expect(*c.VolumeMounts[0].ReadOnly).To(gomega.BeTrue())
+	// Second ConfigMap: lfd-payment-processor → mounted as directory
 	g.Expect(*c.VolumeMounts[1].Name).To(gomega.Equal("lfd-payment-processor"))
-	g.Expect(*c.VolumeMounts[1].MountPath).To(gomega.Equal(WorkflowMountPath + "/payment-processor.json"))
-	g.Expect(*c.VolumeMounts[1].SubPath).To(gomega.Equal("payment-processor.json"))
+	g.Expect(*c.VolumeMounts[1].MountPath).To(gomega.Equal(WorkflowMountPath + "/lfd-payment-processor"))
+	g.Expect(c.VolumeMounts[1].SubPath).To(gomega.BeNil())
 	g.Expect(*c.VolumeMounts[1].ReadOnly).To(gomega.BeTrue())
 }
 
@@ -596,4 +603,26 @@ func TestDurableDeploymentStrategy_MultiReplica(t *testing.T) {
 	g.Expect(s.RollingUpdate).NotTo(gomega.BeNil())
 	g.Expect(s.RollingUpdate.MaxUnavailable.IntValue()).To(gomega.Equal(1))
 	g.Expect(s.RollingUpdate.MaxSurge.IntValue()).To(gomega.Equal(1))
+}
+
+func TestWithMetricsEnvVars_NotInjectedAfterUpgrade(t *testing.T) {
+	// Regression: QUARKUS_FLOW_METRICS_ENABLED must not appear in any env var
+	// emitted by the full non-persistent option set used in applyDeployment.
+	// In quarkus-flow 1.0.0+ metrics auto-enable when Micrometer is present.
+	g := gomega.NewWithT(t)
+	c := corev1ac.Container().WithName("test")
+
+	// Mirror the exact option set applyDeployment uses for a non-persistent runtime
+	// (Persistence == nil, so WithDurableEnvVars is not appended).
+	DefaultRunnerImage(nil)(c)
+	WithPersistenceEnvVars(nil, "")(c)
+	WithSecurityEnvVars(logicv1.RuntimeSecuritySpec{})(c)
+	DefaultProbes()(c)
+	WithFlowSourcePath()(c)
+	WithFlowVolumeMounts(nil)(c)
+
+	for _, e := range c.Env {
+		g.Expect(*e.Name).NotTo(gomega.Equal("QUARKUS_FLOW_METRICS_ENABLED"),
+			"QUARKUS_FLOW_METRICS_ENABLED must not be injected in quarkus-flow 1.0.0+")
+	}
 }

@@ -162,29 +162,19 @@ func WithFlowSourcePath() ContainerOption {
 	}
 }
 
-// WithFlowVolumeMounts returns a ContainerOption that adds a read-only VolumeMount per ConfigMap data key.
-// Uses subPath to mount each key as a direct file, avoiding ConfigMap symlink structures
-// that cause duplicate detection in the runner's Files.walk() scanner.
-// TODO(#22): revert to directory mounts once quarkiverse/quarkus-flow#835 is fixed.
+// WithFlowVolumeMounts returns a ContainerOption that mounts each ConfigMap as a read-only directory.
+// quarkus-flow 1.0.0 defaults followSymlinks=false — the runner's file scanner skips symlinks
+// and only processes regular files found by traversing the ConfigMap's timestamped data directory.
+// Directory mounts (unlike subPath) are automatically updated by the kubelet when ConfigMap
+// content changes, eliminating pod restarts for workflow definition updates.
 func WithFlowVolumeMounts(configMaps []corev1.ConfigMap) ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
 		for i := range configMaps {
-			for key := range configMaps[i].Data {
-				c.WithVolumeMounts(corev1ac.VolumeMount().
-					WithName(configMaps[i].Name).
-					WithMountPath(WorkflowMountPath + "/" + key).
-					WithSubPath(key).
-					WithReadOnly(true))
-			}
+			c.WithVolumeMounts(corev1ac.VolumeMount().
+				WithName(configMaps[i].Name).
+				WithMountPath(WorkflowMountPath + "/" + configMaps[i].Name).
+				WithReadOnly(true))
 		}
-	}
-}
-
-// WithMetricsEnvVars works around quarkus-flow#854: @LookupIfProperty requires
-// explicit "true" even though docs say metrics auto-enable when Micrometer is present.
-func WithMetricsEnvVars() ContainerOption {
-	return func(c *corev1ac.ContainerApplyConfiguration) {
-		c.WithEnv(envLiteral("QUARKUS_FLOW_METRICS_ENABLED", "true"))
 	}
 }
 

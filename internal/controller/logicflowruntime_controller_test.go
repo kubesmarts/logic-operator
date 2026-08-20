@@ -608,8 +608,8 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 			vm := findVolumeMount(c, cmName)
 			Expect(vm).NotTo(BeNil(), "volumeMount for ConfigMap not found")
-			Expect(vm.MountPath).To(Equal(WorkflowMountPath + "/payment-processor.yaml"))
-			Expect(vm.SubPath).To(Equal("payment-processor.yaml"))
+			Expect(vm.MountPath).To(Equal(WorkflowMountPath + "/" + cmName))
+			Expect(vm.SubPath).To(BeEmpty())
 			Expect(vm.ReadOnly).To(BeTrue())
 		})
 
