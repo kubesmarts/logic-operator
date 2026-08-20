@@ -180,14 +180,6 @@ func WithFlowVolumeMounts(configMaps []corev1.ConfigMap) ContainerOption {
 	}
 }
 
-// WithMetricsEnvVars works around quarkus-flow#854: @LookupIfProperty requires
-// explicit "true" even though docs say metrics auto-enable when Micrometer is present.
-func WithMetricsEnvVars() ContainerOption {
-	return func(c *corev1ac.ContainerApplyConfiguration) {
-		c.WithEnv(envLiteral("QUARKUS_FLOW_METRICS_ENABLED", "true"))
-	}
-}
-
 // WithDurableEnvVars sets durable lease env vars, filtering user-provided duplicates for immutable vars.
 func WithDurableEnvVars(rt *logicv1.LogicFlowRuntime) ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {

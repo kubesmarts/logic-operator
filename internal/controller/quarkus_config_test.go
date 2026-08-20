@@ -602,3 +602,18 @@ func TestDurableDeploymentStrategy_MultiReplica(t *testing.T) {
 	g.Expect(s.RollingUpdate.MaxUnavailable.IntValue()).To(gomega.Equal(1))
 	g.Expect(s.RollingUpdate.MaxSurge.IntValue()).To(gomega.Equal(1))
 }
+
+func TestWithMetricsEnvVars_NotInjectedAfterUpgrade(t *testing.T) {
+	// Regression test: QUARKUS_FLOW_METRICS_ENABLED must NOT be injected.
+	// In quarkus-flow 1.0.0+ metrics auto-enable when Micrometer is present.
+	g := gomega.NewWithT(t)
+	c := corev1ac.Container().WithName("test")
+
+	// Apply all options that applyDeployment uses (excluding WithMetricsEnvVars)
+	WithFlowSourcePath()(c)
+
+	for _, e := range c.Env {
+		g.Expect(*e.Name).NotTo(gomega.Equal("QUARKUS_FLOW_METRICS_ENABLED"),
+			"QUARKUS_FLOW_METRICS_ENABLED must not be injected in 1.0.0+")
+	}
+}
