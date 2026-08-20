@@ -4,10 +4,10 @@ metadata:
   labels:
     app.kubernetes.io/name: logic-operator
     app.kubernetes.io/managed-by: kustomize
-  name: hello-world
+  name: sleepy-workflow
 spec:
   defaultDefinition:
-    name: hello-world-v1-0-0
+    name: sleepy-workflow-v1-0-0
   ingress:
-    host: hello.lvh.me
+    host: sleepy.lvh.me
     ingressClassName: nginx

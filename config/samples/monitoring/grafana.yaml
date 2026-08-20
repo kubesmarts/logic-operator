@@ -1,0 +1,227 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus:9090
+        isDefault: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-provider
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: default
+        folder: Logic Operator
+        type: file
+        options:
+          path: /var/lib/grafana/dashboards
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-workflows
+data:
+  workflows.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "graphTooltip": 1,
+      "refresh": "10s",
+      "panels": [
+        {
+          "id": 1,
+          "title": "Running",
+          "type": "stat",
+          "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
+          "targets": [{"expr": "sum(quarkus_flow_instance_running) or vector(0)", "instant": true}],
+          "options": {"graphMode": "area", "colorMode": "background_solid", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "fieldConfig": {"defaults": {"color": {"fixedColor": "green", "mode": "fixed"}, "noValue": "0"}}
+        },
+        {
+          "id": 2,
+          "title": "Waiting",
+          "type": "stat",
+          "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0},
+          "targets": [{"expr": "sum(quarkus_flow_instance_waiting) or vector(0)", "instant": true}],
+          "options": {"graphMode": "area", "colorMode": "background_solid", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "fieldConfig": {"defaults": {"color": {"fixedColor": "yellow", "mode": "fixed"}, "noValue": "0"}}
+        },
+        {
+          "id": 3,
+          "title": "Suspended",
+          "type": "stat",
+          "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0},
+          "targets": [{"expr": "sum(quarkus_flow_instance_suspended) or vector(0)", "instant": true}],
+          "options": {"graphMode": "area", "colorMode": "background_solid", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "fieldConfig": {"defaults": {"color": {"fixedColor": "orange", "mode": "fixed"}, "noValue": "0"}}
+        },
+        {
+          "id": 4,
+          "title": "Started",
+          "type": "stat",
+          "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0},
+          "targets": [{"expr": "sum(quarkus_flow_workflow_started_total) or vector(0)", "instant": true}],
+          "options": {"graphMode": "none", "colorMode": "background_solid", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "fieldConfig": {"defaults": {"color": {"fixedColor": "blue", "mode": "fixed"}, "noValue": "0"}}
+        },
+        {
+          "id": 5,
+          "title": "Completed",
+          "type": "stat",
+          "gridPos": {"h": 4, "w": 4, "x": 16, "y": 0},
+          "targets": [{"expr": "sum(quarkus_flow_workflow_completed_total) or vector(0)", "instant": true}],
+          "options": {"graphMode": "none", "colorMode": "background_solid", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "fieldConfig": {"defaults": {"color": {"fixedColor": "green", "mode": "fixed"}, "noValue": "0"}}
+        },
+        {
+          "id": 6,
+          "title": "Faulted",
+          "type": "stat",
+          "gridPos": {"h": 4, "w": 4, "x": 20, "y": 0},
+          "targets": [{"expr": "sum(quarkus_flow_workflow_faulted_total) or vector(0)", "instant": true}],
+          "options": {"graphMode": "none", "colorMode": "background_solid", "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "fieldConfig": {"defaults": {"color": {"fixedColor": "red", "mode": "fixed"}, "noValue": "0"}}
+        },
+        {
+          "id": 7,
+          "title": "Workflow Throughput (per second)",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+          "targets": [
+            {"expr": "sum(rate(quarkus_flow_workflow_started_total[1m])) by (workflow)", "legendFormat": "started: {{workflow}}"},
+            {"expr": "sum(rate(quarkus_flow_workflow_completed_total[1m])) by (workflow)", "legendFormat": "completed: {{workflow}}"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "ops", "custom": {"drawStyle": "line", "fillOpacity": 10, "pointSize": 5, "showPoints": "auto"}}}
+        },
+        {
+          "id": 8,
+          "title": "Active Instances Over Time",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+          "targets": [
+            {"expr": "sum(quarkus_flow_instance_running) by (workflow)", "legendFormat": "running: {{workflow}}"},
+            {"expr": "sum(quarkus_flow_instance_waiting) by (workflow)", "legendFormat": "waiting: {{workflow}}"},
+            {"expr": "sum(quarkus_flow_instance_suspended) by (workflow)", "legendFormat": "suspended: {{workflow}}"}
+          ],
+          "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 20, "stacking": {"mode": "normal"}, "pointSize": 5, "showPoints": "auto"}}}
+        },
+        {
+          "id": 9,
+          "title": "Task Duration (p95)",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+          "targets": [
+            {"expr": "histogram_quantile(0.95, sum(rate(quarkus_flow_task_duration_seconds_bucket[5m])) by (le, task))", "legendFormat": "{{task}}"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "fillOpacity": 10}}}
+        },
+        {
+          "id": 10,
+          "title": "Workflows per Pod",
+          "type": "barchart",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+          "targets": [
+            {"expr": "sum(quarkus_flow_workflow_started_total) by (pod)", "legendFormat": "{{pod}}", "instant": true}
+          ],
+          "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}}},
+          "options": {"orientation": "horizontal", "showValue": "always", "xTickLabelRotation": 0}
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["logic-operator", "quarkus-flow"],
+      "templating": {"list": []},
+      "time": {"from": "now-15m", "to": "now"},
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Logic Flow Runtime",
+      "uid": "logic-flow-runtime"
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:11.6.0
+          ports:
+            - containerPort: 3000
+          env:
+            - name: GF_AUTH_ANONYMOUS_ENABLED
+              value: "true"
+            - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+              value: Admin
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              value: admin
+          volumeMounts:
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: dashboards-provider
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: dashboard-workflows
+              mountPath: /var/lib/grafana/dashboards
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+      volumes:
+        - name: datasources
+          configMap:
+            name: grafana-datasources
+        - name: dashboards-provider
+          configMap:
+            name: grafana-dashboards-provider
+        - name: dashboard-workflows
+          configMap:
+            name: grafana-dashboard-workflows
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+spec:
+  selector:
+    app: grafana
+  ports:
+    - port: 3000
+      targetPort: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: grafana.lvh.me
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: grafana
+                port:
+                  number: 3000

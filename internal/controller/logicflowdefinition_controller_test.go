@@ -211,22 +211,32 @@ var _ = Describe("LogicFlowDefinition Controller", func() {
 			deleteDefinition(ctx, defNN)
 		})
 
-		It("should not create a ConfigMap", func() {
+		It("should still create a ConfigMap even without the runtime", func() {
 			reconcileDefAndFetch(ctx, r, defNN)
 
 			var cm corev1.ConfigMap
 			cmNN := types.NamespacedName{Name: ConfigMapPrefix + defName, Namespace: testNamespace}
-			err := k8sClient.Get(ctx, cmNN, &cm)
-			Expect(errors.IsNotFound(err)).To(BeTrue())
+			Expect(k8sClient.Get(ctx, cmNN, &cm)).To(Succeed())
 		})
 
-		It("should set RuntimeRefValid condition to False", func() {
+		It("should set RuntimeRefValid condition to False and requeue", func() {
 			def := reconcileDefAndFetch(ctx, r, defNN)
 
 			rtCond := meta.FindStatusCondition(def.Status.Conditions, logicv1.ConditionRuntimeRefValid)
 			Expect(rtCond).NotTo(BeNil())
 			Expect(rtCond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(rtCond.Reason).To(Equal(logicv1.ReasonRuntimeNotFound))
+		})
+
+		It("should return RequeueAfter when runtime is missing", func() {
+			r := newDefReconciler()
+			// First reconcile sets labels
+			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: defNN})
+			Expect(err).NotTo(HaveOccurred())
+			// Second reconcile applies ConfigMap and hits missing runtime
+			result, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: defNN})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeNumerically(">", 0))
 		})
 	})
 
@@ -265,12 +275,11 @@ var _ = Describe("LogicFlowDefinition Controller", func() {
 			Expect(flowCond.Reason).To(Equal(logicv1.ReasonParseError))
 		})
 
-		It("should set RuntimeRefValid to True (runtime exists)", func() {
+		It("should not set RuntimeRefValid condition (short-circuits before runtime check)", func() {
 			def := reconcileDefAndFetch(ctx, r, defNN)
 
 			rtCond := meta.FindStatusCondition(def.Status.Conditions, logicv1.ConditionRuntimeRefValid)
-			Expect(rtCond).NotTo(BeNil())
-			Expect(rtCond.Status).To(Equal(metav1.ConditionTrue))
+			Expect(rtCond).To(BeNil())
 		})
 	})
 

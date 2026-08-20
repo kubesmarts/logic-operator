@@ -53,7 +53,8 @@ type LogicFlowRuntimeReconciler struct {
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
-// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;delete
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
+// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;delete
 
@@ -118,6 +119,7 @@ func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *lo
 		DefaultRunnerImage(rt.Spec.Persistence),
 		WithPersistenceEnvVars(rt.Spec.Persistence, rt.Namespace),
 		WithSecurityEnvVars(rt.Spec.Security),
+		WithMetricsEnvVars(),
 		DefaultProbes(),
 		WithFlowSourcePath(),
 		WithFlowVolumeMounts(configMaps),
@@ -148,6 +150,8 @@ func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *lo
 }
 
 func (r *LogicFlowRuntimeReconciler) reconcileLeases(ctx context.Context, rt *logicv1.LogicFlowRuntime) error {
+	log := logf.FromContext(ctx)
+
 	if rt.Spec.Persistence == nil {
 		return nil
 	}
@@ -164,6 +168,11 @@ func (r *LogicFlowRuntimeReconciler) reconcileLeases(ctx context.Context, rt *lo
 		client.InNamespace(rt.Namespace),
 		client.MatchingLabels{LabelDurablePool: rt.Name},
 	); err != nil {
+		return err
+	}
+
+	runningPods, err := r.runningPodNames(ctx, rt)
+	if err != nil {
 		return err
 	}
 
@@ -189,6 +198,12 @@ func (r *LogicFlowRuntimeReconciler) reconcileLeases(ctx context.Context, rt *lo
 
 	for i := range leaseList.Items {
 		if _, ok := desiredNames[leaseList.Items[i].Name]; !ok {
+			if leaseHeldByRunningPod(&leaseList.Items[i], runningPods) {
+				log.V(1).Info("skipping deletion of lease held by running pod",
+					"lease", leaseList.Items[i].Name,
+					"holder", *leaseList.Items[i].Spec.HolderIdentity)
+				continue
+			}
 			if err := r.Delete(ctx, &leaseList.Items[i]); err != nil && !apierrors.IsNotFound(err) {
 				return err
 			}
@@ -196,6 +211,31 @@ func (r *LogicFlowRuntimeReconciler) reconcileLeases(ctx context.Context, rt *lo
 	}
 
 	return nil
+}
+
+func (r *LogicFlowRuntimeReconciler) runningPodNames(ctx context.Context, rt *logicv1.LogicFlowRuntime) (map[string]struct{}, error) {
+	var podList corev1.PodList
+	if err := r.List(ctx, &podList,
+		client.InNamespace(rt.Namespace),
+		client.MatchingLabels(SelectorLabels(rt.Name)),
+	); err != nil {
+		return nil, err
+	}
+	names := make(map[string]struct{}, len(podList.Items))
+	for i := range podList.Items {
+		if podList.Items[i].DeletionTimestamp == nil {
+			names[podList.Items[i].Name] = struct{}{}
+		}
+	}
+	return names, nil
+}
+
+func leaseHeldByRunningPod(lease *coordinationv1.Lease, runningPods map[string]struct{}) bool {
+	if lease.Spec.HolderIdentity == nil || *lease.Spec.HolderIdentity == "" {
+		return false
+	}
+	_, held := runningPods[*lease.Spec.HolderIdentity]
+	return held
 }
 
 func (r *LogicFlowRuntimeReconciler) reconcilePodRBAC(ctx context.Context, rt *logicv1.LogicFlowRuntime) error {

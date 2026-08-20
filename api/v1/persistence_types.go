@@ -112,14 +112,14 @@ type PersistenceOptionsSpec struct {
 //	    namespace: databases
 //	    port: 5432
 //	    databaseName: logicflow
-//	    databaseSchema: data-index-service
+//	    databaseSchema: workflows
 //
 // Example (using JDBC URL):
 //
 //	postgresql:
 //	  secretRef:
 //	    name: postgres-credentials
-//	  jdbcUrl: "jdbc:postgresql://postgres.databases.svc:5432/logicflow?currentSchema=data-index-service"
+//	  jdbcUrl: "jdbc:postgresql://postgres.databases.svc:5432/logicflow?currentSchema=workflows"
 //
 // +kubebuilder:validation:MinProperties=2
 // +kubebuilder:validation:MaxProperties=2
@@ -130,7 +130,7 @@ type PersistencePostgreSQL struct {
 	// +optional
 	ServiceRef *PostgreSQLServiceOptions `json:"serviceRef,omitempty"`
 	// PostgreSql JDBC URL. Mutually exclusive to serviceRef.
-	// e.g. "jdbc:postgresql://host:port/database?currentSchema=data-index-service"
+	// e.g. "jdbc:postgresql://host:port/database?currentSchema=workflows"
 	// +optional
 	JdbcURL string `json:"jdbcUrl,omitempty"`
 	// TLS configuration for PostgreSQL connections.
@@ -201,7 +201,7 @@ type SQLServiceOptions struct {
 // PostgreSQLServiceOptions use k8s service to configure postgresql jdbc url.
 type PostgreSQLServiceOptions struct {
 	*SQLServiceOptions `json:",inline"`
-	// Schema of postgresql database to be used. Defaults to "data-index-service"
+	// Schema of postgresql database to be used. When empty, the database default schema is used (typically "public").
 	// +optional
 	DatabaseSchema string `json:"databaseSchema,omitempty"`
 }

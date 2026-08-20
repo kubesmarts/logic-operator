@@ -11033,7 +11033,7 @@ spec:
                           jdbcUrl:
                             description: |-
                               PostgreSql JDBC URL. Mutually exclusive to serviceRef.
-                              e.g. "jdbc:postgresql://host:port/database?currentSchema=data-index-service"
+                              e.g. "jdbc:postgresql://host:port/database?currentSchema=workflows"
                             type: string
                           secretRef:
                             description: Secret reference to the database user credentials
@@ -11060,7 +11060,8 @@ spec:
                                 type: string
                               databaseSchema:
                                 description: Schema of postgresql database to be used.
-                                  Defaults to "data-index-service"
+                                  When empty, the database default schema is used
+                                  (typically "public").
                                 type: string
                               name:
                                 description: Name of the postgresql k8s service.
@@ -12511,7 +12512,7 @@ spec:
                           jdbcUrl:
                             description: |-
                               PostgreSql JDBC URL. Mutually exclusive to serviceRef.
-                              e.g. "jdbc:postgresql://host:port/database?currentSchema=data-index-service"
+                              e.g. "jdbc:postgresql://host:port/database?currentSchema=workflows"
                             type: string
                           secretRef:
                             description: Secret reference to the database user credentials
@@ -12538,7 +12539,8 @@ spec:
                                 type: string
                               databaseSchema:
                                 description: Schema of postgresql database to be used.
-                                  Defaults to "data-index-service"
+                                  When empty, the database default schema is used
+                                  (typically "public").
                                 type: string
                               name:
                                 description: Name of the postgresql k8s service.

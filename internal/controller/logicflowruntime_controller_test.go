@@ -365,6 +365,10 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 			rolesEnv := findEnvVar(envs, `QUARKUS_FLOW_RUNNER_SECURITY_API_KEYS__"svc-key"__ROLES`)
 			Expect(rolesEnv).NotTo(BeNil())
 			Expect(rolesEnv.Value).To(Equal("flow-admin"))
+
+			nsEnv := findEnvVar(envs, `QUARKUS_FLOW_RUNNER_SECURITY_API_KEYS__"svc-key"__NAMESPACES`)
+			Expect(nsEnv).NotTo(BeNil())
+			Expect(nsEnv.Value).To(Equal("*"))
 		})
 	})
 
@@ -893,7 +897,7 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 			Expect(rt2.Status.LeaseReplicas).To(Equal(int32(3)))
 		})
 
-		It("should delete excess leases on scale down", func() {
+		It("should delete unheld excess leases on scale down", func() {
 			var rt logicv1.LogicFlowRuntime
 			Expect(k8sClient.Get(ctx, nn, &rt)).To(Succeed())
 			replicas := int32(3)
@@ -912,6 +916,52 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 			Expect(leases).To(HaveLen(1))
 			Expect(leases[0].Name).To(Equal(fmt.Sprintf(LeaseMemberNameFmt, name, 0)))
 			Expect(rt2.Status.LeaseReplicas).To(Equal(int32(1)))
+		})
+
+		It("should not delete a lease held by a running pod on scale down", func() {
+			var rt logicv1.LogicFlowRuntime
+			Expect(k8sClient.Get(ctx, nn, &rt)).To(Succeed())
+			replicas := int32(3)
+			rt.Spec.Replicas = &replicas
+			Expect(k8sClient.Update(ctx, &rt)).To(Succeed())
+			reconcileAndFetch(ctx, r, nn)
+			Expect(listLeases(ctx, name)).To(HaveLen(3))
+
+			podName := name + "-pod-survivor"
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      podName,
+					Namespace: testNamespace,
+					Labels:    SelectorLabels(name),
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Name: "runner", Image: "busybox"}},
+				},
+			}
+			Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+			defer func() { _ = k8sClient.Delete(ctx, pod) }()
+
+			lease02Name := fmt.Sprintf(LeaseMemberNameFmt, name, 2)
+			var lease02 coordinationv1.Lease
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: lease02Name, Namespace: testNamespace}, &lease02)).To(Succeed())
+			lease02.Spec.HolderIdentity = &podName
+			Expect(k8sClient.Update(ctx, &lease02)).To(Succeed())
+
+			Expect(k8sClient.Get(ctx, nn, &rt)).To(Succeed())
+			replicas = int32(1)
+			rt.Spec.Replicas = &replicas
+			Expect(k8sClient.Update(ctx, &rt)).To(Succeed())
+
+			reconcileAndFetch(ctx, r, nn)
+			leases := listLeases(ctx, name)
+
+			leaseNames := make([]string, len(leases))
+			for i := range leases {
+				leaseNames[i] = leases[i].Name
+			}
+			Expect(leaseNames).To(ContainElement(fmt.Sprintf(LeaseMemberNameFmt, name, 0)))
+			Expect(leaseNames).To(ContainElement(lease02Name))
+			Expect(leaseNames).NotTo(ContainElement(fmt.Sprintf(LeaseMemberNameFmt, name, 1)))
 		})
 	})
 

@@ -4,4 +4,5 @@ resources:
 - logic_v1_logicflowservice.yaml
 - logic_v1_logicflowdefinition.yaml
 - logic_v1_logicflowruntime.yaml
+- runtime_ingress.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

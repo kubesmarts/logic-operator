@@ -13,7 +13,7 @@ spec:
     plural: logicflowservices
     shortNames:
     - lfs
-    - flowservice
+    - flowsvc
     singular: logicflowservice
   scope: Namespaced
   versions:
@@ -27,6 +27,9 @@ spec:
     - jsonPath: .spec.ingress.tls.enabled
       name: TLS
       type: boolean
+    - jsonPath: .status.url
+      name: URL
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date

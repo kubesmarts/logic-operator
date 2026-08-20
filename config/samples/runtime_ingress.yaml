@@ -1,0 +1,17 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hello-runtime
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: runtime.lvh.me
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hello-runtime
+                port:
+                  number: 80

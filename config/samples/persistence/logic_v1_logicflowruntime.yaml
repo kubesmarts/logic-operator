@@ -1,0 +1,16 @@
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowRuntime
+metadata:
+  labels:
+    app.kubernetes.io/name: logic-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: hello-runtime
+spec:
+  replicas: 3
+  persistence:
+    postgresql:
+      secretRef:
+        name: postgresql-secret
+      serviceRef:
+        name: postgresql
+        databaseName: logicflow
