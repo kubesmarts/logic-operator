@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths-ignore:
-      - '**.md'
+      - '**/*.md'
       - 'docs/**'
       - 'adr/**'
       - 'LICENSE'
@@ -14,7 +14,7 @@ on:
     branches:
       - main
     paths-ignore:
-      - '**.md'
+      - '**/*.md'
       - 'docs/**'
       - 'adr/**'
       - 'LICENSE'
