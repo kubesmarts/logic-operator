@@ -1,4 +1,181 @@
-= Persistence
-:description: TODO
+= Persistence Sample
+:description: Run durable workflows with PostgreSQL and lease-based coordination.
 
-// TODO: content coming soon.
+The persistence sample demonstrates durable workflow execution.
+Workflows survive pod restarts because state is stored in PostgreSQL, and Kubernetes leases ensure each in-flight instance is owned by exactly one replica.
+
+== Prerequisites
+
+The hello-world sample must be deployed first:
+
+[source,bash]
+----
+make kind-demo
+----
+
+== Deploy the Persistence Stack
+
+[source,bash]
+----
+kubectl apply -k config/samples/persistence/
+----
+
+This applies three files:
+
+* `postgresql.yaml` — a PostgreSQL 16 pod, PVC, and Service
+* `logic_v1_logicflowruntime.yaml` — upgrades `hello-runtime` to 3 replicas with PostgreSQL persistence
+* `logic_v1_logicflowdefinition_sleepy.yaml` — a 30-second wait workflow for testing durable coordination
+
+== What Gets Created
+
+=== PostgreSQL
+
+[source,yaml]
+----
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgresql-secret
+stringData:
+  POSTGRESQL_USER: flowuser
+  POSTGRESQL_PASSWORD: flowpass
+----
+
+A `postgres:16-alpine` pod connects to a 1 Gi PVC.
+The database is named `logicflow`.
+The secret provides credentials; the operator reads them and injects them as environment variables into the runner pods.
+
+=== Updated LogicFlowRuntime
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowRuntime
+metadata:
+  name: hello-runtime
+spec:
+  replicas: 3
+  persistence:
+    postgresql:
+      secretRef:
+        name: postgresql-secret
+      serviceRef:
+        name: postgresql
+        databaseName: logicflow
+----
+
+The operator updates the existing `hello-runtime` Deployment to:
+
+* Scale to 3 replicas
+* Switch to the `1.0.0-standard` runner image (which includes the Quarkus datasource extension)
+* Inject `QUARKUS_DATASOURCE_*` environment variables from `postgresql-secret`
+
+=== Sleepy Workflow Definition
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowDefinition
+metadata:
+  name: sleepy-workflow-v1-0-0
+spec:
+  runtimeRef:
+    name: hello-runtime
+  flow:
+    document:
+      dsl: '1.0.0'
+      namespace: examples
+      name: sleepy-workflow
+      version: '1.0.0'
+    do:
+      - greet:
+          set:
+            message: '${ "Hello, " + .name + "! Sleeping for 30s..." }'
+      - nap:
+          wait:
+            seconds: 30
+      - wakeUp:
+          set:
+            message: '${ "Done! " + .name + " woke up after sleeping." }'
+----
+
+The `nap` task suspends the workflow instance for 30 seconds.
+During that window the instance is in a `waiting` state, persisted in PostgreSQL.
+
+== Wait for Everything to Be Ready
+
+[source,bash]
+----
+kubectl wait --for=condition=available deployment/postgresql --timeout=120s
+kubectl wait --for=condition=available deployment/hello-runtime --timeout=120s
+----
+
+== Invoke the Sleepy Workflow
+
+[source,bash]
+----
+curl -X POST http://hello.lvh.me/q/flow/exec/examples/sleepy-workflow/1.0.0 \
+  -H "Content-Type: application/json" \
+  -d '{"name": "durable-test"}'
+----
+
+The response arrives immediately with the initial greeting.
+The workflow is now suspended in the database for 30 seconds.
+
+[TIP]
+====
+While the workflow is waiting, `quarkus_flow_instance_waiting` increases by 1.
+After 30 seconds, `quarkus_flow_workflow_completed_total` increments.
+====
+
+== Test Durable Recovery
+
+The key value proposition of persistence is that workflows survive pod restarts.
+While a workflow is in the `waiting` state, kill all runner pods:
+
+[source,bash]
+----
+kubectl delete pod -l app.kubernetes.io/name=hello-runtime --wait=false
+----
+
+New pods start, re-connect to PostgreSQL, and resume the workflow automatically when the timer fires.
+No workflow instances are lost.
+
+== How Lease Coordination Works
+
+With 3 replicas, each workflow instance is assigned an owner pod via a Kubernetes `Lease` object.
+The owning pod is responsible for running that instance and resuming it after waits.
+If the owner pod dies, the lease expires and another pod claims ownership.
+
+This means scale-out is safe: you can increase `spec.replicas` while workflows are in-flight without creating duplicate executions.
+
+== PostgreSQL Tables
+
+The Quarkus Flow Runner uses the following tables in the `logicflow` database:
+
+[cols="1,2"]
+|===
+|Table |Purpose
+
+|`workflow_instance`
+|One row per workflow execution; stores current state and variables
+
+|`workflow_checkpoint`
+|Serialized continuation state for suspended instances
+
+|`lease`
+|Tracks which pod owns which workflow instance
+|===
+
+[NOTE]
+====
+Table names may vary by Quarkus Flow Runner version.
+Inspect the actual schema with `kubectl exec -it <postgresql-pod> -- psql -U flowuser logicflow -c "\dt"`.
+====
+
+== Clean Up
+
+[source,bash]
+----
+kubectl delete -k config/samples/persistence/ --ignore-not-found=true
+----

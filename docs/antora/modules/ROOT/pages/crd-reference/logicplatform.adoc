@@ -1,4 +1,559 @@
-= Logicplatform
-:description: TODO
+= LogicPlatform
+:description: Top-level resource for managing the Logic workflow platform, services, and defaults.
 
-// TODO: content coming soon.
+LogicPlatform is the top-level resource for managing the Logic workflow platform. It provides centralized configuration for platform services (Data Index), default runtime configuration for all LogicFlowRuntime deployments, and application-specific persistence configuration. Each namespace should have only one LogicPlatform. The operator uses this resource to deploy and manage shared platform services.
+
+== API Version and Kind
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicPlatform
+----
+
+== Spec Fields
+
+=== version
+
+Type: `string` — Optional
+
+Platform version (informational).
+
+[source,yaml]
+----
+spec:
+  version: "2.0.0"
+----
+
+=== dataIndex
+
+Type: `DataIndexSpec` — Optional
+
+Configures the Data Index service for workflow indexing. The Data Index service provides GraphQL and REST APIs to query workflow instances, process definitions, and execution history.
+
+[source,yaml]
+----
+spec:
+  dataIndex:
+    enabled: true
+    application:
+      image: quay.io/kubesmarts/data-index:2.0.0
+      replicas: 2
+    persistence:
+      postgresql:
+        secretRef:
+          name: postgres-credentials
+        serviceRef:
+          name: postgres
+          databaseSchema: data-index
+    fluentBit:
+      image: fluent/fluent-bit:2.0
+      resources:
+        requests:
+          memory: 128Mi
+          cpu: 100m
+----
+
+==== dataIndex.enabled
+
+Type: `boolean` — Optional — Default: `true`
+
+Determines whether to deploy the Data Index service. When false, the operator will not create any Data Index resources. Disabling Data Index means no workflow querying capabilities, but workflows can still execute normally.
+
+==== dataIndex.application
+
+Type: `ApplicationSpec` — Optional
+
+Configures the Data Index service deployment (image, replicas, resources, container, pod template).
+
+==== dataIndex.persistence
+
+Type: `PersistenceOptionsSpec` — Optional
+
+Database connectivity for the Data Index service. Data Index requires PostgreSQL to store workflow instance data, process definitions, and execution history. Use a different `databaseSchema` than runtimes to avoid schema conflicts.
+
+==== dataIndex.fluentBit
+
+Type: `FluentBitSpec` — Optional
+
+Configures the Fluent Bit DaemonSet for log forwarding. When configured, the operator deploys a Fluent Bit DaemonSet in the namespace to collect and forward logs to external systems. One DaemonSet per LogicPlatform coordinates all event inflow.
+
+===== dataIndex.fluentBit.image
+
+Type: `string` — Optional
+
+Fluent Bit container image. Example: `fluent/fluent-bit:2.0`.
+
+===== dataIndex.fluentBit.imagePullPolicy
+
+Type: `PullPolicy` — Optional
+
+When to pull the Fluent Bit image (Always, Never, IfNotPresent).
+
+===== dataIndex.fluentBit.resources
+
+Type: `ResourceRequirements` — Optional
+
+Compute resource requirements for Fluent Bit (requests and limits).
+
+===== dataIndex.fluentBit.container
+
+Type: `ContainerSpec` — Optional
+
+Full control over Fluent Bit container configuration (environment, probes, lifecycle).
+
+=== runtimeDefaults
+
+Type: `RuntimeSpec` — Optional
+
+Default configuration for all LogicFlowRuntime deployments in this namespace. Individual LogicFlowRuntime resources can override these defaults. Provides centralized governance while allowing per-workflow customization.
+
+Common use cases:
+- Set default runtime image version
+- Configure default resource requests/limits
+- Set default replica count
+- Configure default scheduling constraints
+- Configure default persistence (database schema for all runtimes)
+
+[source,yaml]
+----
+spec:
+  runtimeDefaults:
+    image: quay.io/kubesmarts/quarkus-flow:2.0.0
+    replicas: 2
+    resources:
+      requests:
+        memory: 512Mi
+    persistence:
+      postgresql:
+        secretRef:
+          name: postgres-credentials
+        serviceRef:
+          name: postgres
+          databaseSchema: workflows
+----
+
+==== runtimeDefaults.image
+
+Type: `string` — Optional
+
+Default runtime image for all LogicFlowRuntime deployments.
+
+==== runtimeDefaults.replicas
+
+Type: `int32` — Optional — Default: `1`
+
+Default replica count for all runtimes.
+
+==== runtimeDefaults.resources
+
+Type: `ResourceRequirements` — Optional
+
+Default compute resource requests/limits for all runtimes.
+
+==== runtimeDefaults.persistence
+
+Type: `PersistenceOptionsSpec` — Optional
+
+Default database configuration for all runtimes.
+
+===== runtimeDefaults.persistence.postgresql
+
+Type: `PersistencePostgreSQL` — Optional
+
+PostgreSQL database configuration.
+
+====== runtimeDefaults.persistence.postgresql.secretRef
+
+Type: `PostgreSQLSecretOptions` — Required
+
+Reference to a Secret containing database credentials.
+
+======= runtimeDefaults.persistence.postgresql.secretRef.name
+
+Type: `string` — Required
+
+Name of the Secret.
+
+======= runtimeDefaults.persistence.postgresql.secretRef.userKey
+
+Type: `string` — Optional — Default: `POSTGRESQL_USER`
+
+Secret key for database username.
+
+======= runtimeDefaults.persistence.postgresql.secretRef.passwordKey
+
+Type: `string` — Optional — Default: `POSTGRESQL_PASSWORD`
+
+Secret key for database password.
+
+====== runtimeDefaults.persistence.postgresql.serviceRef
+
+Type: `PostgreSQLServiceOptions` — Optional (mutually exclusive with jdbcUrl)
+
+Kubernetes service reference to PostgreSQL. Operator constructs JDBC URL dynamically.
+
+======= runtimeDefaults.persistence.postgresql.serviceRef.name
+
+Type: `string` — Required
+
+Name of the PostgreSQL service.
+
+======= runtimeDefaults.persistence.postgresql.serviceRef.namespace
+
+Type: `string` — Optional
+
+Namespace of the PostgreSQL service (defaults to LogicPlatform's namespace).
+
+======= runtimeDefaults.persistence.postgresql.serviceRef.port
+
+Type: `int` — Optional — Default: `5432`
+
+Port of the PostgreSQL service.
+
+======= runtimeDefaults.persistence.postgresql.serviceRef.databaseName
+
+Type: `string` — Optional — Default: `logicflow`
+
+PostgreSQL database name.
+
+======= runtimeDefaults.persistence.postgresql.serviceRef.databaseSchema
+
+Type: `string` — Optional
+
+PostgreSQL schema (defaults to public).
+
+====== runtimeDefaults.persistence.postgresql.jdbcUrl
+
+Type: `string` — Optional (mutually exclusive with serviceRef)
+
+Direct PostgreSQL JDBC URL. Example: `jdbc:postgresql://postgres.databases.svc:5432/logicflow?currentSchema=workflows`.
+
+====== runtimeDefaults.persistence.postgresql.tls
+
+Type: `TLSConnection` — Optional
+
+TLS/SSL configuration for PostgreSQL connections.
+
+======= runtimeDefaults.persistence.postgresql.tls.enabled
+
+Type: `boolean` — Optional — Default: `false`
+
+Whether to use TLS for PostgreSQL.
+
+======= runtimeDefaults.persistence.postgresql.tls.tlsMode
+
+Type: `string` — Optional — Default: `prefer`
+
+TLS mode: disable, allow, prefer (default), require, verify-ca, verify-full.
+
+===== runtimeDefaults.persistence.dbMigrationStrategy
+
+Type: `string` — Optional — Default: `service`
+
+Database migration approach: `service` (application migrates), `job` (Logic operator handles), `none` (no migration).
+
+==== runtimeDefaults.podTemplate
+
+Type: `PodTemplateSpec` — Optional
+
+Pod-level defaults: labels, annotations, affinity, volumes, sidecars.
+
+==== runtimeDefaults.container
+
+Type: `ContainerSpec` — Optional
+
+Container defaults: environment variables, probes, lifecycle hooks.
+
+== Status Fields
+
+=== observedGeneration
+
+Type: `int64` — Optional
+
+Generation of the spec that was last reconciled.
+
+=== phase
+
+Type: `string` — Optional
+
+Platform lifecycle phase (e.g., Ready, Progressing, Failed).
+
+=== dataIndex
+
+Type: `DataIndexStatus` — Optional
+
+Status information for the Data Index service.
+
+==== dataIndex.service
+
+Type: `DataIndexServiceStatus` — Optional
+
+Data Index service deployment status.
+
+===== dataIndex.service.ready
+
+Type: `boolean`
+
+Whether the Data Index service is ready to serve requests.
+
+===== dataIndex.service.deploymentRef
+
+Type: `LocalObjectReference` — Optional
+
+References the Data Index Application resource.
+
+===== dataIndex.service.serviceRef
+
+Type: `LocalObjectReference` — Optional
+
+References the Data Index service resource.
+
+===== dataIndex.service.replicas
+
+Type: `ReplicaStatus` — Optional
+
+Current replica counts (desired, current, ready, updated).
+
+===== dataIndex.service.graphqlEndpoint
+
+Type: `string` — Optional
+
+Internal cluster URL for the Data Index GraphQL API. Example: `http://data-index.default.svc.cluster.local:8080/graphql`.
+
+===== dataIndex.service.metricsEndpoint
+
+Type: `string` — Optional
+
+Internal cluster URL for Prometheus metrics.
+
+==== dataIndex.persistence
+
+Type: `PostgresSQLStatus` — Optional
+
+Database connection status.
+
+===== dataIndex.persistence.connected
+
+Type: `boolean`
+
+Whether the database connection is established.
+
+===== dataIndex.persistence.schemaReady
+
+Type: `boolean`
+
+Whether the database schema is initialized and up-to-date.
+
+===== dataIndex.persistence.schemaVersion
+
+Type: `string` — Optional
+
+Current database schema version.
+
+===== dataIndex.persistence.error
+
+Type: `string` — Optional
+
+Database error message (if any).
+
+==== dataIndex.fluentBit
+
+Type: `FluentBitStatus` — Optional
+
+Fluent Bit DaemonSet status (only populated if configured).
+
+===== dataIndex.fluentBit.ready
+
+Type: `boolean`
+
+Whether the Fluent Bit DaemonSet is ready.
+
+===== dataIndex.fluentBit.daemonSetRef
+
+Type: `LocalObjectReference` — Optional
+
+References the Fluent Bit DaemonSet resource.
+
+===== dataIndex.fluentBit.metricsEndpoint
+
+Type: `string` — Optional
+
+Internal cluster URL for Prometheus metrics. Example: `http://fluent-bit.default.svc.cluster.local:2020/api/v1/metrics/prometheus`.
+
+=== conditions
+
+Type: `[]Condition` — Optional
+
+Latest available observations of the platform's state (Ready, ReconciliationFailed, etc.).
+
+== Full Example
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicPlatform
+metadata:
+  name: production-platform
+  namespace: default
+spec:
+  version: "2.0.0"
+
+  dataIndex:
+    enabled: true
+    application:
+      image: quay.io/kubesmarts/data-index:2.0.0
+      replicas: 2
+      imagePullPolicy: IfNotPresent
+      resources:
+        requests:
+          memory: 512Mi
+          cpu: 250m
+        limits:
+          memory: 1Gi
+          cpu: 1000m
+      podTemplate:
+        metadata:
+          labels:
+            monitoring: enabled
+        spec:
+          affinity:
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                      - data-index
+                  topologyKey: kubernetes.io/hostname
+
+    persistence:
+      postgresql:
+        secretRef:
+          name: postgres-credentials
+          userKey: POSTGRESQL_USER
+          passwordKey: POSTGRESQL_PASSWORD
+        serviceRef:
+          name: postgres
+          namespace: databases
+          port: 5432
+          databaseName: data-index-db
+          databaseSchema: data_index
+        tls:
+          enabled: true
+          tlsMode: verify-full
+      dbMigrationStrategy: service
+
+    fluentBit:
+      image: fluent/fluent-bit:2.0.8
+      imagePullPolicy: IfNotPresent
+      resources:
+        requests:
+          memory: 128Mi
+          cpu: 100m
+        limits:
+          memory: 256Mi
+          cpu: 200m
+
+  runtimeDefaults:
+    image: quay.io/kubesmarts/quarkus-flow:2.0.0
+    replicas: 2
+    imagePullPolicy: IfNotPresent
+    resources:
+      requests:
+        memory: 512Mi
+        cpu: 250m
+      limits:
+        memory: 1Gi
+        cpu: 1000m
+
+    persistence:
+      postgresql:
+        secretRef:
+          name: postgres-credentials
+          userKey: POSTGRESQL_USER
+          passwordKey: POSTGRESQL_PASSWORD
+        serviceRef:
+          name: postgres
+          namespace: databases
+          port: 5432
+          databaseName: logic-flow-db
+          databaseSchema: workflows
+        tls:
+          enabled: true
+          tlsMode: require
+      dbMigrationStrategy: service
+
+    podTemplate:
+      metadata:
+        labels:
+          team: platform
+          environment: production
+        annotations:
+          prometheus.io/scrape: "true"
+          prometheus.io/port: "8080"
+      spec:
+        serviceAccountName: runtime-sa
+        securityContext:
+          runAsNonRoot: true
+          fsGroup: 1000
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                    - runtime
+                topologyKey: kubernetes.io/hostname
+
+status:
+  observedGeneration: 1
+  phase: Ready
+  dataIndex:
+    service:
+      ready: true
+      deploymentRef:
+        name: data-index
+      serviceRef:
+        name: data-index
+      replicas:
+        desired: 2
+        current: 2
+        ready: 2
+        updated: 2
+      graphqlEndpoint: http://data-index.default.svc.cluster.local:8080/graphql
+      metricsEndpoint: http://data-index.default.svc.cluster.local:8080/q/metrics
+    persistence:
+      connected: true
+      schemaReady: true
+      schemaVersion: "2.0.0"
+    fluentBit:
+      ready: true
+      daemonSetRef:
+        name: fluent-bit
+      metricsEndpoint: http://fluent-bit.default.svc.cluster.local:2020/api/v1/metrics/prometheus
+  conditions:
+  - type: Ready
+    status: "True"
+    observedGeneration: 1
+    reason: PlatformReady
+    message: All platform services are ready
+  - type: DataIndexReady
+    status: "True"
+    observedGeneration: 1
+    reason: DeploymentReady
+    message: Data Index deployment is ready
+  - type: PersistenceReady
+    status: "True"
+    observedGeneration: 1
+    reason: DatabaseConnected
+    message: PostgreSQL connection established and schema initialized
+----
+

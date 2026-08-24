@@ -1,4 +1,102 @@
 = Monitoring
-:description: TODO
+:description: Deploy Prometheus and Grafana to observe Logic Operator workflow metrics.
 
-// TODO: content coming soon.
+Logic Operator exposes Quarkus Flow Runner metrics at `/q/metrics` on port 8080 of every runner pod.
+The monitoring sample deploys Prometheus (scraping those pods) and Grafana (with a pre-built dashboard).
+
+== Deploy the Monitoring Stack
+
+[source,bash]
+----
+kubectl apply -k config/samples/monitoring/
+----
+
+This creates:
+
+* Prometheus v3.4.1 — scrapes runner pods every 10 seconds
+* Grafana v11.6.0 — anonymous access, pre-loaded "Logic Flow Runtime" dashboard
+* Ingress rules for `prometheus.lvh.me` and `grafana.lvh.me`
+
+Wait for the pods to be ready:
+
+[source,bash]
+----
+kubectl wait --for=condition=available deployment/prometheus deployment/grafana --timeout=120s
+----
+
+Open the Grafana dashboard at http://grafana.lvh.me.
+Navigate to *Dashboards > Logic Operator > Logic Flow Runtime*.
+
+[NOTE]
+====
+Grafana is configured with anonymous access and the Admin role.
+The dashboard auto-refreshes every 10 seconds.
+Panels show "0" until the first workflow execution.
+====
+
+== How Prometheus Scrapes Runner Pods
+
+Prometheus uses Kubernetes pod service discovery.
+It keeps only pods where the label `app.kubernetes.io/managed-by=logic-operator` is set, and scrapes `/q/metrics` on port 8080 of each pod.
+This means new runtime replicas are picked up automatically without any configuration change.
+
+The scrape job is named `logic-flow-runtime` and each series carries `namespace` and `pod` labels for filtering.
+
+== Key Metrics
+
+[cols="2,1,2"]
+|===
+|Metric |Type |Description
+
+|`quarkus_flow_workflow_started_total`
+|counter
+|Total workflows started, labelled by `workflow`
+
+|`quarkus_flow_workflow_completed_total`
+|counter
+|Total workflows completed successfully
+
+|`quarkus_flow_workflow_faulted_total`
+|counter
+|Total workflows that ended in a fault state
+
+|`quarkus_flow_instance_running`
+|gauge
+|Currently executing workflow instances
+
+|`quarkus_flow_instance_waiting`
+|gauge
+|Instances waiting on an event or timer
+
+|`quarkus_flow_instance_suspended`
+|gauge
+|Suspended instances
+
+|`quarkus_flow_task_duration_seconds`
+|histogram
+|Per-task execution duration (use `histogram_quantile` for percentiles)
+|===
+
+== Generate Load to Populate the Dashboard
+
+After deploying the hello-world sample, send a burst of requests:
+
+[source,bash]
+----
+for i in $(seq 1 20); do
+  curl -s -X POST http://hello.lvh.me/ \
+    -H "Content-Type: application/json" \
+    -d "{\"name\": \"user-$i\"}" &
+done
+wait
+----
+
+The Grafana "Started" and "Completed" stat tiles update within one scrape interval (10 seconds).
+The throughput time-series panel shows the per-second rate over the last 15 minutes.
+
+== Clean Up
+
+[source,bash]
+----
+kubectl delete -k config/samples/monitoring/ --ignore-not-found=true
+----

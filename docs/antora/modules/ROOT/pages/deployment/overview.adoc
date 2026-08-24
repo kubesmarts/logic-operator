@@ -1,4 +1,92 @@
-= Overview
-:description: TODO
+= Deployment Overview
+:description: What gets deployed when you install Logic Operator and how the components fit together.
 
-// TODO: content coming soon.
+Logic Operator is a Kubernetes operator that manages Serverless Logic workflows powered by Quarkus Flow.
+It follows the standard operator pattern: a controller pod watches custom resources and reconciles the cluster state to match the declared spec.
+
+== Installed Components
+
+When you deploy Logic Operator, the following components land in your cluster:
+
+`logic-operator-system` namespace::
+The operator itself runs here as a `Deployment` named `logic-operator-controller-manager`.
+
+Custom Resource Definitions (CRDs)::
+Four CRDs are installed cluster-wide:
++
+[cols="1,2"]
+|===
+|CRD |Purpose
+
+|`LogicPlatform`
+|Platform-wide configuration and shared services
+
+|`LogicFlowRuntime`
+|Manages the Quarkus Flow Runner pod(s) and their configuration
+
+|`LogicFlowDefinition`
+|Stores a Serverless Workflow DSL definition and links it to a runtime
+
+|`LogicFlowService`
+|Exposes a workflow as an HTTP endpoint via an Ingress
+|===
+
+RBAC::
+ClusterRoles and ClusterRoleBindings that allow the operator to watch and manage pods, deployments, services, ingresses, configmaps, secrets, and leases across all namespaces.
+
+Webhooks::
+Validating and mutating admission webhooks for `LogicFlowRuntime` and `LogicFlowDefinition`.
+These are served by the operator pod and secured by cert-manager.
+A `Certificate` and `Issuer` are created automatically.
+
+== Architecture
+
+The diagram below shows how the components relate at runtime.
+
+----
+  kubectl / CI                   Operator Pod (logic-operator-system)
+       |                               |
+       | apply LogicFlowRuntime        | watches CRDs
+       |-----> kube-apiserver <--------|
+               |       |              |
+               |       | webhook TLS  |   cert-manager
+               |       |<-------------|---[ Certificate ]
+               |
+               | reconcile
+               v
+         Deployment (hello-runtime)
+               |
+         Pod: quarkus-flow-runner
+               |  /q/metrics  /q/health
+               |  /q/flow/exec/<ns>/<workflow>/<version>
+               v
+         Service --> Ingress --> hello.lvh.me
+----
+
+The runner image tag controls capabilities:
+
+* `quay.io/quarkiverse/quarkus-flow-runner:1.0.0-minimal` — stateless, no persistence
+* `quay.io/quarkiverse/quarkus-flow-runner:1.0.0-standard` — PostgreSQL persistence, lease-based sharding
+
+== Prerequisites
+
+All environments require:
+
+* Kubernetes 1.30+
+* cert-manager (manages TLS for admission webhooks)
+
+Local development additionally requires:
+
+* KIND v0.20+
+* Docker v17.03+
+* kubectl v1.30+
+* Go v1.26+ (to build the operator image)
+* ingress-nginx (installed automatically by `make kind-create`)
+
+== Next Steps
+
+xref:deployment/kind-local.adoc[Local development with KIND]::
+Full walkthrough for running the operator on your laptop.
+
+xref:deployment/production.adoc[Production checklist]::
+What to verify before deploying to a real cluster.

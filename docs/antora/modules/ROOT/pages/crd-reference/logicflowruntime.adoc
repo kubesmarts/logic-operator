@@ -1,4 +1,434 @@
-= Logicflowruntime
-:description: TODO
+= LogicFlowRuntime
+:description: Shared Quarkus Flow runner deployment that executes multiple workflow definitions.
 
-// TODO: content coming soon.
+LogicFlowRuntime is a shared workflow execution engine that runs multiple workflow definitions. One LogicFlowRuntime can execute N workflow definitions. Configuration cascades from LogicFlowRuntime.spec > LogicPlatform.spec.runtimeDefaults > operator defaults.
+
+== API Version and Kind
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowRuntime
+----
+
+== Spec Fields
+
+=== image
+
+Type: `string` — Optional
+
+The container image for the Quarkus Flow runtime.
+
+Example: `quay.io/kubesmarts/quarkus-flow:2.0.0`
+
+[source,yaml]
+----
+spec:
+  image: quay.io/kubesmarts/quarkus-flow:2.0.0
+----
+
+=== replicas
+
+Type: `int32` — Optional — Default: `1`
+
+The desired number of runtime pod replicas. Ignored if a HorizontalPodAutoscaler is configured.
+
+[source,yaml]
+----
+spec:
+  replicas: 2
+----
+
+=== imagePullPolicy
+
+Type: `string` — Optional — Default: `IfNotPresent`
+
+When to pull the container image. Valid values: `Always`, `Never`, `IfNotPresent`.
+
+[source,yaml]
+----
+spec:
+  imagePullPolicy: IfNotPresent
+----
+
+=== resources
+
+Type: `ResourceRequirements` — Optional
+
+Compute resource requests and limits (CPU, memory).
+
+[source,yaml]
+----
+spec:
+  resources:
+    requests:
+      memory: 512Mi
+      cpu: 250m
+    limits:
+      memory: 1Gi
+      cpu: 1000m
+----
+
+=== container
+
+Type: `ContainerSpec` — Optional
+
+Fine-grained container configuration (environment variables, probes, lifecycle hooks).
+
+Common use cases: setting environment variables, resource requests, health probes.
+
+[source,yaml]
+----
+spec:
+  container:
+    env:
+    - name: QUARKUS_PROFILE
+      value: prod
+    resources:
+      requests:
+        memory: 512Mi
+----
+
+=== podTemplate
+
+Type: `PodTemplateSpec` — Optional
+
+Pod-level customization: labels, annotations, scheduling constraints, volumes, sidecars, and pod disruption budgets.
+
+[source,yaml]
+----
+spec:
+  podTemplate:
+    metadata:
+      labels:
+        monitoring: enabled
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - runtime
+            topologyKey: kubernetes.io/hostname
+----
+
+=== persistence
+
+Type: `PersistenceOptionsSpec` — Optional
+
+Database connectivity for the runtime. Avoid using the same database schema as the Data Index service.
+
+[source,yaml]
+----
+spec:
+  persistence:
+    postgresql:
+      secretRef:
+        name: postgres-credentials
+      serviceRef:
+        name: postgres
+        databaseSchema: workflows
+----
+
+=== security
+
+Type: `RuntimeSecuritySpec` — Optional
+
+HTTP endpoint authentication configuration.
+
+[source,yaml]
+----
+spec:
+  security:
+    type: API_KEY
+    apiKey:
+      keys:
+      - name: default-key
+        secretRef:
+          name: my-api-key
+          key: value
+        roles:
+        - flow-invoker
+----
+
+==== security.type
+
+Type: `string` — Optional — Default: `NONE`
+
+Authentication mode for workflow runtime HTTP endpoints. Valid values: `NONE` (dev only), `API_KEY` (machine-to-machine), `OIDC` (enterprise SSO).
+
+WARNING: `NONE` mode should only be used in development.
+
+==== security.apiKey
+
+Type: `APIKeyAuthSpec` — Optional
+
+API key authentication configuration. Required when `type` is `API_KEY`.
+
+===== security.apiKey.keys
+
+Type: `[]APIKeySpec` — Required when using API_KEY
+
+List of API keys with assigned roles.
+
+====== security.apiKey.keys[].name
+
+Type: `string` — Required
+
+Unique identifier for this API key. Must match pattern `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` and be at most 63 characters.
+
+====== security.apiKey.keys[].secretRef
+
+Type: `SecretKeySelector` — Required
+
+Reference to a Secret containing the API key value.
+
+====== security.apiKey.keys[].secretRef.name
+
+Type: `string` — Required
+
+Name of the Secret containing the API key.
+
+====== security.apiKey.keys[].secretRef.key
+
+Type: `string` — Optional — Default: `value`
+
+Key within the Secret. Defaults to `value`.
+
+====== security.apiKey.keys[].roles
+
+Type: `[]string` — Required
+
+Roles assigned to this API key. Valid values: `flow-admin` (full access), `flow-invoker` (execute only).
+
+==== security.oidc
+
+Type: `OIDCAuthSpec` — Optional
+
+OpenID Connect authentication configuration. Required when `type` is `OIDC`.
+
+===== security.oidc.authServerUrl
+
+Type: `string` — Required
+
+The OIDC provider URL (e.g., `https://auth.example.com`).
+
+===== security.oidc.clientId
+
+Type: `string` — Required
+
+The OAuth2 client ID registered with the OIDC provider.
+
+===== security.oidc.clientSecret
+
+Type: `SecretKeySelector` — Required
+
+Reference to a Secret containing the OAuth2 client secret.
+
+===== security.oidc.clientSecret.name
+
+Type: `string` — Required
+
+Name of the Secret containing the client secret.
+
+===== security.oidc.clientSecret.key
+
+Type: `string` — Optional — Default: `value`
+
+Key within the Secret. Defaults to `value`.
+
+===== security.oidc.rolesClaim
+
+Type: `string` — Optional — Default: `roles`
+
+JWT claim path containing user roles.
+
+== Status Fields
+
+=== observedGeneration
+
+Type: `int64` — Optional
+
+Tracks the last reconciled spec generation.
+
+=== phase
+
+Type: `string` — Optional
+
+Runtime lifecycle phase derived from Conditions (e.g., `Pending`, `Running`, `Failed`).
+
+=== replicas
+
+Type: `int32` — Optional
+
+Total number of replicas (for HPA scale subresource).
+
+=== selector
+
+Type: `string` — Optional
+
+Label selector for pods (for HPA scale subresource).
+
+=== readyReplicas
+
+Type: `int32` — Optional
+
+Number of ready replicas.
+
+=== definitions
+
+Type: `[]RuntimeDefinitionStatus` — Optional
+
+List of loaded workflow definitions.
+
+Each entry contains:
+- `name` (string): Workflow name
+- `version` (string, optional): Workflow version
+
+=== deploymentRef
+
+Type: `LocalObjectReference` — Optional
+
+Reference to the managed Deployment.
+
+=== serviceRef
+
+Type: `LocalObjectReference` — Optional
+
+Reference to the HTTP Service.
+
+=== configMapRefs
+
+Type: `[]LocalObjectReference` — Optional
+
+List of ConfigMaps containing loaded workflow definitions.
+
+=== leaseReplicas
+
+Type: `int32` — Optional
+
+Number of durable pool leases.
+
+=== conditions
+
+Type: `[]Condition` — Optional
+
+Detailed runtime state conditions (Ready, ReconciliationFailed, etc.).
+
+== Full Example
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowRuntime
+metadata:
+  name: production-runtime
+  namespace: default
+spec:
+  image: quay.io/kubesmarts/quarkus-flow:2.0.0
+  replicas: 3
+  imagePullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      memory: 512Mi
+      cpu: 250m
+    limits:
+      memory: 1Gi
+      cpu: 1000m
+
+  persistence:
+    postgresql:
+      secretRef:
+        name: postgres-credentials
+        userKey: POSTGRESQL_USER
+        passwordKey: POSTGRESQL_PASSWORD
+      serviceRef:
+        name: postgres
+        namespace: databases
+        port: 5432
+        databaseName: logicflow
+        databaseSchema: workflows
+      tls:
+        enabled: true
+        tlsMode: require
+    dbMigrationStrategy: service
+
+  security:
+    type: API_KEY
+    apiKey:
+      keys:
+      - name: runtime-invoker
+        secretRef:
+          name: invoker-api-key
+          key: token
+        roles:
+        - flow-invoker
+      - name: runtime-admin
+        secretRef:
+          name: admin-api-key
+          key: token
+        roles:
+        - flow-admin
+
+  container:
+    env:
+    - name: QUARKUS_PROFILE
+      value: prod
+    - name: JAVA_OPTS
+      value: "-Xmx512m"
+
+  podTemplate:
+    metadata:
+      labels:
+        team: platform
+        monitoring: enabled
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - runtime
+            topologyKey: kubernetes.io/hostname
+      serviceAccountName: runtime-sa
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 1000
+
+status:
+  observedGeneration: 1
+  phase: Running
+  replicas: 3
+  readyReplicas: 3
+  selector: app=production-runtime
+  deploymentRef:
+    name: production-runtime
+  serviceRef:
+    name: production-runtime
+  definitions:
+  - name: order-workflow
+    version: "1.0.0"
+  - name: payment-workflow
+    version: "2.1.0"
+  conditions:
+  - type: Ready
+    status: "True"
+    observedGeneration: 1
+    reason: Available
+    message: Deployment has minimum availability
+  - type: Progressing
+    status: "True"
+    observedGeneration: 1
+    reason: NewReplicaSetAvailable
+    message: ReplicaSet "production-runtime-xyz" has successfully progressed
+----

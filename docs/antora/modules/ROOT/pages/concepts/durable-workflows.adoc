@@ -1,4 +1,183 @@
 = Durable Workflows
-:description: TODO
+:description: How Logic Operator enables stateful, crash-resilient workflow execution with PostgreSQL and Kubernetes Leases.
 
-// TODO: content coming soon.
+By default, `LogicFlowRuntime` pods are stateless. Workflow instances exist only in memory and are
+lost if a pod restarts. Durable mode adds a PostgreSQL persistence layer and uses Kubernetes Leases
+to give each pod a stable identity across restarts, so in-flight workflow instances survive pod
+failures.
+
+== Enabling Durable Mode
+
+Set `spec.persistence` on the `LogicFlowRuntime` to switch the runtime to durable mode:
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1alpha1
+kind: LogicFlowRuntime
+metadata:
+  name: order-processing
+  namespace: my-namespace
+spec:
+  replicas: 2
+  runner:
+    image: quay.io/quarkiverse/quarkus-flow-runner:1.0.0-standard   # <1>
+  persistence:
+    postgresql:
+      secretRef:
+        name: order-processing-db-secret   # <2>
+      serviceRef:                          # <3>
+        name: postgresql
+        port: 5432
+        databaseName: workflows
+----
+<1> Use the `standard` image — the `minimal` image does not include the PostgreSQL driver.
+<2> A Secret containing `username` and `password` keys for the database connection.
+<3> The operator builds the JDBC URL from `serviceRef`. Alternatively supply an explicit
+    `jdbcUrl` instead of `serviceRef`.
+
+[NOTE]
+====
+The `standard` image (`quay.io/quarkiverse/quarkus-flow-runner:1.0.0-standard`) must be used for
+durable workflows. The `minimal` image does not include the database extensions.
+====
+
+== Kubernetes Leases for Stable Pod Identity
+
+Quarkus Flow Runner uses a lease-per-pod model to distribute durable workflow instances across the
+pool. Each pod must hold a uniquely numbered lease so it can claim ownership of a specific
+partition of workflow data in the database.
+
+When durable mode is enabled, the operator creates one Kubernetes Lease for each replica:
+
+[cols="1,3", options="header"]
+|===
+| Replica index | Lease name
+
+| 0
+| `flow-pool-member-<runtime-name>-00`
+
+| 1
+| `flow-pool-member-<runtime-name>-01`
+
+| N
+| `flow-pool-member-<runtime-name>-<NN>`
+|===
+
+For the `order-processing` runtime with `replicas: 2`, the leases are:
+
+* `flow-pool-member-order-processing-00`
+* `flow-pool-member-order-processing-01`
+
+Each pod acquires exactly one of these leases at startup. If the pod restarts, it reacquires the
+same lease — giving it the same stable identity in the pool. The operator sets up the RBAC
+(Role + RoleBinding) required for the runtime's ServiceAccount to get and update these Leases.
+
+== Environment Variables Injected by the Operator
+
+The operator injects the following environment variables into the runtime pods when persistence
+is configured:
+
+[cols="2,3", options="header"]
+|===
+| Environment variable | Value / source
+
+| `QUARKUS_FLOW_DURABLE_KUBE_LEASE_LEADER_ENABLED`
+| `false` — disables leader-election mode; every pod acquires its own lease, not a shared one.
+
+| `QUARKUS_FLOW_DURABLE_KUBE_POOL_NAME`
+| Set to the `LogicFlowRuntime` name (e.g. `order-processing`). The runner uses this to locate
+  the correct lease resources.
+
+| `POD_NAME`
+| Injected via Kubernetes downward API field reference (`metadata.name`). The runner uses this
+  to match itself to its lease.
+
+| `POD_NAMESPACE`
+| Injected via Kubernetes downward API field reference (`metadata.namespace`).
+
+| `QUARKUS_DATASOURCE_DB_KIND`
+| `postgresql`
+
+| `QUARKUS_DATASOURCE_USERNAME`
+| From the Secret specified in `spec.persistence.postgresql.secretRef`.
+
+| `QUARKUS_DATASOURCE_PASSWORD`
+| From the Secret specified in `spec.persistence.postgresql.secretRef`.
+
+| `QUARKUS_DATASOURCE_JDBC_URL`
+| Built from `spec.persistence.postgresql.serviceRef`, or taken directly from an explicit
+  `jdbcUrl` field.
+|===
+
+== Deployment Strategy in Durable Mode
+
+Stateless runtimes use the default `RollingUpdate` strategy. Durable runtimes require a stricter
+strategy to ensure that a pod releases its Lease before a replacement pod tries to acquire it.
+
+[cols="1,3", options="header"]
+|===
+| Replica count | Deployment strategy
+
+| 1
+| `Recreate` — the single pod is fully terminated (releasing its lease) before the replacement
+  starts.
+
+| 2 or more
+| `RollingUpdate` with `maxUnavailable: 1` and `maxSurge: 0` — one pod is replaced at a time,
+  and no additional pods are scheduled. The outgoing pod terminates and releases its lease before
+  the replacement starts.
+|===
+
+[WARNING]
+====
+Do not override the Deployment strategy on a durable runtime. The `maxSurge: 0` constraint is
+critical: if a replacement pod starts before the old pod terminates, two pods compete for the
+same lease, causing split-brain database access.
+====
+
+== PostgreSQL Connection: serviceRef vs jdbcUrl
+
+The operator supports two ways to specify the database connection:
+
+*Option 1 — serviceRef (recommended):* The operator constructs the JDBC URL from the service
+name, port, and database name.
+
+[source,yaml]
+----
+persistence:
+  postgresql:
+    secretRef:
+      name: order-processing-db-secret
+    serviceRef:
+      name: postgresql
+      port: 5432
+      databaseName: workflows
+# Produces: jdbc:postgresql://postgresql:5432/workflows
+----
+
+*Option 2 — explicit jdbcUrl:* Provide the full JDBC URL directly. Use this when the database is
+not exposed as a Kubernetes Service, or when you need non-standard connection parameters.
+
+[source,yaml]
+----
+persistence:
+  postgresql:
+    secretRef:
+      name: order-processing-db-secret
+    jdbcUrl: "jdbc:postgresql://db.example.com:5432/workflows?sslmode=require"
+----
+
+== Scaling a Durable Runtime
+
+When you change `spec.replicas`, the operator reconciles the Lease set to match:
+
+* *Scale up* — new Leases are created for the added replicas before the Deployment is updated.
+* *Scale down* — the Deployment is updated first; after the pods terminate and release their
+  Leases, the operator deletes the orphaned Lease resources.
+
+[NOTE]
+====
+Scaling a durable runtime causes a rolling restart due to the `maxSurge: 0` constraint. Plan
+scaling operations during a maintenance window if your workflows are sensitive to brief
+unavailability.
+====

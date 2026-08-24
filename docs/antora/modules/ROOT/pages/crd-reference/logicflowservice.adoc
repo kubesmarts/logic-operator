@@ -1,4 +1,277 @@
-= Logicflowservice
-:description: TODO
+= LogicFlowService
+:description: Provides stable external HTTP access to workflows with traffic splitting and TLS.
 
-// TODO: content coming soon.
+LogicFlowService provides stable external HTTP access to workflows with traffic splitting for canary deployments and gradual rollouts. It uses a forward reference pattern (Service → Definition) and discovers the runtime transitively from the referenced definitions. Supports Kubernetes Ingress, OpenShift Route, and Gateway API HTTPRoute.
+
+== API Version and Kind
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowService
+----
+
+== Spec Fields
+
+=== defaultDefinition
+
+Type: `LocalObjectReference` — Optional
+
+Routes 100% traffic to a single LogicFlowDefinition. Mutually exclusive with `traffic`.
+
+[source,yaml]
+----
+spec:
+  defaultDefinition:
+    name: order-workflow-v1
+----
+
+=== traffic
+
+Type: `[]TrafficSpec` — Optional
+
+Distributes requests across workflow versions. Mutually exclusive with `defaultDefinition`. Weights must sum to 100.
+
+[source,yaml]
+----
+spec:
+  traffic:
+  - definitionRef:
+      name: order-workflow-v1
+    weight: 80
+  - definitionRef:
+      name: order-workflow-v2
+    weight: 20
+----
+
+==== traffic[].definitionRef
+
+Type: `LocalObjectReference` — Required
+
+References a LogicFlowDefinition (workflow version).
+
+==== traffic[].weight
+
+Type: `int32` — Required
+
+Percentage of traffic (0-100).
+
+=== ingress
+
+Type: `IngressSpec` — Required
+
+External HTTP/HTTPS access configuration. Creates an Ingress (Kubernetes), Route (OpenShift), or HTTPRoute (Gateway API).
+
+[source,yaml]
+----
+spec:
+  ingress:
+    host: order-api.example.com
+    ingressClassName: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt
+    tls:
+      enabled: true
+      secretRef:
+        name: order-api-tls
+----
+
+==== ingress.host
+
+Type: `string` — Optional
+
+External hostname. Required when `gatewayRef` is not set.
+
+==== ingress.ingressClassName
+
+Type: `string` — Optional
+
+Selects the Ingress controller (Kubernetes Ingress mode).
+
+==== ingress.gatewayRef
+
+Type: `GatewayRef` — Optional
+
+Selects the Gateway for HTTPRoute creation (Gateway API mode). When set, an HTTPRoute is created instead of Ingress/Route. Required for traffic splitting on OpenShift.
+
+===== ingress.gatewayRef.name
+
+Type: `string` — Required
+
+Name of the Gateway.
+
+===== ingress.gatewayRef.namespace
+
+Type: `string` — Optional
+
+Namespace of the Gateway (defaults to the service's namespace).
+
+==== ingress.annotations
+
+Type: `map[string]string` — Optional
+
+Annotations for the Ingress/Route/HTTPRoute resource (user-provided).
+
+==== ingress.tls
+
+Type: `TLSSpec` — Optional
+
+HTTPS/TLS configuration.
+
+===== ingress.tls.enabled
+
+Type: `boolean` — Optional — Default: `false`
+
+Determines whether to use HTTPS.
+
+===== ingress.tls.secretRef
+
+Type: `LocalObjectReference` — Optional
+
+References an existing TLS Secret. Mutually exclusive with `certManager`.
+
+===== ingress.tls.certManager
+
+Type: `CertManagerSpec` — Optional
+
+Configures automatic certificate generation via cert-manager. Mutually exclusive with `secretRef`.
+
+====== ingress.tls.certManager.issuerRef
+
+Type: `CertManagerIssuerRef` — Required
+
+References a cert-manager Issuer or ClusterIssuer.
+
+======= ingress.tls.certManager.issuerRef.name
+
+Type: `string` — Required
+
+Name of the Issuer/ClusterIssuer.
+
+======= ingress.tls.certManager.issuerRef.kind
+
+Type: `string` — Optional — Default: `ClusterIssuer`
+
+Kind is either "Issuer" or "ClusterIssuer".
+
+======= ingress.tls.certManager.issuerRef.group
+
+Type: `string` — Optional — Default: `cert-manager.io`
+
+API group of the Issuer.
+
+== Status Fields
+
+=== observedGeneration
+
+Type: `int64` — Optional
+
+Tracks the last reconciled spec generation.
+
+=== runtimeRef
+
+Type: `LocalObjectReference` — Optional
+
+The discovered LogicFlowRuntime from the referenced definitions.
+
+=== ingressRef
+
+Type: `LocalObjectReference` — Optional
+
+References the created Ingress resource.
+
+=== routeRef
+
+Type: `LocalObjectReference` — Optional
+
+References the created Route (OpenShift only).
+
+=== httpRouteRef
+
+Type: `LocalObjectReference` — Optional
+
+References the created HTTPRoute (Gateway API).
+
+=== url
+
+Type: `string` — Optional
+
+The full external URL for this service.
+
+=== traffic
+
+Type: `[]TrafficStatus` — Optional
+
+Shows the current traffic distribution. Each entry contains:
+- `definitionRef`: Reference to the workflow version
+- `weight`: Configured traffic percentage
+- `ready`: Whether the version is ready to serve traffic
+
+=== conditions
+
+Type: `[]Condition` — Optional
+
+Detailed service state conditions (Ready, ReconciliationFailed, etc.).
+
+== Full Example
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowService
+metadata:
+  name: order-api
+  namespace: default
+spec:
+  # Canary rollout: 80% to v1, 20% to v2
+  traffic:
+  - definitionRef:
+      name: order-workflow-v1
+    weight: 80
+  - definitionRef:
+      name: order-workflow-v2
+    weight: 20
+
+  ingress:
+    host: order-api.example.com
+    ingressClassName: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+      nginx.ingress.kubernetes.io/rate-limit: "100"
+    tls:
+      enabled: true
+      certManager:
+        issuerRef:
+          name: letsencrypt-prod
+          kind: ClusterIssuer
+          group: cert-manager.io
+
+status:
+  observedGeneration: 1
+  runtimeRef:
+    name: production-runtime
+  ingressRef:
+    name: order-api
+  url: https://order-api.example.com
+  traffic:
+  - definitionRef:
+      name: order-workflow-v1
+    weight: 80
+    ready: true
+  - definitionRef:
+      name: order-workflow-v2
+    weight: 20
+    ready: true
+  conditions:
+  - type: Ready
+    status: "True"
+    observedGeneration: 1
+    reason: IngressReady
+    message: Ingress is ready and accepting traffic
+  - type: RoutingConfigured
+    status: "True"
+    observedGeneration: 1
+    reason: TrafficSplitReady
+    message: Traffic split configured successfully
+----
+

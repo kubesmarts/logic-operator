@@ -1,4 +1,157 @@
-= Api Key Auth
-:description: TODO
+= API Key Authentication Sample
+:description: Secure a LogicFlowRuntime with API key authentication and invoke it with a Bearer token.
 
-// TODO: content coming soon.
+The authentication sample configures `hello-runtime` to require a valid API key on every request.
+Unauthenticated calls receive an HTTP 401 response.
+
+== Prerequisites
+
+The hello-world sample must be deployed first:
+
+[source,bash]
+----
+make kind-demo
+kubectl wait --for=condition=available deployment/hello-runtime --timeout=120s
+----
+
+== Apply the Authentication Overlay
+
+[source,bash]
+----
+kubectl apply -k config/samples/authentication/
+kubectl rollout restart deployment/hello-runtime
+kubectl rollout status deployment/hello-runtime --timeout=120s
+----
+
+The overlay patches two resources onto the existing hello-world deployment:
+a `Secret` containing the key value, and an updated `LogicFlowRuntime` with `security.type: API_KEY`.
+
+== The Custom Resources
+
+=== API Key Secret
+
+[source,yaml]
+----
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dev-api-key
+stringData:
+  value: "logic-operator-dev-token"
+----
+
+The operator reads the `value` field from this Secret and injects it as a Quarkus configuration environment variable into the runner pod.
+
+[WARNING]
+====
+The value `logic-operator-dev-token` is for local development only.
+In production, generate a strong random token and store it in a proper secret management system.
+====
+
+=== Updated LogicFlowRuntime
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowRuntime
+metadata:
+  name: hello-runtime
+spec:
+  security:
+    type: API_KEY
+    apiKey:
+      keys:
+        - name: dev-key
+          secretRef:
+            name: dev-api-key
+          roles:
+            - flow-invoker
+----
+
+`spec.security.type: API_KEY` switches the runner from unauthenticated to API key mode.
+The `keys` list can hold multiple named keys, each backed by a separate Secret.
+The `roles` field assigns the key to a named role used for authorization decisions within the runner.
+
+The operator translates this into Quarkus configuration environment variables:
+
+[source]
+----
+QUARKUS_FLOW_RUNNER_SECURITY_TYPE=api-key
+QUARKUS_FLOW_RUNNER_SECURITY_API_KEYS__"dev-key"__SECRET=<secret ref>
+QUARKUS_FLOW_RUNNER_SECURITY_API_KEYS__"dev-key"__ROLES=flow-invoker
+----
+
+== Verify Authentication is Enforced
+
+An unauthenticated request must now return 401:
+
+[source,bash]
+----
+curl -s -o /dev/null -w "%{http_code}" \
+  -X POST http://hello.lvh.me/ \
+  -H "Content-Type: application/json" \
+  -d '{"name": "World"}'
+# Output: 401
+----
+
+== Invoke with the API Key
+
+Pass the token as a `Bearer` value in the `Authorization` header:
+
+[source,bash]
+----
+curl -X POST http://hello.lvh.me/ \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer logic-operator-dev-token" \
+  -d '{"name": "World"}'
+----
+
+Expected response:
+
+[source,json]
+----
+{"message": "Hi, World!"}
+----
+
+== Add a Second Key
+
+To add a second API key (for example, for a different service), create a new Secret and add an entry to the `keys` list:
+
+[source,yaml]
+----
+spec:
+  security:
+    type: API_KEY
+    apiKey:
+      keys:
+        - name: dev-key
+          secretRef:
+            name: dev-api-key
+          roles:
+            - flow-invoker
+        - name: ci-key
+          secretRef:
+            name: ci-api-key
+          roles:
+            - flow-invoker
+----
+
+Each key can have independent roles and can be rotated independently by updating its Secret and restarting the runtime pod.
+
+== Clean Up
+
+Remove the authentication overlay by re-applying the base hello-world Runtime (which has no security spec):
+
+[source,bash]
+----
+kubectl apply -f config/samples/logic_v1_logicflowruntime.yaml
+kubectl rollout restart deployment/hello-runtime
+kubectl rollout status deployment/hello-runtime --timeout=120s
+----
+
+Or tear down the whole demo:
+
+[source,bash]
+----
+make kind-undemo
+----

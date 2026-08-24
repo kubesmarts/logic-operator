@@ -1,4 +1,230 @@
-= Logicflowdefinition
-:description: TODO
+= LogicFlowDefinition
+:description: Immutable workflow version containing an Open Workflow Specification document.
 
-// TODO: content coming soon.
+LogicFlowDefinition represents an immutable workflow version. Each instance contains one Open Workflow Specification 1.0.0 document and references the LogicFlowRuntime that executes it. Optionally referenced by LogicFlowService for external HTTP traffic routing.
+
+== API Version and Kind
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowDefinition
+----
+
+== Spec Fields
+
+=== runtimeRef
+
+Type: `LocalObjectReference` — Required
+
+Reference to the LogicFlowRuntime that executes this workflow.
+
+[source,yaml]
+----
+spec:
+  runtimeRef:
+    name: production-runtime
+----
+
+=== flow
+
+Type: `RawExtension` — Required
+
+The complete Open Workflow Specification 1.0.0 document stored as raw JSON. The document is parsed and validated during admission. Fields are preserved with `// +kubebuilder:pruning:PreserveUnknownFields`.
+
+The flow must contain:
+- `document.name`: workflow identity
+- `document.version`: workflow version
+
+[source,yaml]
+----
+spec:
+  flow:
+    specVersion: "1.0.0"
+    id: order-workflow
+    name: Order Workflow
+    version: "1.0.0"
+    document:
+      version: "1.0.0"
+      name: Order Workflow
+      description: Processes customer orders
+      states:
+      - name: Start
+        type: start
+        transition: CheckOrder
+      - name: CheckOrder
+        type: operation
+        actions:
+        - name: Check Order
+          functionRef: checkOrder
+        transition: ProcessPayment
+      - name: ProcessPayment
+        type: operation
+        actions:
+        - name: Process Payment
+          functionRef: processPayment
+        transition: End
+      - name: End
+        type: end
+    functions:
+    - name: checkOrder
+      operation: http://order-service/check
+    - name: processPayment
+      operation: http://payment-service/process
+----
+
+== Status Fields
+
+=== observedGeneration
+
+Type: `int64` — Optional
+
+Tracks the last reconciled spec generation.
+
+=== workflowName
+
+Type: `string` — Optional
+
+The workflow identity extracted from `flow.document.name`.
+
+=== workflowVersion
+
+Type: `string` — Optional
+
+The version extracted from `flow.document.version`.
+
+=== workflowNamespace
+
+Type: `string` — Optional
+
+The Kubernetes namespace used for workflow path resolution.
+
+=== configMapRef
+
+Type: `LocalObjectReference` — Optional
+
+Reference to the materialized ConfigMap containing the flow document. The operator creates this ConfigMap automatically when the definition is ready.
+
+=== conditions
+
+Type: `[]Condition` — Optional
+
+Detailed definition state conditions (Ready, ReconciliationFailed, ValidationFailed, etc.).
+
+== Full Example
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowDefinition
+metadata:
+  name: order-workflow-v1
+  namespace: default
+spec:
+  runtimeRef:
+    name: production-runtime
+  flow:
+    specVersion: "1.0.0"
+    id: order-workflow
+    name: Order Workflow
+    version: "1.0.0"
+    description: Processes customer orders through payment and fulfillment
+    document:
+      version: "1.0.0"
+      name: Order Workflow
+      description: Processes customer orders
+      states:
+      - name: Start
+        type: start
+        transition: ValidateOrder
+      - name: ValidateOrder
+        type: operation
+        actions:
+        - name: Validate Order Data
+          functionRef:
+            refName: validateOrder
+        transition: ProcessPayment
+        catch:
+        - eventRef: InvalidOrder
+          transition: OrderFailed
+      - name: ProcessPayment
+        type: operation
+        actions:
+        - name: Charge Payment Method
+          functionRef:
+            refName: chargePayment
+        transition: FulfillOrder
+        catch:
+        - eventRef: PaymentFailed
+          transition: RefundAndFail
+      - name: FulfillOrder
+        type: operation
+        actions:
+        - name: Send to Fulfillment
+          functionRef:
+            refName: sendFulfillment
+        transition: NotifyCustomer
+      - name: NotifyCustomer
+        type: operation
+        actions:
+        - name: Send Confirmation Email
+          functionRef:
+            refName: notifyCustomer
+        transition: End
+      - name: RefundAndFail
+        type: operation
+        actions:
+        - name: Issue Refund
+          functionRef:
+            refName: refundPayment
+        transition: OrderFailed
+      - name: OrderFailed
+        type: end
+        produceEvents:
+        - eventRef: OrderFailed
+      - name: End
+        type: end
+        produceEvents:
+        - eventRef: OrderComplete
+    functions:
+    - name: validateOrder
+      operation: http://order-service:8080/validate
+    - name: chargePayment
+      operation: http://payment-service:8080/charge
+    - name: sendFulfillment
+      operation: http://fulfillment-service:8080/send
+    - name: notifyCustomer
+      operation: http://notification-service:8080/email
+    - name: refundPayment
+      operation: http://payment-service:8080/refund
+    events:
+    - name: InvalidOrder
+      type: error
+      source: validateOrder
+    - name: PaymentFailed
+      type: error
+      source: chargePayment
+    - name: OrderFailed
+      type: error
+    - name: OrderComplete
+      type: success
+
+status:
+  observedGeneration: 1
+  workflowName: Order Workflow
+  workflowVersion: "1.0.0"
+  workflowNamespace: default
+  configMapRef:
+    name: order-workflow-v1-config
+  conditions:
+  - type: Ready
+    status: "True"
+    observedGeneration: 1
+    reason: FlowParsed
+    message: Flow document successfully parsed and validated
+  - type: Reconciled
+    status: "True"
+    observedGeneration: 1
+    reason: ConfigMapCreated
+    message: ConfigMap created successfully
+----
