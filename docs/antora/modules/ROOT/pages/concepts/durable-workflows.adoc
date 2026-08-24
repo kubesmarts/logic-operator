@@ -31,7 +31,8 @@ spec:
         databaseName: workflows
 ----
 <1> Use the `standard` image — the `minimal` image does not include the PostgreSQL driver.
-<2> A Secret containing `username` and `password` keys for the database connection.
+<2> A Secret containing `POSTGRESQL_USER` and `POSTGRESQL_PASSWORD` keys (the operator defaults).
+    Override with `secretRef.userKey` / `secretRef.passwordKey` if your Secret uses different key names.
 <3> The operator builds the JDBC URL from `serviceRef`. Alternatively supply an explicit
     `jdbcUrl` instead of `serviceRef`.
 

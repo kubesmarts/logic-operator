@@ -76,8 +76,7 @@ Two pre-built runner image variants are available:
 [source,yaml]
 ----
 spec:
-  runner:
-    image: quay.io/quarkiverse/quarkus-flow-runner:1.0.0-standard
+  image: quay.io/quarkiverse/quarkus-flow-runner:1.0.0-standard
 ----
 
 [NOTE]
