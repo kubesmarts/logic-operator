@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Logic Operator v2.0 — Architecture</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #e8edf5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  }
+  .slide {
+    width: 1280px;
+    height: 720px;
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 36px 44px 32px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 8px 40px rgba(0,0,0,.12);
+  }
+  /* subtle grid bg */
+  .slide::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,0,0,.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,0,0,.025) 1px, transparent 1px);
+    background-size: 40px 40px;
+    border-radius: 12px;
+  }
+
+  .title-row {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin-bottom: 28px;
+    position: relative;
+  }
+  .title-main {
+    font-size: 22px;
+    font-weight: 700;
+    color: #1a1f2e;
+    letter-spacing: -.3px;
+  }
+  .title-sub {
+    font-size: 13px;
+    font-weight: 500;
+    color: #8a95aa;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+  }
+  .badge {
+    margin-left: auto;
+    font-size: 11px;
+    font-weight: 600;
+    color: #4a5fff;
+    background: rgba(74,95,255,.08);
+    border: 1px solid rgba(74,95,255,.25);
+    padding: 3px 10px;
+    border-radius: 20px;
+    letter-spacing: .3px;
+  }
+
+  /* ── MAIN GRID ── */
+  .grid {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    grid-template-rows: 1fr;
+    gap: 16px;
+    height: calc(100% - 70px);
+    position: relative;
+  }
+
+  /* ── LEFT COLUMN: operator box ── */
+  .operator-col {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  /* ── RIGHT COLUMN ── */
+  .right-col {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  /* ── SECTION LABELS ── */
+  .section-label {
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: #a0aabb;
+    margin-bottom: 4px;
+  }
+
+  /* ── CARD BASE ── */
+  .card {
+    border-radius: 8px;
+    padding: 10px 13px;
+    border: 1px solid;
+    position: relative;
+  }
+  .card-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: -.1px;
+  }
+  .card-sub {
+    font-size: 9.5px;
+    font-weight: 400;
+    margin-top: 2px;
+    line-height: 1.4;
+  }
+
+  /* ACTIVE cards */
+  .card-blue {
+    background: #eef1ff;
+    border-color: #c5ceff;
+  }
+  .card-blue .card-title { color: #3a52d4; }
+  .card-blue .card-sub { color: #7a88cc; }
+
+  .card-teal {
+    background: #edfaf9;
+    border-color: #b2e8e5;
+  }
+  .card-teal .card-title { color: #1a9b93; }
+  .card-teal .card-sub { color: #6ab8b4; }
+
+  .card-purple {
+    background: #f3eeff;
+    border-color: #d4beff;
+  }
+  .card-purple .card-title { color: #6b3fbf; }
+  .card-purple .card-sub { color: #a888d8; }
+
+  .card-green {
+    background: #edfaf2;
+    border-color: #b2e2c5;
+  }
+  .card-green .card-title { color: #1e8a4a; }
+  .card-green .card-sub { color: #66b888; }
+
+  /* UPCOMING cards */
+  .card-upcoming {
+    background: #f7f8fa;
+    border-color: #dde0e8;
+    border-style: dashed;
+  }
+  .card-upcoming .card-title { color: #b0b8c8; }
+  .card-upcoming .card-sub { color: #c8cdd8; }
+  .card-upcoming .upcoming-badge {
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: .8px;
+    text-transform: uppercase;
+    color: #b0b8c8;
+    background: #eef0f4;
+    border: 1px solid #dde0e8;
+    padding: 1px 6px;
+    border-radius: 10px;
+    position: absolute;
+    top: 8px;
+    right: 10px;
+  }
+
+  /* ── OPERATOR OUTER BOX ── */
+  .operator-box {
+    flex: 1;
+    border: 1px solid #c5ceff;
+    border-radius: 10px;
+    padding: 12px 12px 10px;
+    background: #f5f6ff;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .operator-box-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: #8a98e0;
+    margin-bottom: 2px;
+  }
+
+  /* ── CHIP TAGS (for managed resources) ── */
+  .chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 4px;
+  }
+  .chip {
+    font-size: 9px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 10px;
+    letter-spacing: .2px;
+  }
+  .chip-blue { background: #eef1ff; color: #3a52d4; border: 1px solid #c5ceff; }
+  .chip-teal { background: #edfaf9; color: #1a9b93; border: 1px solid #b2e8e5; }
+  .chip-green { background: #edfaf2; color: #1e8a4a; border: 1px solid #b2e2c5; }
+  .chip-purple { background: #f3eeff; color: #6b3fbf; border: 1px solid #d4beff; }
+  .chip-gray { background: #f0f2f5; color: #a0aabb; border: 1px solid #dde0e8; }
+
+  /* ── ARROW ── */
+  .arrow-down {
+    text-align: center;
+    font-size: 14px;
+    color: #c5ceff;
+    line-height: 1;
+    margin: -2px 0;
+  }
+
+  /* ── RIGHT COLUMN INNER LAYOUT ── */
+  .right-top {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+  }
+  .right-mid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .right-bot {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+    margin-top: auto;
+  }
+
+  /* ── RUNTIME BOX ── */
+  .runtime-box {
+    border: 1px solid #b2e8e5;
+    border-radius: 10px;
+    padding: 11px 14px 10px;
+    background: #f2fbfa;
+  }
+  .runtime-box-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.1px;
+    text-transform: uppercase;
+    color: #6ab8b4;
+    margin-bottom: 6px;
+  }
+  .runtime-inner {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  /* ── DIVIDER ── */
+  .divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #dde0e8 30%, #dde0e8 70%, transparent);
+    margin: 2px 0;
+    position: relative;
+  }
+  .divider::after {
+    content: 'UPCOMING';
+    position: absolute;
+    right: 0;
+    top: -7px;
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: #b0b8c8;
+  }
+
+  /* ── LEGEND ── */
+  .legend {
+    position: absolute;
+    bottom: 20px;
+    right: 44px;
+    display: flex;
+    gap: 16px;
+    align-items: center;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 9.5px;
+    color: #8a95aa;
+    font-weight: 500;
+  }
+  .legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+  }
+  .legend-dot-active { background: #4a5fff; }
+  .legend-dot-upcoming { background: #eef0f4; border: 1px dashed #b0b8c8; }
+</style>
+</head>
+<body>
+<div class="slide">
+
+  <div class="title-row">
+    <span class="title-main">Logic Operator v2.0</span>
+    <span class="title-sub">Architecture Overview</span>
+    <span class="badge">quarkus-flow-runner 1.0.0</span>
+  </div>
+
+  <div class="grid">
+
+    <!-- LEFT: Operator Controllers -->
+    <div class="operator-col">
+      <div class="section-label">Operator</div>
+      <div class="operator-box">
+        <div class="operator-box-label">Controllers</div>
+
+        <div class="card card-blue">
+          <div class="card-title">LogicPlatform</div>
+          <div class="card-sub">Data Index infra &amp; runtime defaults</div>
+        </div>
+
+        <div class="card card-teal">
+          <div class="card-title">LogicFlowRuntime</div>
+          <div class="card-sub">Quarkus Flow Runner deployment</div>
+        </div>
+
+        <div class="card card-purple">
+          <div class="card-title">LogicFlowDefinition</div>
+          <div class="card-sub">Immutable workflow versions</div>
+        </div>
+
+        <div class="card card-green">
+          <div class="card-title">LogicFlowService</div>
+          <div class="card-sub">Endpoints &amp; traffic routing</div>
+        </div>
+
+        <div class="arrow-down">↓</div>
+
+        <div class="card card-purple">
+          <div class="card-title">Admission Webhooks</div>
+          <div class="card-sub">Immutability · deletion guards · image validation</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="right-col">
+      <div class="section-label">Managed Resources</div>
+
+      <!-- Runtime box -->
+      <div class="runtime-box">
+        <div class="runtime-box-label">LogicFlowRuntime — reconciled resources</div>
+        <div class="runtime-inner">
+          <div class="card card-teal">
+            <div class="card-title">Deployment</div>
+            <div class="card-sub">Quarkus Flow Runner pods</div>
+            <div class="chip-row">
+              <span class="chip chip-teal">HPA</span>
+              <span class="chip chip-teal">dir mounts</span>
+            </div>
+          </div>
+          <div class="card card-teal">
+            <div class="card-title">ConfigMap</div>
+            <div class="card-sub">Workflow YAML definitions</div>
+            <div class="chip-row">
+              <span class="chip chip-teal">auto-propagated</span>
+            </div>
+          </div>
+          <div class="card card-teal">
+            <div class="card-title">Leases</div>
+            <div class="card-sub">Durable pool coordination</div>
+            <div class="chip-row">
+              <span class="chip chip-teal">1 per replica</span>
+            </div>
+          </div>
+          <div class="card card-teal">
+            <div class="card-title">Service + RBAC</div>
+            <div class="card-sub">HTTP API · lease permissions</div>
+            <div class="chip-row">
+              <span class="chip chip-teal">SA · Role · RB</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Runtime pod -->
+      <div class="card card-teal" style="background:#ddf5f3;border-color:#8dd8d4;">
+        <div class="card-title" style="font-size:12px;color:#1a9b93;">Quarkus Flow Runner 1.0.0 <span style="font-weight:400;font-size:10px;color:#6ab8b4;">(pod)</span></div>
+        <div class="chip-row" style="margin-top:6px;">
+          <span class="chip chip-teal">SW DSL 1.0.0</span>
+          <span class="chip chip-teal">metrics auto-enabled</span>
+          <span class="chip chip-teal">followSymlinks=false</span>
+          <span class="chip chip-teal">file watcher</span>
+          <span class="chip chip-teal">REST /q/flow/exec</span>
+          <span class="chip chip-green">NONE · API_KEY · OIDC</span>
+        </div>
+      </div>
+
+      <!-- Divider / upcoming separator -->
+      <div class="divider"></div>
+
+      <!-- Upcoming row -->
+      <div class="right-bot">
+
+        <div class="card card-upcoming">
+          <span class="upcoming-badge">EPIC 5–6</span>
+          <div class="card-title">Data Index</div>
+          <div class="card-sub">FluentD DaemonSet<br>PostgreSQL · GraphQL API</div>
+        </div>
+
+        <div class="card card-upcoming">
+          <span class="upcoming-badge">EPIC 8</span>
+          <div class="card-title">Traffic Splitting</div>
+          <div class="card-sub">Multi-version workflows<br>Ingress canary routing</div>
+        </div>
+
+        <div class="card card-upcoming">
+          <span class="upcoming-badge">EPIC 9</span>
+          <div class="card-title">Centralized Mode</div>
+          <div class="card-sub">Multi-tenant Data Index<br>Cross-namespace platform</div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Legend -->
+  <div class="legend">
+    <div class="legend-item">
+      <div class="legend-dot legend-dot-active"></div>
+      Implemented
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot legend-dot-upcoming"></div>
+      Upcoming
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

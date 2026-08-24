@@ -1,7 +1,7 @@
 = Deployment Overview
 :description: What gets deployed when you install Logic Operator and how the components fit together.
 
-Logic Operator is a Kubernetes operator that manages Serverless Logic workflows powered by Quarkus Flow.
+Logic Operator is a Kubernetes operator that manages Open Workflow (OWS) workflows powered by Quarkus Flow.
 It follows the standard operator pattern: a controller pod watches custom resources and reconciles the cluster state to match the declared spec.
 
 == Installed Components
@@ -18,14 +18,11 @@ Four CRDs are installed cluster-wide:
 |===
 |CRD |Purpose
 
-|`LogicPlatform`
-|Platform-wide configuration and shared services
-
 |`LogicFlowRuntime`
 |Manages the Quarkus Flow Runner pod(s) and their configuration
 
 |`LogicFlowDefinition`
-|Stores a Serverless Workflow DSL definition and links it to a runtime
+|Stores an OWS 1.0.0 document and links it to a runtime
 
 |`LogicFlowService`
 |Exposes a workflow as an HTTP endpoint via an Ingress

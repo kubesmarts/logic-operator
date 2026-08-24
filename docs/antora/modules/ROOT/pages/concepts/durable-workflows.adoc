@@ -12,7 +12,7 @@ Set `spec.persistence` on the `LogicFlowRuntime` to switch the runtime to durabl
 
 [source,yaml]
 ----
-apiVersion: logic.kubesmarts.org/v1alpha1
+apiVersion: logic.kubesmarts.org/v1
 kind: LogicFlowRuntime
 metadata:
   name: order-processing
@@ -82,7 +82,9 @@ is configured:
 | Environment variable | Value / source
 
 | `QUARKUS_FLOW_DURABLE_KUBE_LEASE_LEADER_ENABLED`
-| `false` — disables leader-election mode; every pod acquires its own lease, not a shared one.
+| `false` — disables the runner's built-in lease leader-election. The Logic Operator manages lease
+  creation and assignment directly as part of its reconciliation loop, so the runner does not need
+  to perform leader election itself.
 
 | `QUARKUS_FLOW_DURABLE_KUBE_POOL_NAME`
 | Set to the `LogicFlowRuntime` name (e.g. `order-processing`). The runner uses this to locate

@@ -2,7 +2,7 @@
 :description: Kubernetes operator for Quarkus Flow — manage workflow runtimes, definitions, and services as Kubernetes resources.
 
 Logic Operator is a Kubernetes operator for https://github.com/quarkiverse/quarkus-flow[Quarkus Flow].
-It lets you manage workflow runtimes, definitions, and traffic routing as native Kubernetes resources using the https://serverlessworkflow.io[Serverless Workflow DSL v1.0.0].
+It lets you manage workflow runtimes, definitions, and traffic routing as native Kubernetes resources using the https://open-workflow-specification.org/[Open Workflow Specification 1.0.0].
 
 == What it does
 
@@ -21,8 +21,6 @@ Logic Operator introduces four custom resources:
 |xref:crd-reference/logicflowservice.adoc[LogicFlowService]
 |Groups workflow versions under a single HTTP endpoint. Manages Ingress routing.
 
-|xref:crd-reference/logicplatform.adoc[LogicPlatform]
-|Cluster-level Data Index infrastructure (FluentD, PostgreSQL, GraphQL API).
 |===
 
 == Highlights

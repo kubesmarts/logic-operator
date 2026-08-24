@@ -1,7 +1,7 @@
 = LogicFlowRuntime
 :description: Shared Quarkus Flow runner deployment that executes multiple workflow definitions.
 
-LogicFlowRuntime is a shared workflow execution engine that runs multiple workflow definitions. One LogicFlowRuntime can execute N workflow definitions. Configuration cascades from LogicFlowRuntime.spec > LogicPlatform.spec.runtimeDefaults > operator defaults.
+LogicFlowRuntime is a shared workflow execution engine that runs multiple workflow definitions. One LogicFlowRuntime can execute N workflow definitions. Configuration cascades from LogicFlowRuntime.spec > operator defaults.
 
 == API Version and Kind
 
@@ -19,12 +19,12 @@ Type: `string` — Optional
 
 The container image for the Quarkus Flow runtime.
 
-Example: `quay.io/kubesmarts/quarkus-flow:2.0.0`
+Example: `quay.io/quarkiverse/quarkus-flow-runner:1.0.0-minimal`
 
 [source,yaml]
 ----
 spec:
-  image: quay.io/kubesmarts/quarkus-flow:2.0.0
+  image: quay.io/quarkiverse/quarkus-flow-runner:1.0.0-minimal
 ----
 
 === replicas
@@ -119,7 +119,7 @@ spec:
 
 Type: `PersistenceOptionsSpec` — Optional
 
-Database connectivity for the runtime. Avoid using the same database schema as the Data Index service.
+Database connectivity for the runtime.
 
 [source,yaml]
 ----
@@ -328,7 +328,7 @@ metadata:
   name: production-runtime
   namespace: default
 spec:
-  image: quay.io/kubesmarts/quarkus-flow:2.0.0
+  image: quay.io/quarkiverse/quarkus-flow-runner:1.0.0-minimal
   replicas: 3
   imagePullPolicy: IfNotPresent
 

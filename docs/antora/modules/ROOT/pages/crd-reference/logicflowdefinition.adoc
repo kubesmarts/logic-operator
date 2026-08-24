@@ -1,7 +1,9 @@
 = LogicFlowDefinition
-:description: Immutable workflow version containing an Open Workflow Specification document.
+:description: Immutable workflow version containing a complete Open Workflow Specification document.
 
-LogicFlowDefinition represents an immutable workflow version. Each instance contains one Open Workflow Specification 1.0.0 document and references the LogicFlowRuntime that executes it. Optionally referenced by LogicFlowService for external HTTP traffic routing.
+`LogicFlowDefinition` represents a single immutable version of a workflow.
+It holds a full https://open-workflow-specification.org/[Open Workflow Specification 1.0.0] document
+and references the `LogicFlowRuntime` that executes it.
 
 == API Version and Kind
 
@@ -17,7 +19,7 @@ kind: LogicFlowDefinition
 
 Type: `LocalObjectReference` — Required
 
-Reference to the LogicFlowRuntime that executes this workflow.
+Name of the `LogicFlowRuntime` CR that executes this workflow.
 
 [source,yaml]
 ----
@@ -30,86 +32,74 @@ spec:
 
 Type: `RawExtension` — Required
 
-The complete Open Workflow Specification 1.0.0 document stored as raw JSON. The document is parsed and validated during admission. Fields are preserved with `// +kubebuilder:pruning:PreserveUnknownFields`.
+The complete OWS 1.0.0 document stored as raw YAML/JSON.
+Parsed and validated via the OWS Go SDK during admission.
+Unknown fields are preserved (`PreserveUnknownFields`).
 
-The flow must contain:
-- `document.name`: workflow identity
-- `document.version`: workflow version
+The document must include at minimum:
+
+* `document.dsl` — DSL version (e.g. `"1.0.0"`)
+* `document.namespace` — logical namespace (overwritten by the operator with the CR's namespace)
+* `document.name` — workflow logical name; used as the runner identity
+* `document.version` — semantic version
+* `do` — at least one task
 
 [source,yaml]
 ----
 spec:
   flow:
-    specVersion: "1.0.0"
-    id: order-workflow
-    name: Order Workflow
-    version: "1.0.0"
     document:
+      dsl: "1.0.0"
+      namespace: checkout
+      name: payment-processor
       version: "1.0.0"
-      name: Order Workflow
-      description: Processes customer orders
-      states:
-      - name: Start
-        type: start
-        transition: CheckOrder
-      - name: CheckOrder
-        type: operation
-        actions:
-        - name: Check Order
-          functionRef: checkOrder
-        transition: ProcessPayment
-      - name: ProcessPayment
-        type: operation
-        actions:
-        - name: Process Payment
-          functionRef: processPayment
-        transition: End
-      - name: End
-        type: end
-    functions:
-    - name: checkOrder
-      operation: http://order-service/check
-    - name: processPayment
-      operation: http://payment-service/process
+    do:
+      - processPayment:
+          call: http
+          with:
+            method: post
+            endpoint: https://payments.example.com/charge
+            body:
+              amount: ${ .input.amount }
+              currency: ${ .input.currency }
 ----
 
 == Status Fields
 
-=== observedGeneration
-
-Type: `int64` — Optional
-
-Tracks the last reconciled spec generation.
-
 === workflowName
 
-Type: `string` — Optional
+Type: `string` — Set by the operator
 
-The workflow identity extracted from `flow.document.name`.
+Workflow logical name extracted from `flow.document.name`.
 
 === workflowVersion
 
-Type: `string` — Optional
+Type: `string` — Set by the operator
 
-The version extracted from `flow.document.version`.
+Version extracted from `flow.document.version`.
 
 === workflowNamespace
 
-Type: `string` — Optional
+Type: `string` — Set by the operator
 
-The Kubernetes namespace used for workflow path resolution.
+Kubernetes namespace applied to the workflow (matches the CR namespace).
 
 === configMapRef
 
-Type: `LocalObjectReference` — Optional
+Type: `LocalObjectReference` — Set by the operator
 
-Reference to the materialized ConfigMap containing the flow document. The operator creates this ConfigMap automatically when the definition is ready.
+Reference to the ConfigMap the operator created to hold the serialized flow document.
+Named `lfd-<cr-name>` (e.g. `lfd-payment-processor-v1-0-0`).
 
 === conditions
 
-Type: `[]Condition` — Optional
+Type: `[]Condition`
 
-Detailed definition state conditions (Ready, ReconciliationFailed, ValidationFailed, etc.).
+| Condition | Meaning |
+|-----------|---------|
+| `FlowParsed=True` | Document parsed successfully by the OWS SDK |
+| `ConfigMapReady=True` | ConfigMap written and ready to be mounted by the runtime |
+| `Ready=True` | All conditions healthy |
 
 == Full Example
 
@@ -118,113 +108,86 @@ Detailed definition state conditions (Ready, ReconciliationFailed, ValidationFai
 apiVersion: logic.kubesmarts.org/v1
 kind: LogicFlowDefinition
 metadata:
-  name: order-workflow-v1
-  namespace: default
+  name: payment-processor-v1-0-0
+  namespace: checkout
 spec:
   runtimeRef:
-    name: production-runtime
+    name: payments-runtime
   flow:
-    specVersion: "1.0.0"
-    id: order-workflow
-    name: Order Workflow
-    version: "1.0.0"
-    description: Processes customer orders through payment and fulfillment
     document:
+      dsl: "1.0.0"
+      namespace: checkout           # <1>
+      name: payment-processor
       version: "1.0.0"
-      name: Order Workflow
-      description: Processes customer orders
-      states:
-      - name: Start
-        type: start
-        transition: ValidateOrder
-      - name: ValidateOrder
-        type: operation
-        actions:
-        - name: Validate Order Data
-          functionRef:
-            refName: validateOrder
-        transition: ProcessPayment
-        catch:
-        - eventRef: InvalidOrder
-          transition: OrderFailed
-      - name: ProcessPayment
-        type: operation
-        actions:
-        - name: Charge Payment Method
-          functionRef:
-            refName: chargePayment
-        transition: FulfillOrder
-        catch:
-        - eventRef: PaymentFailed
-          transition: RefundAndFail
-      - name: FulfillOrder
-        type: operation
-        actions:
-        - name: Send to Fulfillment
-          functionRef:
-            refName: sendFulfillment
-        transition: NotifyCustomer
-      - name: NotifyCustomer
-        type: operation
-        actions:
-        - name: Send Confirmation Email
-          functionRef:
-            refName: notifyCustomer
-        transition: End
-      - name: RefundAndFail
-        type: operation
-        actions:
-        - name: Issue Refund
-          functionRef:
-            refName: refundPayment
-        transition: OrderFailed
-      - name: OrderFailed
-        type: end
-        produceEvents:
-        - eventRef: OrderFailed
-      - name: End
-        type: end
-        produceEvents:
-        - eventRef: OrderComplete
-    functions:
-    - name: validateOrder
-      operation: http://order-service:8080/validate
-    - name: chargePayment
-      operation: http://payment-service:8080/charge
-    - name: sendFulfillment
-      operation: http://fulfillment-service:8080/send
-    - name: notifyCustomer
-      operation: http://notification-service:8080/email
-    - name: refundPayment
-      operation: http://payment-service:8080/refund
-    events:
-    - name: InvalidOrder
-      type: error
-      source: validateOrder
-    - name: PaymentFailed
-      type: error
-      source: chargePayment
-    - name: OrderFailed
-      type: error
-    - name: OrderComplete
-      type: success
+      title: Payment Processor
+      summary: Validates and charges a payment method, then emits an event.
+    use:
+      secrets:
+        - payment-api-key
+      errors:
+        invalidCard:
+          type: https://errors.example.com/invalid-card
+          status: 422
+        paymentDeclined:
+          type: https://errors.example.com/payment-declined
+          status: 402
+      retries:
+        default:
+          limit:
+            attempt:
+              count: 3
+          delay: PT1S
+          backoff:
+            exponential: {}
+    do:
+      - validateCard:                 # <2>
+          call: http
+          with:
+            method: post
+            endpoint: https://validation.example.com/validate
+            headers:
+              Authorization: ${ "Bearer " + $secrets.payment-api-key }
+            body:
+              card: ${ .input.card }
+      - chargeCard:                   # <3>
+          call: http
+          with:
+            method: post
+            endpoint: https://payments.example.com/charge
+            headers:
+              Authorization: ${ "Bearer " + $secrets.payment-api-key }
+            body:
+              amount: ${ .input.amount }
+              currency: ${ .input.currency }
+              token: ${ .validateCard.token }
+      - emitReceipt:                  # <4>
+          emit:
+            event:
+              with:
+                type: com.example.payment.completed
+                source: /checkout/payment-processor
+                data:
+                  orderId: ${ .input.orderId }
+                  amount: ${ .input.amount }
 
 status:
-  observedGeneration: 1
-  workflowName: Order Workflow
+  workflowName: payment-processor
   workflowVersion: "1.0.0"
-  workflowNamespace: default
+  workflowNamespace: checkout
   configMapRef:
-    name: order-workflow-v1-config
+    name: lfd-payment-processor-v1-0-0
   conditions:
+  - type: FlowParsed
+    status: "True"
+    reason: Ready
+  - type: ConfigMapReady
+    status: "True"
+    reason: Ready
   - type: Ready
     status: "True"
-    observedGeneration: 1
-    reason: FlowParsed
-    message: Flow document successfully parsed and validated
-  - type: Reconciled
-    status: "True"
-    observedGeneration: 1
-    reason: ConfigMapCreated
-    message: ConfigMap created successfully
+    reason: Ready
 ----
+<1> The operator overwrites this with the CR's `.metadata.namespace` at reconciliation time.
+<2> HTTP task — calls the card validation service and stores the response as `validateCard`.
+<3> HTTP task — uses the token from step (2) to charge the card.
+<4> Emit task — publishes a CloudEvent when payment succeeds.

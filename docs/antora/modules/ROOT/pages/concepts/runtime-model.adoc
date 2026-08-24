@@ -1,22 +1,11 @@
 = Runtime Model
 :description: How Logic Operator manages Quarkus Flow Runner pods as shared, multi-workflow runtimes.
 
-Logic Operator takes a fundamentally different approach to workflow execution than its predecessor.
-Instead of building and running one dedicated pod per workflow definition, it manages a shared pool of
-pre-built Quarkus Flow Runner pods that can serve many workflow definitions simultaneously.
+Logic Operator manages a shared pool of pre-built Quarkus Flow Runner pods that serve many workflow
+definitions simultaneously. Workflow definitions are *data*, not compiled code — no build step is
+needed when adding or updating them.
 
-== The Old Approach: One Pod Per Workflow
-
-In SonataFlow (the predecessor project), every workflow definition triggered a source build that produced
-a dedicated container image. That image was then deployed as its own Deployment. The model worked but
-came with significant overhead:
-
-* Every new workflow required a full container build.
-* Deploying 50 workflows meant 50 Deployments, 50 Services, and 50 running pods minimum.
-* Updating a workflow meant rebuilding and redeploying its image.
-* Clusters filled with single-purpose workloads that could not share resources.
-
-== The New Approach: Shared Runtime Pools
+== Shared Runtime Pools
 
 Logic Operator introduces `LogicFlowRuntime`, a Kubernetes custom resource that represents a
 Deployment of pre-built Quarkus Flow Runner pods. A single `LogicFlowRuntime` can execute any
@@ -28,7 +17,7 @@ startup. No build step is needed when adding or updating workflows.
 
 [source,yaml]
 ----
-apiVersion: logic.kubesmarts.org/v1alpha1
+apiVersion: logic.kubesmarts.org/v1
 kind: LogicFlowRuntime
 metadata:
   name: order-processing
@@ -118,9 +107,9 @@ LogicFlowRuntime          <- the pod pool (Deployment)
         └── LogicFlowService <- ingress routing for a specific workflow version
 ----
 
-A `LogicFlowDefinition` references a `LogicFlowService` via `spec.serviceRef.name`. The
+A `LogicFlowDefinition` references a `LogicFlowRuntime` via `spec.runtimeRef.name`. The
 `LogicFlowService` controller manages the Ingress resource that routes external traffic to the
-runtime's Service for that workflow.
+runtime's Service, grouping one or more workflow definitions under a single endpoint.
 
 == Namespace Scope
 

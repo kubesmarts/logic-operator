@@ -56,7 +56,7 @@ spec:
             message: '${ "Hi, " + .name + "!" }'
 ----
 
-This is a Serverless Workflow DSL 1.0.0 document.
+This is an OWS 1.0.0 document.
 The single task `greet` uses a `set` action to build the response string from the input field `.name`.
 The operator propagates this definition as a ConfigMap into the runtime pod.
 
