@@ -24,8 +24,7 @@ metadata:
   namespace: my-namespace
 spec:
   replicas: 2
-  runner:
-    image: quay.io/quarkiverse/quarkus-flow-runner:1.0.0-minimal
+  image: quay.io/quarkiverse/quarkus-flow-runner:1.0.0-minimal
 ----
 
 This single `LogicFlowRuntime` can host the `payment-processor`, `inventory-check`, and
