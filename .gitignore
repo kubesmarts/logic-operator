@@ -28,3 +28,4 @@ go.work
 *~
 docs/antora/node_modules/
 docs/antora/target/
+adr/handoff/2026-08-24-demo-and-docs-kickoff.md
