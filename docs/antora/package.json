@@ -1,0 +1,13 @@
+{
+  "name": "logic-operator-docs",
+  "version": "2.0.0",
+  "description": "Logic Operator Documentation",
+  "private": true,
+  "scripts": {
+    "build": "antora antora-playbook.yaml"
+  },
+  "dependencies": {
+    "@antora/cli": "^3.1.9",
+    "@antora/site-generator": "^3.1.9"
+  }
+}
