@@ -197,7 +197,7 @@ func IsCertManagerCRDsInstalled() bool {
 	return false
 }
 
-// LoadImageToKindClusterWithName loads a local docker image to the kind cluster
+// LoadImageToKindClusterWithName loads a local docker image to the kind cluster.
 func LoadImageToKindClusterWithName(name string) error {
 	cluster := "kind"
 	if v, ok := os.LookupEnv("KIND_CLUSTER"); ok {
@@ -207,6 +207,17 @@ func LoadImageToKindClusterWithName(name string) error {
 	cmd := exec.Command("kind", kindOptions...)
 	_, err := Run(cmd)
 	return err
+}
+
+// PullAndLoadImageToKindClusterWithName pulls an image from a remote registry and
+// loads it into the KIND cluster. Use this for images not built locally (e.g.
+// postgres:16-alpine, quarkiverse/quarkus-flow-runner) so CI runners that start
+// with an empty Docker cache can load them.
+func PullAndLoadImageToKindClusterWithName(name string) error {
+	if _, err := Run(exec.Command("docker", "pull", name)); err != nil {
+		return fmt.Errorf("failed to pull image %q: %w", name, err)
+	}
+	return LoadImageToKindClusterWithName(name)
 }
 
 // GetNonEmptyLines converts given command output string into individual objects
@@ -283,4 +294,34 @@ func UncommentCode(filename, target, prefix string) error {
 	}
 
 	return nil
+}
+
+// RunCurlPod creates a one-shot curl pod in the given namespace compliant with the
+// restricted Pod Security Standard enforced on logic-operator-system.
+// curlArgs is passed verbatim as the shell command inside the container.
+func RunCurlPod(podName, namespace, curlArgs string) (string, error) {
+	overrides := fmt.Sprintf(`{
+		"spec": {
+			"containers": [{
+				"name": %q,
+				"image": "curlimages/curl:latest",
+				"command": ["/bin/sh", "-c"],
+				"args": [%q],
+				"securityContext": {
+					"allowPrivilegeEscalation": false,
+					"capabilities": {"drop": ["ALL"]},
+					"runAsNonRoot": true,
+					"runAsUser": 1000,
+					"seccompProfile": {"type": "RuntimeDefault"}
+				}
+			}],
+			"restartPolicy": "Never"
+		}
+	}`, podName, curlArgs)
+	cmd := exec.Command("kubectl", "run", podName,
+		"--restart=Never",
+		"--namespace", namespace,
+		"--image=curlimages/curl:latest",
+		"--overrides", overrides)
+	return Run(cmd)
 }
