@@ -197,14 +197,8 @@ func IsCertManagerCRDsInstalled() bool {
 	return false
 }
 
-// LoadImageToKindClusterWithName pulls the image if not present locally, then loads it
-// into the KIND cluster. Pulling first ensures CI runners (which have no local cache)
-// can load images the same way as local environments.
+// LoadImageToKindClusterWithName loads a local docker image to the kind cluster.
 func LoadImageToKindClusterWithName(name string) error {
-	// Pull to ensure the image is present in the local Docker daemon.
-	if _, err := Run(exec.Command("docker", "pull", name)); err != nil {
-		return fmt.Errorf("failed to pull image %q: %w", name, err)
-	}
 	cluster := "kind"
 	if v, ok := os.LookupEnv("KIND_CLUSTER"); ok {
 		cluster = v
@@ -213,6 +207,17 @@ func LoadImageToKindClusterWithName(name string) error {
 	cmd := exec.Command("kind", kindOptions...)
 	_, err := Run(cmd)
 	return err
+}
+
+// PullAndLoadImageToKindClusterWithName pulls an image from a remote registry and
+// loads it into the KIND cluster. Use this for images not built locally (e.g.
+// postgres:16-alpine, quarkiverse/quarkus-flow-runner) so CI runners that start
+// with an empty Docker cache can load them.
+func PullAndLoadImageToKindClusterWithName(name string) error {
+	if _, err := Run(exec.Command("docker", "pull", name)); err != nil {
+		return fmt.Errorf("failed to pull image %q: %w", name, err)
+	}
+	return LoadImageToKindClusterWithName(name)
 }
 
 // GetNonEmptyLines converts given command output string into individual objects

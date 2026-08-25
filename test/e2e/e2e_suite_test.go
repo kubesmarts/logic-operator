@@ -66,11 +66,11 @@ var _ = BeforeSuite(func() {
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the manager(Operator) image into Kind")
 
 	By("loading postgres image on Kind for durable tests")
-	err = utils.LoadImageToKindClusterWithName("postgres:16-alpine")
+	err = utils.PullAndLoadImageToKindClusterWithName("postgres:16-alpine")
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load postgres image into Kind")
 
 	By("loading standard runner image on Kind for durable tests")
-	err = utils.LoadImageToKindClusterWithName(
+	err = utils.PullAndLoadImageToKindClusterWithName(
 		fmt.Sprintf("quay.io/quarkiverse/quarkus-flow-runner:%s-standard", controller.QuarkusFlowVersion))
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load standard runner image into Kind")
 
