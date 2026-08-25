@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	controller "github.com/kubesmarts/logic-operator/internal/controller"
 	"github.com/kubesmarts/logic-operator/test/utils"
 )
 
@@ -63,6 +64,15 @@ var _ = BeforeSuite(func() {
 	By("loading the manager(Operator) image on Kind")
 	err = utils.LoadImageToKindClusterWithName(projectImage)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the manager(Operator) image into Kind")
+
+	By("loading postgres image on Kind for durable tests")
+	err = utils.LoadImageToKindClusterWithName("postgres:16-alpine")
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load postgres image into Kind")
+
+	By("loading standard runner image on Kind for durable tests")
+	err = utils.LoadImageToKindClusterWithName(
+		fmt.Sprintf("quay.io/quarkiverse/quarkus-flow-runner:%s-standard", controller.QuarkusFlowVersion))
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load standard runner image into Kind")
 
 	// The tests-e2e are intended to run on a temporary cluster that is created and destroyed for testing.
 	// To prevent errors when tests run in environments with CertManager already installed,
