@@ -23,7 +23,8 @@ const durableRuntimeName = "e2e-durable-rt"
 const durableInfraNamespace = "e2e-durable-infra"
 
 // durableRuntimeYAML — spec.image intentionally omitted so the operator defaults to
-// QuarkusFlowVersion + "standard" variant from internal/controller/quarkus_constants.go.
+// QuarkusFlowVersion + "-" + "standard" (e.g. "1.0.0-standard") via DefaultRunnerImage
+// in internal/controller/quarkus_config.go.
 // serviceRef.namespace points to durableInfraNamespace where PostgreSQL runs
 // (logic-operator-system enforces restricted Pod Security which rejects postgres:16-alpine).
 const durableRuntimeYAML = `
@@ -256,8 +257,8 @@ func durableTests() {
 			// that processed (and completed) the workflow — whether the original or
 			// the resumed one — and its Micrometer counter reflects the completion.
 			verifyCompleted := func(g Gomega) {
-				_ = exec.Command("kubectl", "delete", "pod", "curl-durable-check",
-					"-n", namespace, "--ignore-not-found").Run()
+				_, _ = utils.Run(exec.Command("kubectl", "delete", "pod", "curl-durable-check",
+					"-n", namespace, "--ignore-not-found"))
 				metricArgs := fmt.Sprintf(`curl -s %s`, metricsURL)
 				_, err := utils.RunCurlPod("curl-durable-check", namespace, metricArgs)
 				g.Expect(err).NotTo(HaveOccurred())

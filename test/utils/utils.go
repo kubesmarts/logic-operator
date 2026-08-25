@@ -197,8 +197,14 @@ func IsCertManagerCRDsInstalled() bool {
 	return false
 }
 
-// LoadImageToKindClusterWithName loads a local docker image to the kind cluster
+// LoadImageToKindClusterWithName pulls the image if not present locally, then loads it
+// into the KIND cluster. Pulling first ensures CI runners (which have no local cache)
+// can load images the same way as local environments.
 func LoadImageToKindClusterWithName(name string) error {
+	// Pull to ensure the image is present in the local Docker daemon.
+	if _, err := Run(exec.Command("docker", "pull", name)); err != nil {
+		return fmt.Errorf("failed to pull image %q: %w", name, err)
+	}
 	cluster := "kind"
 	if v, ok := os.LookupEnv("KIND_CLUSTER"); ok {
 		cluster = v
