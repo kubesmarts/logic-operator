@@ -284,3 +284,33 @@ func UncommentCode(filename, target, prefix string) error {
 
 	return nil
 }
+
+// RunCurlPod creates a one-shot curl pod in the given namespace compliant with the
+// restricted Pod Security Standard enforced on logic-operator-system.
+// curlArgs is passed verbatim as the shell command inside the container.
+func RunCurlPod(podName, namespace, curlArgs string) (string, error) {
+	overrides := fmt.Sprintf(`{
+		"spec": {
+			"containers": [{
+				"name": %q,
+				"image": "curlimages/curl:latest",
+				"command": ["/bin/sh", "-c"],
+				"args": [%q],
+				"securityContext": {
+					"allowPrivilegeEscalation": false,
+					"capabilities": {"drop": ["ALL"]},
+					"runAsNonRoot": true,
+					"runAsUser": 1000,
+					"seccompProfile": {"type": "RuntimeDefault"}
+				}
+			}],
+			"restartPolicy": "Never"
+		}
+	}`, podName, curlArgs)
+	cmd := exec.Command("kubectl", "run", podName,
+		"--restart=Never",
+		"--namespace", namespace,
+		"--image=curlimages/curl:latest",
+		"--overrides", overrides)
+	return Run(cmd)
+}
