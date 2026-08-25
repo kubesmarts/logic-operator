@@ -146,6 +146,7 @@ func durableTests() {
 					"-o", "jsonpath={.items[*].spec.holderIdentity}")
 				holders, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(strings.Fields(holders)).To(HaveLen(len(pods)))
 				for _, h := range strings.Fields(holders) {
 					g.Expect(pods).To(ContainElement(h))
 				}
@@ -194,6 +195,7 @@ func durableTests() {
 				holders, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				pods := strings.Fields(podNames)
+				g.Expect(strings.Fields(holders)).To(HaveLen(len(pods)))
 				for _, h := range strings.Fields(holders) {
 					g.Expect(pods).To(ContainElement(h))
 				}
@@ -226,6 +228,7 @@ func durableTests() {
 					"--no-headers")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(strings.TrimSpace(out)).NotTo(BeEmpty(), "expected 1 lease to remain")
 				lines := strings.Split(strings.TrimSpace(out), "\n")
 				g.Expect(lines).To(HaveLen(1))
 			}
