@@ -77,18 +77,22 @@ type RuntimeSecuritySpec struct {
 
 - ❌ Create git commits (`git commit`) without explicit user approval
 - ❌ Push to remote branches (`git push`) without explicit user approval
+- ❌ Push to `main` or `master` **under any circumstances** — not even a one-line fix
 - ❌ Create pull requests (`gh pr create`) without explicit user approval
 - ❌ Force push (`git push --force`) under any circumstances
 - ❌ Amend commits (`git commit --amend`) without explicit user approval
+- ❌ Change repository settings (GitHub Pages, branch protection, secrets, webhooks) without explicit user approval
+- ❌ Make API calls that mutate remote state (`gh api ... --method POST/PUT/DELETE/PATCH`) without explicit user approval
 
 **What you CAN do:**
 
 - ✅ Stage files with `git add`
 - ✅ Check status with `git status`, `git diff`
-- ✅ Create and switch branches
+- ✅ Create and switch branches locally
 - ✅ Run tests and builds
 - ✅ Read and edit files
 - ✅ Provide commit message suggestions
+- ✅ Read remote state with `gh api ... --method GET` or `gh pr view`, `gh issue view`
 
 ## Workflow
 
