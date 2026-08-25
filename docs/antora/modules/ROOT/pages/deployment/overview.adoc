@@ -69,7 +69,7 @@ The runner image tag controls capabilities:
 
 All environments require:
 
-* Kubernetes 1.30+
+* Kubernetes {k8s-min-version}+
 * cert-manager (manages TLS for admission webhooks)
 
 Local development additionally requires:

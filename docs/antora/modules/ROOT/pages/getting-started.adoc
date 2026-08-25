@@ -9,7 +9,7 @@ This guide deploys Logic Operator on a local https://kind.sigs.k8s.io[KIND] clus
 * https://kind.sigs.k8s.io/docs/user/quick-start/#installation[KIND] v0.20+
 * https://kubernetes.io/docs/tasks/tools/[kubectl]
 * https://git-scm.com[Git]
-* Go {k8s-min-version}+ cluster (KIND creates one automatically)
+* Kubernetes {k8s-min-version}+ cluster (KIND creates one automatically)
 
 == 1. Clone the repository
 
@@ -75,7 +75,7 @@ Expected output:
 [source]
 ----
 NAME                                                 PHASE   REPLICAS   READY
-logicflowruntime.logic.kubesmarts.org/hello-runtime  Ready   2          2
+logicflowruntime.logic.kubesmarts.org/hello-runtime  Ready   1          1
 
 NAME                                                              WORKFLOW      VERSION
 logicflowdefinition.logic.kubesmarts.org/hello-world-v1-0-0       hello-world   1.0.0

@@ -19,8 +19,7 @@ metadata:
   namespace: my-namespace
 spec:
   replicas: 2
-  runner:
-    image: quay.io/quarkiverse/quarkus-flow-runner:1.0.0-standard   # <1>
+  image: quay.io/quarkiverse/quarkus-flow-runner:1.0.0-standard      # <1>
   persistence:
     postgresql:
       secretRef:

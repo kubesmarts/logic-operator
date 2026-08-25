@@ -54,8 +54,9 @@ When you create a `LogicFlowRuntime`, the controller reconciles the following Ku
 | Grants the runtime's ServiceAccount permission to read and update its own Leases.
 |===
 
-All resources are created in the same namespace as the `LogicFlowRuntime` CR. All CRDs are
-namespace-scoped — there are no cluster-level resources created by this operator.
+All resources are created in the same namespace as the `LogicFlowRuntime` CR.
+CR instances are namespace-scoped. Note that CRD objects themselves are cluster-scoped (as with all
+Kubernetes CRDs), and the operator installation creates cluster-scoped RBAC (ClusterRoles, ClusterRoleBindings).
 
 == Runner Images
 

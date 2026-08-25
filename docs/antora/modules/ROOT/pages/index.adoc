@@ -6,7 +6,7 @@ It lets you manage workflow runtimes, definitions, and traffic routing as native
 
 == What it does
 
-Logic Operator introduces four custom resources:
+Logic Operator introduces three custom resources:
 
 [cols="1,3",options="header"]
 |===

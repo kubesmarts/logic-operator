@@ -36,7 +36,7 @@ jobs:
 
       - name: Install Antora
         working-directory: docs/antora
-        run: npm ci --prefer-offline || npm install
+        run: npm ci
 
       - name: Build Docs
         working-directory: docs/antora
