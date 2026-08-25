@@ -1,0 +1,153 @@
+= ConfigMap Hot-Reload
+:description: How Logic Operator mounts workflow definitions as ConfigMaps and how the Quarkus Flow Runner picks up changes without a pod restart.
+
+When you create a `LogicFlowDefinition`, the operator writes the assembled workflow YAML into a
+dedicated ConfigMap. That ConfigMap is then mounted into every pod of the target
+`LogicFlowRuntime`. Understanding how mounting and propagation work explains both the latency you
+should expect after a definition update and why adding a new definition triggers a pod rollout.
+
+== One ConfigMap Per Definition
+
+The `LogicFlowDefinition` controller creates a ConfigMap named `lfd-<definition-name>` in the same
+namespace. For example, `LogicFlowDefinition/payment-processor-v1-0-0` produces:
+
+[source,yaml]
+----
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lfd-payment-processor-v1-0-0
+  namespace: checkout
+data:
+  payment-processor-v1-0-0.yaml: |
+    document:
+      dsl: "1.0.0"
+      namespace: checkout
+      name: payment-processor
+      version: "1.0.0"
+    do:
+      - processPayment:
+          ...
+----
+
+The `LogicFlowRuntime` controller reconciles the Deployment to mount each such ConfigMap as its
+own directory inside the pods.
+
+== Directory Mounts, Not subPath Mounts
+
+Each ConfigMap is mounted as a *directory* (not a `subPath`), at the path:
+
+----
+/deployments/workflows/<configmap-name>/
+----
+
+For the example above, the file appears at:
+
+----
+/deployments/workflows/lfd-payment-processor-v1-0-0/payment-processor-v1-0-0.yaml
+----
+
+The corresponding volume and volumeMount in the Deployment look like this:
+
+[source,yaml]
+----
+volumes:
+  - name: lfd-payment-processor-v1-0-0
+    configMap:
+      name: lfd-payment-processor-v1-0-0
+volumeMounts:
+  - name: lfd-payment-processor-v1-0-0
+    mountPath: /deployments/workflows/lfd-payment-processor-v1-0-0   # <1>
+----
+<1> No `subPath` is specified — this is a full directory mount.
+
+=== Why Not subPath?
+
+`subPath` mounts are convenient when you want a file to appear at a precise path, but they have a
+critical limitation: *the kubelet does not update subPath-mounted files when the ConfigMap
+changes*. The pod must be restarted manually to see the new content.
+
+Directory mounts do not have this limitation. The kubelet automatically propagates ConfigMap
+updates to all directory-mounted volumes within approximately 1–2 minutes.
+
+[NOTE]
+====
+The 1–2 minute propagation delay is controlled by `--sync-frequency` on the kubelet and is not
+configurable from within the operator. For time-critical updates, a pod rollout is still the
+fastest option.
+====
+
+== How the Runner Scans for Workflow Files
+
+The Quarkus Flow Runner includes a `WorkflowFileWatcher` component that polls
+`/deployments/workflows` every 5 seconds for workflow YAML files (if enabled at image build time).
+
+=== Symlink Handling and `followSymlinks`
+
+Kubernetes ConfigMap directory mounts use an atomic update mechanism: the kubelet writes new
+content into a timestamped directory (e.g. `..2026_08_20_12_34_56.789012345`) and then updates a
+`..data` symlink to point to it. The files visible at the top level of the mounted directory are
+themselves symlinks that point through `..data/` to the real files.
+
+Quarkus Flow Runner 1.0.0 defaults `followSymlinks=false` in its file scanner. This means it
+*skips* the `..data/` symlink directory and reads only the regular files from the timestamped
+directory. This eliminates a duplicate-detection problem that occurred in earlier versions when
+both the symlinks and their targets were scanned.
+
+You do not need to configure this behaviour — the `1.0.0-minimal` and `1.0.0-standard` images
+both ship with the correct default.
+
+== What Triggers a Pod Rollout vs. In-Place Reload
+
+[cols="2,1,3", options="header"]
+|===
+| Event | Pod rollout? | Reason
+
+| Creating a new `LogicFlowDefinition`
+| Yes
+| A new volume and volumeMount are added to the Deployment spec. The Deployment controller
+  performs a rolling update.
+
+| Updating the workflow content in an existing `LogicFlowDefinition`
+| No
+| The operator writes new content into the existing ConfigMap. The kubelet propagates the change
+  to the mounted directory. The runner's file watcher detects the new file content within ~5s
+  of kubelet propagation (total latency: up to ~2 min).
+
+| Deleting a `LogicFlowDefinition`
+| Yes
+| The volume and volumeMount are removed from the Deployment spec, triggering a rolling update.
+|===
+
+== End-to-End Update Flow
+
+The following sequence describes what happens when you update an existing workflow definition.
+Because `LogicFlowDefinition` is immutable, "updating" means creating a new CR version, but the
+content-propagation path below applies to any ConfigMap data change the operator makes.
+
+----
+1. Operator writes new YAML into ConfigMap lfd-payment-processor-v1-0-0.
+
+2. Kubelet detects the ConfigMap change via its sync loop (up to ~1-2 min).
+
+3. Kubelet writes new content into a new timestamped directory inside the mounted volume and
+   updates the ..data symlink atomically.
+
+4. WorkflowFileWatcher polls /deployments/workflows every 5s and detects a changed file
+   in the timestamped directory.
+
+5. Quarkus Flow Runner reloads the workflow definition in place — no pod restart needed.
+----
+
+== Implications for Operations
+
+* *Zero-downtime content updates:* Changing workflow logic in an existing `LogicFlowDefinition`
+  does not restart pods. Existing in-flight instances continue on the old definition until they
+  complete; new instances pick up the updated definition after the runner reloads it.
+
+* *Rolling restarts on add/remove:* Adding or removing a `LogicFlowDefinition` triggers a
+  Deployment rollout. In durable mode, the strict `maxUnavailable: 1, maxSurge: 0` strategy
+  means pods are replaced one at a time.
+
+* *Validation:* Malformed workflow YAML will be rejected by the runner's scanner. The pod
+  continues to serve other workflow definitions; the invalid file is logged and skipped.

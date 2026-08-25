@@ -1,0 +1,168 @@
+= Troubleshooting
+:description: Common issues when deploying and running Logic Operator, with causes and fixes.
+
+== Webhook: Connection Refused
+
+*Symptom:* `make kind-deploy` or `kubectl apply` fails with an error like:
+
+[source]
+----
+Error from server (InternalError): error when creating "...":
+Internal error occurred: failed calling webhook "vlogicflowruntime...":
+Post "https://logic-operator-webhook-service...": dial tcp ...: connect: connection refused
+----
+
+*Cause:* The operator pod is not yet ready, or cert-manager has not finished issuing the webhook TLS certificate.
+This is common on a freshly created cluster where cert-manager deployments are still coming up.
+
+*Fix:*
+
+[source,bash]
+----
+# Wait for cert-manager to be fully ready
+kubectl wait --namespace cert-manager \
+  --for=condition=available deployment --all --timeout=120s
+
+# Restart the operator deployment and wait
+kubectl rollout restart deployment -n logic-operator-system
+kubectl rollout status deployment -n logic-operator-system --timeout=120s
+----
+
+Then re-run the failing command.
+
+[TIP]
+====
+`make kind-deploy` already waits for operator deployments to be available.
+If the webhook error appears after that wait, the certificate has not propagated yet.
+A 10-30 second delay before re-applying is usually sufficient.
+====
+
+== Wrong kubectl Context
+
+*Symptom:* Commands affect the wrong cluster, or resources appear missing.
+
+*Cause:* Your active kubeconfig context points to a different cluster.
+
+*Fix:*
+
+[source,bash]
+----
+# List available contexts
+kubectl config get-contexts
+
+# Switch to the KIND dev cluster
+kubectl config use-context kind-logic-operator-dev
+
+# Verify
+kubectl cluster-info
+----
+
+== Runner Pod Not Starting: Image Pull Error
+
+*Symptom:* The runner `Deployment` pod stays in `ImagePullBackOff` or `ErrImagePull`.
+
+[source,bash]
+----
+kubectl describe pod -l app.kubernetes.io/name=hello-runtime
+----
+
+*Cause:* The runner image (`quay.io/quarkiverse/quarkus-flow-runner:1.0.0-minimal`) cannot be pulled.
+Common reasons:
+
+* No internet access from the KIND nodes
+* Incorrect image tag in the `LogicFlowRuntime` spec
+
+*Fix:* Pre-pull the image and load it into KIND:
+
+[source,bash]
+----
+docker pull quay.io/quarkiverse/quarkus-flow-runner:1.0.0-minimal
+kind load docker-image quay.io/quarkiverse/quarkus-flow-runner:1.0.0-minimal \
+  --name logic-operator-dev
+----
+
+Then delete the failing pod to trigger a fresh pull attempt:
+
+[source,bash]
+----
+kubectl delete pod -l app.kubernetes.io/name=hello-runtime
+----
+
+== Metrics Not Appearing in Prometheus
+
+*Symptom:* Prometheus shows no targets, or the `logic-flow-runtime` job has no series.
+
+*Cause:* The runner pods may not have the expected labels, or Prometheus does not yet have RBAC to list pods.
+
+*Fix:*
+
+. Verify that runner pods carry the `app.kubernetes.io/managed-by=logic-operator` label:
++
+[source,bash]
+----
+kubectl get pods -l app.kubernetes.io/managed-by=logic-operator
+----
+
+. Verify the Prometheus `ServiceAccount` has pod list/get/watch permissions in the namespace.
+The monitoring sample includes a `ClusterRole` and `ClusterRoleBinding` named `prometheus`.
+
+. Check Prometheus targets at http://prometheus.lvh.me/targets.
+Targets in "DOWN" state show the last error message.
+
+. If metrics appear but the dashboard is empty, send a few workflow requests to generate data —
+Prometheus counters only appear after at least one increment.
+
+== Ingress Returns 404 or Connection Refused
+
+*Symptom:* `curl http://hello.lvh.me/` returns a 404, 502, or refuses to connect.
+
+*Cause:* ingress-nginx is not ready, or the `LogicFlowService` ingress has not been created yet.
+
+*Fix:*
+
+[source,bash]
+----
+# Check ingress-nginx controller pod
+kubectl get pods -n ingress-nginx
+
+# Check that the ingress resource exists
+kubectl get ingress
+
+# Check the service behind the ingress
+kubectl get svc hello-runtime
+
+# Describe the ingress for events
+kubectl describe ingress hello-world
+----
+
+If ingress-nginx is running but returning 502, the runner pod may still be starting.
+Wait for `deployment/hello-runtime` to be available:
+
+[source,bash]
+----
+kubectl wait --for=condition=available deployment/hello-runtime --timeout=120s
+----
+
+== Workflow Returns 401 After Enabling API_KEY
+
+*Symptom:* Requests that worked before now return HTTP 401.
+
+*Cause:* The API_KEY security overlay was applied but the runtime pod has not picked up the new environment variables.
+
+*Fix:*
+
+[source,bash]
+----
+kubectl rollout restart deployment/hello-runtime
+kubectl rollout status deployment/hello-runtime --timeout=120s
+----
+
+Then include the `Authorization: Bearer` header in your request:
+
+[source,bash]
+----
+curl -X POST http://hello.lvh.me/ \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer logic-operator-dev-token" \
+  -d '{"name": "World"}'
+----

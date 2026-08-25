@@ -1,0 +1,142 @@
+= Workflow Definitions
+:description: How LogicFlowDefinition holds a full Open Workflow document and loads it into a runtime.
+
+A `LogicFlowDefinition` is a Kubernetes custom resource that holds one complete
+https://open-workflow-specification.org/[Open Workflow Specification 1.0.0] document.
+The operator parses the document, sets labels from it, and writes the YAML into the ConfigMap
+shared by the target `LogicFlowRuntime`.
+
+== Immutability
+
+`LogicFlowDefinition` resources are *immutable once created*. The `spec` fields cannot be changed
+after creation — this is enforced by a validating webhook.
+
+Immutability is intentional: a workflow definition represents a specific deployed version of a
+workflow. Changing the definition in place would make it impossible to know what logic ran for
+historical workflow instances. To deploy new logic, create a new `LogicFlowDefinition` with a
+higher version.
+
+[NOTE]
+====
+To fix a bug, create a new `LogicFlowDefinition` with an incremented patch version
+(e.g. `payment-processor-v1-0-1`) and update the `LogicFlowService` to route traffic to it.
+====
+
+== Naming Convention
+
+CR names follow the pattern `<workflow-name>-v<major>-<minor>-<patch>`. Examples:
+
+* `payment-processor-v1-0-0`
+* `payment-processor-v1-0-1`
+* `inventory-check-v2-3-0`
+
+This convention makes the version immediately visible in `kubectl get logicflowdefinitions` output.
+
+== Workflow Identity
+
+The workflow's logical name and version come from the `document:` section inside `spec.flow` —
+specifically `flow.document.name` and `flow.document.version`.
+
+The operator parses these fields at reconciliation time and copies them to:
+
+* CR labels (`logic.kubesmarts.org/workflow-name`, `logic.kubesmarts.org/workflow-version`)
+* `status.workflowName` and `status.workflowVersion`
+
+The Quarkus Flow Runner uses `document.name` to identify the workflow at runtime.
+
+== The `spec.flow` Field
+
+`spec.flow` holds the **complete** Open Workflow Specification document — including the `document:`
+section. The operator reads it as raw YAML, parses it with the Open Workflow Go SDK, and only
+overrides `document.namespace` with the CR's Kubernetes namespace to ensure correct scoping.
+
+[source,yaml]
+----
+spec:
+  flow:
+    document:
+      dsl: "1.0.0"
+      namespace: my-namespace      # <1>
+      name: payment-processor      # <2>
+      version: "1.0.0"             # <3>
+    do:
+      - processPayment:
+          call: http
+          with:
+            method: post
+            endpoint: https://payments.example.com/charge
+    use:
+      secrets:
+        - payment-api-key
+----
+<1> Overwritten by the operator with the CR's `.metadata.namespace` at reconciliation.
+<2> The workflow's logical name — used by the runner and status fields.
+<3> The semantic version — combined with `name` and `namespace` to form the unique workflow identity.
+
+== Spec Fields
+
+[cols="1,1,3", options="header"]
+|===
+| Field | Required | Description
+
+| `spec.runtimeRef.name`
+| Yes
+| Name of the `LogicFlowRuntime` CR that executes this workflow.
+
+| `spec.flow`
+| Yes
+| The complete Open Workflow Specification 1.0.0 document, including the `document:` section.
+  Parsed and validated via the OWS Go SDK during admission.
+|===
+
+== Full Example
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowDefinition
+metadata:
+  name: payment-processor-v1-0-0
+  namespace: checkout
+spec:
+  runtimeRef:
+    name: payments-runtime
+  flow:
+    document:
+      dsl: "1.0.0"
+      namespace: checkout
+      name: payment-processor
+      version: "1.0.0"
+    do:
+      - validateCard:
+          call: http
+          with:
+            method: post
+            endpoint: https://validation.example.com/validate
+            body:
+              card: ${ .input.card }
+      - chargeCard:
+          call: http
+          with:
+            method: post
+            endpoint: https://payments.example.com/charge
+            body:
+              amount: ${ .input.amount }
+              token:  ${ .validateCard.token }
+    use:
+      secrets:
+        - payment-api-key
+----
+
+== How the Operator Loads the Definition
+
+When the `LogicFlowDefinition` controller reconciles the CR, it:
+
+1. Parses `spec.flow` using the Open Workflow Go SDK.
+2. Overwrites `document.namespace` with the CR's `.metadata.namespace`.
+3. Extracts `document.name` and `document.version` and writes them as CR labels and status fields.
+4. Serializes the (modified) document to YAML and writes it into a dedicated ConfigMap named
+   `lfd-<definition-name>` (e.g. `lfd-payment-processor-v1-0-0`).
+5. The `LogicFlowRuntime` controller mounts each ConfigMap as a directory under
+   `/deployments/workflows/` in the runner pods — the runner hot-loads the file at startup
+   (or via the file watcher if enabled).

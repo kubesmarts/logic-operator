@@ -1,0 +1,155 @@
+= Hello World Sample
+:description: End-to-end walkthrough of the hello-world workflow using make kind-demo.
+
+The hello-world sample is the quickest way to see Logic Operator in action.
+It deploys a stateless runtime, a single-step workflow, and exposes it via an ingress.
+
+== Prerequisites
+
+A running KIND cluster with the operator deployed. If you have not done this yet, follow xref:deployment/kind-local.adoc[Local Development with KIND].
+
+== Apply the Sample
+
+[source,bash]
+----
+make kind-demo
+----
+
+This runs `kubectl apply -k config/samples/` which creates three custom resources.
+
+== The Custom Resources
+
+=== LogicFlowRuntime
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowRuntime
+metadata:
+  name: hello-runtime
+spec: {}
+----
+
+An empty `spec` means the operator uses all defaults: one replica of the `1.0.0-minimal` runner image with no persistence and no authentication.
+The operator creates a `Deployment` and `Service` named `hello-runtime`.
+
+=== LogicFlowDefinition
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowDefinition
+metadata:
+  name: hello-world-v1-0-0
+spec:
+  runtimeRef:
+    name: hello-runtime
+  flow:
+    document:
+      dsl: '1.0.0'
+      namespace: examples
+      name: hello-world
+      version: '1.0.0'
+    do:
+      - greet:
+          set:
+            message: '${ "Hi, " + .name + "!" }'
+----
+
+This is an OWS 1.0.0 document.
+The single task `greet` uses a `set` action to build the response string from the input field `.name`.
+The operator propagates this definition as a ConfigMap into the runtime pod.
+
+=== LogicFlowService
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowService
+metadata:
+  name: hello-world
+spec:
+  defaultDefinition:
+    name: hello-world-v1-0-0
+  ingress:
+    host: hello.lvh.me
+    ingressClassName: nginx
+----
+
+The service creates an Ingress that routes traffic from `hello.lvh.me` to the runtime pod and dispatches requests to the `hello-world-v1-0-0` definition by default.
+
+== Wait for the Runtime
+
+[source,bash]
+----
+kubectl wait --for=condition=available deployment/hello-runtime --timeout=120s
+----
+
+Check that all three resources are ready:
+
+[source,bash]
+----
+kubectl get logicflowruntimes,logicflowdefinitions,logicflowservices
+----
+
+== Invoke the Workflow
+
+[source,bash]
+----
+curl -X POST http://hello.lvh.me/ \
+  -H "Content-Type: application/json" \
+  -d '{"name": "World"}'
+----
+
+Expected response:
+
+[source,json]
+----
+{"message": "Hi, World!"}
+----
+
+[TIP]
+====
+`hello.lvh.me` resolves to `127.0.0.1` via public DNS.
+No `/etc/hosts` changes are needed.
+====
+
+== Check Health
+
+[source,bash]
+----
+curl http://runtime.lvh.me/q/health
+----
+
+The response shows liveness and readiness probes from the Quarkus SmallRye Health extension.
+
+== Check Metrics
+
+[source,bash]
+----
+curl http://runtime.lvh.me/q/metrics
+----
+
+After invoking the workflow once, look for:
+
+[source]
+----
+quarkus_flow_workflow_started_total{workflow="hello-world"} 1.0
+quarkus_flow_workflow_completed_total{workflow="hello-world"} 1.0
+----
+
+== Explore the OpenAPI Spec
+
+[source,bash]
+----
+curl http://runtime.lvh.me/q/openapi
+----
+
+The Quarkus Flow Runner generates an OpenAPI spec that includes all loaded workflow definitions.
+
+== Clean Up
+
+[source,bash]
+----
+make kind-undemo
+----

@@ -1,0 +1,123 @@
+= Runtime Model
+:description: How Logic Operator manages Quarkus Flow Runner pods as shared, multi-workflow runtimes.
+
+Logic Operator manages a shared pool of pre-built Quarkus Flow Runner pods that serve many workflow
+definitions simultaneously. Workflow definitions are *data*, not compiled code — no build step is
+needed when adding or updating them.
+
+== Shared Runtime Pools
+
+Logic Operator introduces `LogicFlowRuntime`, a Kubernetes custom resource that represents a
+Deployment of pre-built Quarkus Flow Runner pods. A single `LogicFlowRuntime` can execute any
+number of workflow definitions loaded into it at startup.
+
+The key insight is that workflow definitions are *data*, not code. The Quarkus Flow Runner image
+contains the execution engine; the workflow YAML files are loaded separately via ConfigMaps at pod
+startup. No build step is needed when adding or updating workflows.
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowRuntime
+metadata:
+  name: order-processing
+  namespace: my-namespace
+spec:
+  replicas: 2
+  image: quay.io/quarkiverse/quarkus-flow-runner:1.0.0-minimal
+----
+
+This single `LogicFlowRuntime` can host the `payment-processor`, `inventory-check`, and
+`shipping-notification` workflows all at once — no additional pods required.
+
+== What the Controller Creates
+
+When you create a `LogicFlowRuntime`, the controller reconciles the following Kubernetes resources:
+
+[cols="1,3", options="header"]
+|===
+| Resource | Purpose
+
+| Deployment
+| Runs the Quarkus Flow Runner replicas with the requested image and configuration.
+
+| Service
+| Exposes the HTTP endpoints for workflow management APIs within the cluster.
+
+| ConfigMap
+| Aggregates the workflow YAML files for all `LogicFlowDefinition` resources linked to this runtime.
+
+| Leases
+| One Kubernetes Lease per replica, used for stable pod identity in durable mode.
+
+| RBAC (Role + RoleBinding)
+| Grants the runtime's ServiceAccount permission to read and update its own Leases.
+|===
+
+All resources are created in the same namespace as the `LogicFlowRuntime` CR.
+CR instances are namespace-scoped. Note that CRD objects themselves are cluster-scoped (as with all
+Kubernetes CRDs), and the operator installation creates cluster-scoped RBAC (ClusterRoles, ClusterRoleBindings).
+
+== Runner Images
+
+Two pre-built runner image variants are available:
+
+[cols="1,3", options="header"]
+|===
+| Image tag | Use case
+
+| `1.0.0-minimal`
+| Stateless workflows with no persistence layer. Smallest image size.
+
+| `1.0.0-standard`
+| Stateful (durable) workflows. Includes the persistence extensions required for PostgreSQL integration.
+|===
+
+[source,yaml]
+----
+spec:
+  image: quay.io/quarkiverse/quarkus-flow-runner:1.0.0-standard
+----
+
+[NOTE]
+====
+Always use the `standard` image when setting `spec.persistence` on the runtime. The `minimal` image
+does not include the database drivers required for durable workflow execution.
+====
+
+== Workflow Loading at Startup
+
+When a `LogicFlowRuntime` pod starts, the Quarkus Flow Runner scans the directory
+`/deployments/workflows` for YAML files. Each subdirectory under that path corresponds to one
+`LogicFlowDefinition` ConfigMap mounted by the operator.
+
+The runtime does not need to restart to pick up *content changes* to existing workflow definitions —
+the kubelet propagates ConfigMap updates to mounted directories automatically. However, adding a
+*new* `LogicFlowDefinition` requires a pod rollout because it adds a new volume mount to the
+Deployment spec.
+
+== Relationship Between CRDs
+
+The three workflow CRDs form a clear hierarchy:
+
+----
+LogicFlowRuntime          <- the pod pool (Deployment)
+  └── LogicFlowDefinition <- a workflow loaded into the runtime
+        └── LogicFlowService <- ingress routing for a specific workflow version
+----
+
+A `LogicFlowDefinition` references a `LogicFlowRuntime` via `spec.runtimeRef.name`. The
+`LogicFlowService` controller manages the Ingress resource that routes external traffic to the
+runtime's Service, grouping one or more workflow definitions under a single endpoint.
+
+== Namespace Scope
+
+Every resource created by Logic Operator — CRDs, controllers, and the Kubernetes objects they
+produce — is namespace-scoped. You can deploy multiple independent `LogicFlowRuntime` instances in
+the same namespace or across different namespaces without conflict.
+
+[NOTE]
+====
+Cross-namespace references are not supported. A `LogicFlowDefinition` must reside in the same
+namespace as the `LogicFlowRuntime` it targets.
+====

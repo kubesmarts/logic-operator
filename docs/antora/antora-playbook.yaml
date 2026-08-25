@@ -1,0 +1,20 @@
+site:
+  title: Logic Operator Documentation
+  start_page: logic-operator:ROOT:index.adoc
+content:
+  sources:
+    - url: ../..
+      branches: HEAD
+      start_path: docs/antora
+ui:
+  bundle:
+    url: https://gitlab.com/antora/antora-ui-default/-/jobs/artifacts/master/raw/build/ui-bundle.zip?job=bundle-stable
+    snapshot: false
+  supplemental_files: ./supplemental-ui
+asciidoc:
+  attributes:
+    page-pagination: ''
+    hide-uri-scheme: '@'
+    tabs-sync-option: '@'
+output:
+  dir: ./target/generated-docs

@@ -1,0 +1,91 @@
+= Production Checklist
+:description: Key decisions and requirements before deploying Logic Operator to a production cluster.
+
+This page is a concise checklist, not a step-by-step guide.
+Each item describes what to verify and why.
+
+== Security
+
+[WARNING]
+====
+The default `LogicFlowRuntime` spec uses `security.type: NONE`.
+This disables all authentication and must never be used in production.
+====
+
+Choose an appropriate security mode in `LogicFlowRuntime.spec.security`:
+
+`API_KEY`::
+Suitable for machine-to-machine integrations.
+Store the key value in a Kubernetes `Secret` and reference it via `spec.security.apiKey.keys[*].secretRef`.
+Rotate secrets independently of the runtime pod.
+
+`OIDC`::
+Suitable for enterprise SSO.
+Configure the OIDC issuer URL and audience in `spec.security.oidc`.
+
+== Persistence
+
+Stateless runtimes (`1.0.0-minimal` image) lose all in-flight workflow state if a pod restarts.
+For workflows that use `wait`, timers, or multi-step coordination, use the `1.0.0-standard` image with PostgreSQL.
+
+Checklist:
+
+* Deploy a production-grade PostgreSQL instance (managed service recommended)
+* Create a `Secret` with `POSTGRESQL_USER` and `POSTGRESQL_PASSWORD` keys
+* Set `spec.persistence.postgresql.secretRef` and `spec.persistence.postgresql.serviceRef` in `LogicFlowRuntime`
+* Set `spec.replicas` to 3 or more — the operator uses Kubernetes leases for sharded coordination
+
+== Resource Limits
+
+The `config/samples/` CRs omit resource requests and limits.
+Set them on `LogicFlowRuntime.spec.podTemplate` before going to production to prevent noisy-neighbour issues.
+
+Recommended starting point for a medium-traffic runtime:
+
+[source,yaml]
+----
+spec:
+  podTemplate:
+    spec:
+      containers:
+        - name: runner
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              memory: "1Gi"
+----
+
+== Horizontal Pod Autoscaling
+
+The operator sets `spec.replicas` on the managed `Deployment`.
+Create an `HorizontalPodAutoscaler` targeting that `Deployment` to scale based on CPU or custom metrics.
+
+[NOTE]
+====
+When PostgreSQL persistence is enabled, scale-up is safe — leases ensure each workflow instance is owned by exactly one pod.
+Without persistence, scale-up creates duplicate in-memory state for in-flight workflows.
+====
+
+== cert-manager
+
+The admission webhooks require a valid TLS certificate.
+In production:
+
+* Ensure cert-manager v1.16+ is installed
+* The operator automatically creates a self-signed `Issuer` and `Certificate`
+* For corporate PKI, replace the `Issuer` with a `ClusterIssuer` referencing your CA
+
+== Image Pull Secrets
+
+If your cluster cannot reach `quay.io` directly, mirror the runner image to a private registry and set `spec.podTemplate.spec.imagePullSecrets` accordingly.
+
+== Operator Upgrade
+
+The operator manages its own CRDs.
+When upgrading:
+
+. Apply the new CRD manifests: `make install IMG=<new-version>`
+. Roll out the new operator image: `make deploy IMG=<new-version>`
+. Verify the operator pod restarts cleanly and webhooks become healthy before applying workload changes.

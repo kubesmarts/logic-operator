@@ -1,0 +1,193 @@
+= LogicFlowDefinition
+:description: Immutable workflow version containing a complete Open Workflow Specification document.
+
+`LogicFlowDefinition` represents a single immutable version of a workflow.
+It holds a full https://open-workflow-specification.org/[Open Workflow Specification 1.0.0] document
+and references the `LogicFlowRuntime` that executes it.
+
+== API Version and Kind
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowDefinition
+----
+
+== Spec Fields
+
+=== runtimeRef
+
+Type: `LocalObjectReference` — Required
+
+Name of the `LogicFlowRuntime` CR that executes this workflow.
+
+[source,yaml]
+----
+spec:
+  runtimeRef:
+    name: production-runtime
+----
+
+=== flow
+
+Type: `RawExtension` — Required
+
+The complete OWS 1.0.0 document stored as raw YAML/JSON.
+Parsed and validated via the OWS Go SDK during admission.
+Unknown fields are preserved (`PreserveUnknownFields`).
+
+The document must include at minimum:
+
+* `document.dsl` — DSL version (e.g. `"1.0.0"`)
+* `document.namespace` — logical namespace (overwritten by the operator with the CR's namespace)
+* `document.name` — workflow logical name; used as the runner identity
+* `document.version` — semantic version
+* `do` — at least one task
+
+[source,yaml]
+----
+spec:
+  flow:
+    document:
+      dsl: "1.0.0"
+      namespace: checkout
+      name: payment-processor
+      version: "1.0.0"
+    do:
+      - processPayment:
+          call: http
+          with:
+            method: post
+            endpoint: https://payments.example.com/charge
+            body:
+              amount: ${ .input.amount }
+              currency: ${ .input.currency }
+----
+
+== Status Fields
+
+=== workflowName
+
+Type: `string` — Set by the operator
+
+Workflow logical name extracted from `flow.document.name`.
+
+=== workflowVersion
+
+Type: `string` — Set by the operator
+
+Version extracted from `flow.document.version`.
+
+=== workflowNamespace
+
+Type: `string` — Set by the operator
+
+Kubernetes namespace applied to the workflow (matches the CR namespace).
+
+=== configMapRef
+
+Type: `LocalObjectReference` — Set by the operator
+
+Reference to the ConfigMap the operator created to hold the serialized flow document.
+Named `lfd-<cr-name>` (e.g. `lfd-payment-processor-v1-0-0`).
+
+=== conditions
+
+Type: `[]Condition`
+
+| Condition | Meaning |
+|-----------|---------|
+| `FlowParsed=True` | Document parsed successfully by the OWS SDK |
+| `ConfigMapReady=True` | ConfigMap written and ready to be mounted by the runtime |
+| `Ready=True` | All conditions healthy |
+
+== Full Example
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowDefinition
+metadata:
+  name: payment-processor-v1-0-0
+  namespace: checkout
+spec:
+  runtimeRef:
+    name: payments-runtime
+  flow:
+    document:
+      dsl: "1.0.0"
+      namespace: checkout           # <1>
+      name: payment-processor
+      version: "1.0.0"
+      title: Payment Processor
+      summary: Validates and charges a payment method, then emits an event.
+    use:
+      secrets:
+        - payment-api-key
+      errors:
+        invalidCard:
+          type: https://errors.example.com/invalid-card
+          status: 422
+        paymentDeclined:
+          type: https://errors.example.com/payment-declined
+          status: 402
+      retries:
+        default:
+          limit:
+            attempt:
+              count: 3
+          delay: PT1S
+          backoff:
+            exponential: {}
+    do:
+      - validateCard:                 # <2>
+          call: http
+          with:
+            method: post
+            endpoint: https://validation.example.com/validate
+            headers:
+              Authorization: ${ "Bearer " + $secrets.payment-api-key }
+            body:
+              card: ${ .input.card }
+      - chargeCard:                   # <3>
+          call: http
+          with:
+            method: post
+            endpoint: https://payments.example.com/charge
+            headers:
+              Authorization: ${ "Bearer " + $secrets.payment-api-key }
+            body:
+              amount: ${ .input.amount }
+              currency: ${ .input.currency }
+              token: ${ .validateCard.token }
+      - emitReceipt:                  # <4>
+          emit:
+            event:
+              with:
+                type: com.example.payment.completed
+                source: /checkout/payment-processor
+                data:
+                  orderId: ${ .input.orderId }
+                  amount: ${ .input.amount }
+
+status:
+  workflowName: payment-processor
+  workflowVersion: "1.0.0"
+  workflowNamespace: checkout
+  configMapRef:
+    name: lfd-payment-processor-v1-0-0
+  conditions:
+  - type: FlowParsed
+    status: "True"
+    reason: Ready
+  - type: ConfigMapReady
+    status: "True"
+    reason: Ready
+  - type: Ready
+    status: "True"
+    reason: Ready
+----
+<1> The operator overwrites this with the CR's `.metadata.namespace` at reconciliation time.
+<2> HTTP task — calls the card validation service and stores the response as `validateCard`.
+<3> HTTP task — uses the token from step (2) to charge the card.
+<4> Emit task — publishes a CloudEvent when payment succeeds.

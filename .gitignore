@@ -26,3 +26,7 @@ go.work
 *.swp
 *.swo
 *~
+docs/antora/node_modules/
+docs/antora/target/
+adr/handoff/
+docs/architecture-slide*.html

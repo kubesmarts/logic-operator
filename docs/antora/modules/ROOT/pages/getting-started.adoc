@@ -1,0 +1,121 @@
+= Getting Started
+:description: Deploy Logic Operator on a local KIND cluster and run your first workflow.
+
+This guide deploys Logic Operator on a local https://kind.sigs.k8s.io[KIND] cluster and runs the hello-world sample workflow end-to-end.
+
+== Prerequisites
+
+* https://docs.docker.com/get-docker/[Docker] (or compatible runtime)
+* https://kind.sigs.k8s.io/docs/user/quick-start/#installation[KIND] v0.20+
+* https://kubernetes.io/docs/tasks/tools/[kubectl]
+* https://git-scm.com[Git]
+* Kubernetes {k8s-min-version}+ cluster (KIND creates one automatically)
+
+== 1. Clone the repository
+
+[source,bash]
+----
+git clone https://github.com/kubesmarts/logic-operator.git
+cd logic-operator
+----
+
+== 2. Create a KIND cluster
+
+[source,bash]
+----
+make kind-create
+----
+
+This creates a local Kubernetes cluster with:
+
+* https://cert-manager.io[cert-manager] (required for admission webhooks)
+* https://kubernetes.github.io/ingress-nginx[ingress-nginx] (for `*.lvh.me` routing)
+
+== 3. Deploy the operator
+
+[source,bash]
+----
+make kind-deploy
+----
+
+This builds the operator image, loads it into KIND, and applies all manifests (CRDs, RBAC, Deployments, webhooks).
+
+[NOTE]
+====
+If the next step fails immediately with a webhook error, the cert-manager certificate is still being issued.
+Wait for the operator pod to be ready, then retry:
+
+[source,bash]
+----
+kubectl wait --namespace logic-operator-system \
+  --for=condition=ready pod \
+  -l control-plane=controller-manager \
+  --timeout=60s
+----
+====
+
+== 4. Apply the hello-world sample
+
+[source,bash]
+----
+make kind-demo
+----
+
+This creates a `LogicFlowRuntime`, a `LogicFlowDefinition` (the hello-world workflow), and a `LogicFlowService` in the `default` namespace.
+
+Verify everything is ready:
+
+[source,bash]
+----
+kubectl get logicflowruntimes,logicflowdefinitions,logicflowservices
+----
+
+Expected output:
+
+[source]
+----
+NAME                                                 PHASE   REPLICAS   READY
+logicflowruntime.logic.kubesmarts.org/hello-runtime  Ready   1          1
+
+NAME                                                              WORKFLOW      VERSION
+logicflowdefinition.logic.kubesmarts.org/hello-world-v1-0-0       hello-world   1.0.0
+
+NAME                                                   HOST           URL
+logicflowservice.logic.kubesmarts.org/hello-world      hello.lvh.me   http://hello.lvh.me/
+----
+
+== 5. Invoke the workflow
+
+[source,bash]
+----
+curl -X POST http://hello.lvh.me/q/flow/exec/default/hello-world/1.0.0 \
+  -H "Content-Type: application/json" \
+  -d '{"input": {"name": "world"}}'
+----
+
+The runner responds with the new workflow instance:
+
+[source,json]
+----
+{
+  "instanceId": "01M0GC81PBCYD3X6E2SHJZ64V2",
+  "status": "RUNNING",
+  "startedAt": "2026-08-20T19:58:22.351417832Z"
+}
+----
+
+== 6. Check metrics
+
+The runner exposes Micrometer metrics automatically at `/q/metrics`:
+
+[source,bash]
+----
+curl http://runtime.lvh.me/q/metrics | grep quarkus_flow_workflow
+----
+
+== Next steps
+
+* xref:samples/persistence.adoc[Add durable workflows with PostgreSQL]
+* xref:samples/monitoring.adoc[Set up Prometheus and Grafana dashboards]
+* xref:concepts/runtime-model.adoc[Understand the runtime model]
+* xref:crd-reference/logicflowruntime.adoc[LogicFlowRuntime CRD reference]

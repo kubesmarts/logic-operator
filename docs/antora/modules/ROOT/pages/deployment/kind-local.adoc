@@ -1,0 +1,155 @@
+= Local Development with KIND
+:description: Run Logic Operator on your laptop using a KIND cluster.
+
+This guide walks through creating a local Kubernetes cluster with KIND, deploying the operator, and running the hello-world sample.
+The entire setup takes three `make` commands.
+
+== Prerequisites
+
+Install the following tools before starting:
+
+* https://go.dev/dl/[Go] v1.26+
+* https://docs.docker.com/get-docker/[Docker] v17.03+
+* https://kubernetes.io/docs/tasks/tools/[kubectl] v1.30+
+* https://kind.sigs.k8s.io/docs/user/quick-start/#installation[KIND] v0.20+
+* https://kubectl.docs.kubernetes.io/installation/kustomize/[kustomize] (installed automatically by `make`)
+
+== Step 1: Create the Cluster
+
+[source,bash]
+----
+make kind-create
+----
+
+This creates a KIND cluster named `logic-operator-dev` using `hack/kind-config.yaml`, then installs:
+
+* ingress-nginx v1.12.2 (with ports 80 and 443 mapped to localhost)
+* cert-manager v1.16.3 (required for webhook TLS)
+
+The command is idempotent — if the cluster already exists it prints a message and exits cleanly.
+
+[NOTE]
+====
+`lvh.me` is a wildcard DNS name that resolves to `127.0.0.1`.
+All sample ingress hosts (e.g. `hello.lvh.me`, `grafana.lvh.me`) work automatically without editing `/etc/hosts`.
+====
+
+== Step 2: Deploy the Operator
+
+[source,bash]
+----
+make kind-deploy
+----
+
+This target:
+
+. Builds the operator image tagged `controller:dev`
+. Loads the image into the KIND cluster
+. Applies `config/default` via kustomize with server-side apply
+. Waits for all deployments in `logic-operator-system` to become available
+
+The operator runs in the `logic-operator-system` namespace. Verify it is ready:
+
+[source,bash]
+----
+kubectl get pods -n logic-operator-system
+----
+
+== Step 3: Apply Sample Resources
+
+[source,bash]
+----
+make kind-demo
+----
+
+This applies `config/samples/` which creates:
+
+* `LogicFlowRuntime/hello-runtime` — a stateless runner (defaults to `1.0.0-minimal` image)
+* `LogicFlowDefinition/hello-world-v1-0-0` — the hello-world workflow
+* `LogicFlowService/hello-world` — exposes the workflow at `hello.lvh.me`
+
+Wait for the runtime pod to be ready, then invoke the workflow:
+
+[source,bash]
+----
+kubectl wait --for=condition=available deployment/hello-runtime --timeout=120s
+
+curl -X POST http://hello.lvh.me/ \
+  -H "Content-Type: application/json" \
+  -d '{"name": "World"}'
+----
+
+Expected response:
+
+[source,json]
+----
+{"message": "Hi, World!"}
+----
+
+== Troubleshooting: Webhook Not Ready
+
+If `make kind-deploy` fails with a webhook connection error, cert-manager may not have issued the certificate yet.
+
+[source]
+----
+Error from server (InternalError): ... connection refused
+----
+
+Wait a few seconds and retry:
+
+[source,bash]
+----
+kubectl wait --namespace cert-manager \
+  --for=condition=available deployment --all --timeout=120s
+
+kubectl rollout restart deployment -n logic-operator-system
+kubectl rollout status deployment -n logic-operator-system --timeout=120s
+----
+
+See xref:deployment/troubleshooting.adoc[Troubleshooting] for more common issues.
+
+== Inspecting Resources
+
+[source,bash]
+----
+# Check all Logic Operator CRs
+kubectl get logicflowruntimes,logicflowdefinitions,logicflowservices
+
+# Check runtime pod logs
+kubectl logs -l app.kubernetes.io/name=hello-runtime -f
+
+# Check operator logs
+kubectl logs -n logic-operator-system -l control-plane=controller-manager -f
+----
+
+The runtime also exposes health and OpenAPI endpoints:
+
+[source,bash]
+----
+curl http://runtime.lvh.me/q/health    # liveness + readiness
+curl http://runtime.lvh.me/q/openapi   # OpenAPI spec
+----
+
+Or via port-forward if ingress is not available:
+
+[source,bash]
+----
+kubectl port-forward svc/hello-runtime 8080:80
+curl http://localhost:8080/q/health
+----
+
+== Tear Down
+
+Remove sample CRs without deleting the cluster:
+
+[source,bash]
+----
+make kind-undemo
+----
+
+Delete the entire cluster:
+
+[source,bash]
+----
+make kind-delete
+----

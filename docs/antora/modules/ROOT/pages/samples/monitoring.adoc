@@ -1,0 +1,121 @@
+= Monitoring Sample
+:description: Deploy Prometheus and Grafana to observe workflow execution metrics in real time.
+
+The monitoring sample provides a full observability stack pre-configured for Logic Operator.
+Prometheus scrapes every runner pod automatically; Grafana shows a dashboard with workflow throughput, instance gauges, task latency, and per-pod distribution.
+
+== Prerequisites
+
+The hello-world sample must be deployed first:
+
+[source,bash]
+----
+make kind-demo
+----
+
+== Deploy the Monitoring Stack
+
+[source,bash]
+----
+kubectl apply -k config/samples/monitoring/
+----
+
+Wait for both pods to be ready:
+
+[source,bash]
+----
+kubectl wait --for=condition=available deployment/prometheus deployment/grafana --timeout=120s
+----
+
+== Access the UIs
+
+* Grafana: http://grafana.lvh.me — anonymous access, no login required
+* Prometheus: http://prometheus.lvh.me
+
+== How Prometheus Discovers Runner Pods
+
+The Prometheus configuration uses Kubernetes pod service discovery.
+It filters pods by the label `app.kubernetes.io/managed-by=logic-operator` and scrapes `/q/metrics` on port 8080.
+Each series is enriched with `namespace`, `pod`, and `runtime` labels.
+
+This means every `LogicFlowRuntime` replica is scraped automatically, including replicas added by scaling.
+
+Verify that targets are healthy at http://prometheus.lvh.me/targets.
+The job is named `logic-flow-runtime`.
+
+== The Grafana Dashboard
+
+Navigate to *Dashboards > Logic Operator > Logic Flow Runtime*.
+The dashboard is pre-loaded from a ConfigMap and auto-refreshes every 10 seconds.
+
+Dashboard panels:
+
+[cols="1,2"]
+|===
+|Panel |What it shows
+
+|Running / Waiting / Suspended
+|Current instance gauge per state
+
+|Started / Completed / Faulted
+|Cumulative counters since pod start
+
+|Workflow Throughput (per second)
+|`rate(quarkus_flow_workflow_started_total[1m])` and completed, by workflow name
+
+|Active Instances Over Time
+|Stacked area of running + waiting + suspended instances
+
+|Task Duration (p95)
+|95th-percentile latency per task name from `quarkus_flow_task_duration_seconds`
+
+|Workflows per Pod
+|Bar chart showing how workflows are distributed across replicas
+|===
+
+== Generate Load to Populate the Dashboard
+
+All panels show "0" or are empty until the first workflow executes.
+Run a burst of requests to populate the dashboard:
+
+[source,bash]
+----
+for i in $(seq 1 30); do
+  curl -s -o /dev/null -X POST http://hello.lvh.me/ \
+    -H "Content-Type: application/json" \
+    -d "{\"name\": \"user-$i\"}" &
+done
+wait
+----
+
+Within 10 seconds, the "Started" and "Completed" tiles update and the throughput graph shows a spike.
+
+[TIP]
+====
+Combine with the persistence sample to see the "Waiting" gauge fill up while sleepy workflows are suspended.
+====
+
+== Explore Metrics Directly
+
+Query Prometheus directly at http://prometheus.lvh.me/graph.
+Useful queries:
+
+[source]
+----
+# Workflows started per second (1-minute rate)
+rate(quarkus_flow_workflow_started_total[1m])
+
+# Currently running instances
+quarkus_flow_instance_running
+
+# p95 task latency
+histogram_quantile(0.95,
+  sum(rate(quarkus_flow_task_duration_seconds_bucket[5m])) by (le, task))
+----
+
+== Clean Up
+
+[source,bash]
+----
+kubectl delete -k config/samples/monitoring/ --ignore-not-found=true
+----
