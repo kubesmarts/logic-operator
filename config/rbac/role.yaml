@@ -8,6 +8,7 @@ rules:
   - ""
   resources:
   - configmaps
+  - serviceaccounts
   - services
   verbs:
   - create
@@ -21,17 +22,8 @@ rules:
   - ""
   resources:
   - pods
+  - secrets
   verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - serviceaccounts
-  verbs:
-  - create
-  - delete
   - get
   - list
   - watch
@@ -126,6 +118,8 @@ rules:
   - delete
   - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - route.openshift.io

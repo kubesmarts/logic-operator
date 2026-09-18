@@ -133,8 +133,20 @@ func (v *LogicPlatformValidator) validatePostgreSQLPersistence(persistence *Pers
 		return fmt.Errorf("spec.dataIndex.persistence.postgresql.secretRef.name is required")
 	}
 
-	// Validate service ref (if using service ref instead of JDBC URL)
-	if pg.ServiceRef != nil {
+	// Ensure exactly one of serviceRef or jdbcURL is provided
+	hasServiceRef := pg.ServiceRef != nil
+	hasJdbcURL := pg.JdbcURL != ""
+
+	if !hasServiceRef && !hasJdbcURL {
+		return fmt.Errorf("spec.dataIndex.persistence.postgresql must have either serviceRef or jdbcURL")
+	}
+
+	if hasServiceRef && hasJdbcURL {
+		return fmt.Errorf("spec.dataIndex.persistence.postgresql.serviceRef and jdbcURL are mutually exclusive")
+	}
+
+	// Validate service ref fields if provided
+	if hasServiceRef {
 		if pg.ServiceRef.Name == "" {
 			return fmt.Errorf("spec.dataIndex.persistence.postgresql.serviceRef.name is required")
 		}

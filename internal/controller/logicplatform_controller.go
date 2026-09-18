@@ -27,6 +27,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -47,6 +48,9 @@ type LogicPlatformReconciler struct {
 // +kubebuilder:rbac:groups=logic.kubesmarts.org,resources=logicplatforms/finalizers,verbs=update
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch;create;update;patch;delete
 
@@ -66,6 +70,13 @@ func (r *LogicPlatformReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// Create ServiceAccount and RoleBinding if persistence is configured
+	if rt.Spec.DataIndex.Persistence != nil {
+		if err := r.applyServiceAccount(ctx, &rt); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
 	if err := r.applyDeployment(ctx, &rt); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -73,11 +84,9 @@ func (r *LogicPlatformReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	// Apply Ingress/Route if enabled
-	if rt.Spec.DataIndex.Ingress != nil && rt.Spec.DataIndex.Ingress.Enabled {
-		if err := r.applyIngress(ctx, &rt); err != nil {
-			return ctrl.Result{}, err
-		}
+	// Apply or delete Ingress/Route based on enabled flag
+	if err := r.applyIngress(ctx, &rt); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	if err := r.updateStatus(ctx, &rt); err != nil {
@@ -118,11 +127,97 @@ func (r *LogicPlatformReconciler) applyService(ctx context.Context, plat *logicv
 	return r.Apply(ctx, svc, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
 }
 
+func (r *LogicPlatformReconciler) applyServiceAccount(ctx context.Context, plat *logicv1.LogicPlatform) error {
+	isController := true
+	ownerRef := metav1.OwnerReference{
+		APIVersion:         logicv1.GroupVersion.String(),
+		Kind:               logicv1.LogicPlatformKind,
+		Name:               plat.Name,
+		UID:                plat.UID,
+		Controller:         &isController,
+		BlockOwnerDeletion: &isController,
+	}
+
+	sa := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            plat.Name,
+			Namespace:       plat.Namespace,
+			OwnerReferences: []metav1.OwnerReference{ownerRef},
+		},
+	}
+	if err := r.Create(ctx, sa); err != nil && !apierrors.IsAlreadyExists(err) {
+		return err
+	}
+
+	rb := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            plat.Name + "-durable",
+			Namespace:       plat.Namespace,
+			OwnerReferences: []metav1.OwnerReference{ownerRef},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     ClusterRoleDurable,
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      plat.Name,
+				Namespace: plat.Namespace,
+			},
+		},
+	}
+	if err := r.Create(ctx, rb); err != nil && !apierrors.IsAlreadyExists(err) {
+		return err
+	}
+
+	return nil
+}
+
 func (r *LogicPlatformReconciler) applyIngress(ctx context.Context, plat *logicv1.LogicPlatform) error {
+	// If ingress is not enabled, delete any existing Ingress/Route resources
+	if plat.Spec.DataIndex.Ingress == nil || !plat.Spec.DataIndex.Ingress.Enabled {
+		return r.deleteIngress(ctx, plat)
+	}
+
+	// Apply Ingress/Route based on platform
 	if utils.IsOpenShift() {
 		return r.applyRoute(ctx, plat)
 	}
 	return r.applyKubernetesIngress(ctx, plat)
+}
+
+func (r *LogicPlatformReconciler) deleteIngress(ctx context.Context, plat *logicv1.LogicPlatform) error {
+	// Clear status references
+	plat.Status.IngressRef = nil
+	plat.Status.RouteRef = nil
+
+	// Delete Kubernetes Ingress if it exists
+	ingress := &networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      plat.Name,
+			Namespace: plat.Namespace,
+		},
+	}
+	if err := r.Delete(ctx, ingress); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+
+	// Delete OpenShift Route if it exists
+	if utils.IsOpenShift() {
+		route := &routev1.Route{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      plat.Name,
+				Namespace: plat.Namespace,
+			},
+		}
+		if err := r.Delete(ctx, route); err != nil && !apierrors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (r *LogicPlatformReconciler) applyKubernetesIngress(ctx context.Context, plat *logicv1.LogicPlatform) error {
