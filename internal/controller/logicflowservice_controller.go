@@ -381,26 +381,6 @@ func (r *LogicFlowServiceReconciler) resolveURL(ctx context.Context, svc *logicv
 	return url + "/", nil
 }
 
-func (r *LogicFlowServiceReconciler) resolveHost(ctx context.Context, svc *logicv1.LogicFlowService) (string, error) {
-	// Gateway API uses different resource (HTTPRoute)
-	if svc.Spec.Ingress.GatewayRef != nil {
-		var httpRoute gatewayv1.HTTPRoute
-		if err := r.Get(ctx, client.ObjectKeyFromObject(svc), &httpRoute); err != nil {
-			if apierrors.IsNotFound(err) {
-				return "", nil
-			}
-			return "", err
-		}
-		if len(httpRoute.Spec.Hostnames) > 0 {
-			return string(httpRoute.Spec.Hostnames[0]), nil
-		}
-		return "", nil
-	}
-
-	// For Route/Ingress, use common helper
-	return ResolveIngressHost(ctx, r.Client, client.ObjectKeyFromObject(svc))
-}
-
 // SetupWithManager sets up the controller with the Manager.
 func (r *LogicFlowServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	builder := ctrl.NewControllerManagedBy(mgr).

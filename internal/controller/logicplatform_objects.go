@@ -119,11 +119,8 @@ func routeForDataIndex(plat *logicv1.LogicPlatform) *routev1.Route {
 	// Apply TLS configuration
 	if ingress.TLS.Enabled {
 		termination := routev1.TLSTerminationEdge
-		if ingress.TLS.SecretRef.Name != "" {
-			// Use existing TLS secret
-			// TODO: Read secret and populate Certificate/Key/CACertificate
-			// For now, rely on OpenShift's default certificate
-		}
+		// TODO: If ingress.TLS.SecretRef.Name is set, read secret and populate
+		// Certificate/Key/CACertificate. For now, rely on OpenShift's default certificate.
 		route.Spec.TLS = &routev1.TLSConfig{
 			Termination:                   termination,
 			InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,

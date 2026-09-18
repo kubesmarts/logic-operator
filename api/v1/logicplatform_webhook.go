@@ -15,7 +15,7 @@ type LogicPlatformDefaulter struct{}
 
 var _ admission.Defaulter[*LogicPlatform] = &LogicPlatformDefaulter{}
 
-func (d *LogicPlatformDefaulter) Default(ctx context.Context, plat *LogicPlatform) error {
+func (d *LogicPlatformDefaulter) Default(_ context.Context, plat *LogicPlatform) error {
 
 	// Note: DataIndex.Enabled defaults to true via +kubebuilder:default=true annotation
 	// The API server applies this default, so we don't need to handle it in the webhook
@@ -55,7 +55,7 @@ func (v *LogicPlatformValidator) ValidateCreate(ctx context.Context, obj *LogicP
 	return nil, v.validate(ctx, obj)
 }
 
-func (v *LogicPlatformValidator) ValidateUpdate(ctx context.Context, oldObj, newObj *LogicPlatform) (admission.Warnings, error) {
+func (v *LogicPlatformValidator) ValidateUpdate(ctx context.Context, _ /* oldObj */, newObj *LogicPlatform) (admission.Warnings, error) {
 	return nil, v.validate(ctx, newObj)
 }
 
@@ -63,7 +63,7 @@ func (v *LogicPlatformValidator) ValidateDelete(_ context.Context, _ *LogicPlatf
 	return nil, nil
 }
 
-func (v *LogicPlatformValidator) validate(ctx context.Context, obj *LogicPlatform) error {
+func (v *LogicPlatformValidator) validate(_ context.Context, obj *LogicPlatform) error {
 	if !obj.Spec.DataIndex.Enabled {
 		// If Data Index is disabled, no validation needed
 		return nil
@@ -135,7 +135,7 @@ func (v *LogicPlatformValidator) validatePostgreSQLPersistence(persistence *Pers
 
 	// Validate service ref (if using service ref instead of JDBC URL)
 	if pg.ServiceRef != nil {
-		if pg.ServiceRef.SQLServiceOptions == nil || pg.ServiceRef.SQLServiceOptions.Name == "" {
+		if pg.ServiceRef.Name == "" {
 			return fmt.Errorf("spec.dataIndex.persistence.postgresql.serviceRef.name is required")
 		}
 		if pg.ServiceRef.DatabaseSchema == "" {

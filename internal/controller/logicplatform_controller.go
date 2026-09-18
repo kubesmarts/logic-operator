@@ -320,10 +320,10 @@ func (r *LogicPlatformReconciler) updateStatusPersistence(ctx context.Context, p
 	}
 
 	// Check if service exists (if using serviceRef)
-	if pg.ServiceRef != nil && pg.ServiceRef.SQLServiceOptions != nil {
+	if pg.ServiceRef != nil {
 		var svc corev1.Service
 		svcKey := client.ObjectKey{
-			Name:      pg.ServiceRef.SQLServiceOptions.Name,
+			Name:      pg.ServiceRef.Name,
 			Namespace: plat.Namespace,
 		}
 		err := r.Get(ctx, svcKey, &svc)
@@ -333,7 +333,7 @@ func (r *LogicPlatformReconciler) updateStatusPersistence(ctx context.Context, p
 			if status.Error != "" {
 				status.Error += "; "
 			}
-			status.Error += fmt.Sprintf("service %s not found", pg.ServiceRef.SQLServiceOptions.Name)
+			status.Error += fmt.Sprintf("service %s not found", pg.ServiceRef.Name)
 		} else if err != nil {
 			return err
 		} else {

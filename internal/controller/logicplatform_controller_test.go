@@ -698,7 +698,7 @@ var _ = Describe("LogicPlatform Controller", func() {
 
 			spec := platformSpec()
 			spec.DataIndex.Persistence.PostgreSQL.SecretRef.Name = "persist-valid-secret"
-			spec.DataIndex.Persistence.PostgreSQL.ServiceRef.SQLServiceOptions.Name = "persist-valid-postgres"
+			spec.DataIndex.Persistence.PostgreSQL.ServiceRef.Name = "persist-valid-postgres"
 			nn = createPlatform(ctx, name, spec)
 			plat := reconcilePlatformAndFetch(ctx, r, nn)
 
@@ -718,7 +718,7 @@ var _ = Describe("LogicPlatform Controller", func() {
 			name := "test-platform-persist-no-secret"
 			spec := platformSpec()
 			spec.DataIndex.Persistence.PostgreSQL.SecretRef.Name = "missing-secret"
-			spec.DataIndex.Persistence.PostgreSQL.ServiceRef.SQLServiceOptions.Name = "missing-postgres"
+			spec.DataIndex.Persistence.PostgreSQL.ServiceRef.Name = "missing-postgres"
 			nn = createPlatform(ctx, name, spec)
 			plat := reconcilePlatformAndFetch(ctx, r, nn)
 
@@ -756,7 +756,7 @@ var _ = Describe("LogicPlatform Controller", func() {
 
 			spec := platformSpec()
 			spec.DataIndex.Persistence.PostgreSQL.SecretRef.Name = "persist-no-svc-secret"
-			spec.DataIndex.Persistence.PostgreSQL.ServiceRef.SQLServiceOptions.Name = "persist-no-svc-postgres"
+			spec.DataIndex.Persistence.PostgreSQL.ServiceRef.Name = "persist-no-svc-postgres"
 			nn = createPlatform(ctx, name, spec)
 			plat := reconcilePlatformAndFetch(ctx, r, nn)
 

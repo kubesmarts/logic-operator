@@ -41,16 +41,16 @@ func withDataIndex(enabled bool, image string) func(*LogicPlatform) {
 	}
 }
 
-func withDataIndexPersistence(secretName, serviceName, schema string) func(*LogicPlatform) {
+func withDataIndexPersistence() func(*LogicPlatform) {
 	return func(plat *LogicPlatform) {
 		plat.Spec.DataIndex.Persistence = &PersistenceOptionsSpec{
 			PostgreSQL: &PersistencePostgreSQL{
-				SecretRef: PostgreSQLSecretOptions{Name: secretName},
+				SecretRef: PostgreSQLSecretOptions{Name: "postgres-secret"},
 				ServiceRef: &PostgreSQLServiceOptions{
 					SQLServiceOptions: &SQLServiceOptions{
-						Name: serviceName,
+						Name: "postgres",
 					},
-					DatabaseSchema: schema,
+					DatabaseSchema: "data-index",
 				},
 			},
 		}
@@ -176,7 +176,7 @@ func TestLogicPlatformValidator_ValidateCreate(t *testing.T) {
 			name: "valid platform with Data Index enabled and persistence configured",
 			platform: testPlatform(
 				withDataIndex(true, "custom/image:1.0"),
-				withDataIndexPersistence("postgres-secret", "postgres", "data-index"),
+				withDataIndexPersistence(),
 			),
 			wantErr: false,
 		},
@@ -192,7 +192,7 @@ func TestLogicPlatformValidator_ValidateCreate(t *testing.T) {
 			name: "rejects invalid image format",
 			platform: testPlatform(
 				withDataIndex(true, "not@a:valid/image"),
-				withDataIndexPersistence("postgres-secret", "postgres", "data-index"),
+				withDataIndexPersistence(),
 			),
 			wantErr: true,
 			errMsg:  "invalid image format: \"not@a:valid/image\"",
@@ -295,7 +295,7 @@ func TestLogicPlatformValidator_ValidateUpdate(t *testing.T) {
 			),
 			newPlat: testPlatform(
 				withDataIndex(true, "custom/image:1.0"),
-				withDataIndexPersistence("postgres-secret", "postgres", "data-index"),
+				withDataIndexPersistence(),
 			),
 			wantErr: false,
 		},
@@ -303,7 +303,7 @@ func TestLogicPlatformValidator_ValidateUpdate(t *testing.T) {
 			name: "allows disabling Data Index",
 			oldPlat: testPlatform(
 				withDataIndex(true, "custom/image:1.0"),
-				withDataIndexPersistence("postgres-secret", "postgres", "data-index"),
+				withDataIndexPersistence(),
 			),
 			newPlat: testPlatform(
 				withDataIndex(false, ""),
@@ -314,11 +314,11 @@ func TestLogicPlatformValidator_ValidateUpdate(t *testing.T) {
 			name: "allows changing image",
 			oldPlat: testPlatform(
 				withDataIndex(true, "custom/image:1.0"),
-				withDataIndexPersistence("postgres-secret", "postgres", "data-index"),
+				withDataIndexPersistence(),
 			),
 			newPlat: testPlatform(
 				withDataIndex(true, "quay.io/kubesmarts/data-index-service-postgresql:2.1.0"),
-				withDataIndexPersistence("postgres-secret", "postgres", "data-index"),
+				withDataIndexPersistence(),
 			),
 			wantErr: false,
 		},
