@@ -52,6 +52,20 @@ const (
 	ReasonIngressMisconfigured = "IngressMisconfigured"
 )
 
+// LogicPlatform conditions
+const (
+	ConditionDataIndexDeploymentAvailable = "DataIndexDeploymentAvailable"
+	ConditionDataIndexServiceReady        = "DataIndexServiceReady"
+	ConditionDataIndexPersistenceReady    = "DataIndexPersistenceReady"
+)
+
+// LogicPlatform reasons
+const (
+	ReasonDataIndexDeploymentNotFound = "DataIndexDeploymentNotFound"
+	ReasonDataIndexServiceNotFound    = "DataIndexServiceNotFound"
+	ReasonPersistenceConfigInvalid    = "PersistenceConfigInvalid"
+)
+
 // SetCondition sets a condition on a Conditions slice, handling insert/update
 // and LastTransitionTime (only updated when status actually changes).
 func SetCondition(conditions *[]metav1.Condition, conditionType string, status metav1.ConditionStatus, observedGeneration int64, reason, message string) {

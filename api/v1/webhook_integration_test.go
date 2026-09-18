@@ -90,6 +90,12 @@ func TestWebhookIntegration(t *testing.T) {
 		Complete(); err != nil {
 		t.Fatalf("register LFS webhook: %v", err)
 	}
+	if err := builder.WebhookManagedBy(mgr, &LogicPlatform{}).
+		WithDefaulter(&LogicPlatformDefaulter{}).
+		WithValidator(&LogicPlatformValidator{Reader: mgr.GetClient()}).
+		Complete(); err != nil {
+		t.Fatalf("register LogicPlatform webhook: %v", err)
+	}
 
 	go func() {
 		if err := mgr.Start(ctx); err != nil {

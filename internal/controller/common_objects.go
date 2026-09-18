@@ -43,6 +43,20 @@ func OwnerRef(owner metav1.Object, kind string) *metav1ac.OwnerReferenceApplyCon
 		WithController(true)
 }
 
+// OwnerRefStandard creates a standard OwnerReference (not apply configuration).
+// Use this for resources that don't have apply configurations (e.g., OpenShift Routes).
+func OwnerRefStandard(owner metav1.Object, kind string) metav1.OwnerReference {
+	isController := true
+	return metav1.OwnerReference{
+		APIVersion:         logicv1.GroupVersion.String(),
+		Kind:               kind,
+		Name:               owner.GetName(),
+		UID:                owner.GetUID(),
+		Controller:         &isController,
+		BlockOwnerDeletion: &isController,
+	}
+}
+
 func MergeMaps(maps ...map[string]string) map[string]string {
 	result := make(map[string]string)
 	for _, m := range maps {

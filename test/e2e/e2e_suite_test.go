@@ -74,6 +74,11 @@ var _ = BeforeSuite(func() {
 		fmt.Sprintf("quay.io/quarkiverse/quarkus-flow-runner:%s-standard", controller.QuarkusFlowVersion))
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load standard runner image into Kind")
 
+	By("loading data-index image on Kind for platform tests")
+	err = utils.PullAndLoadImageToKindClusterWithName(
+		fmt.Sprintf("quay.io/kubesmarts/data-index-service:%s-postgresql", controller.DataIndexVersion))
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load data-index image into Kind")
+
 	// The tests-e2e are intended to run on a temporary cluster that is created and destroyed for testing.
 	// To prevent errors when tests run in environments with CertManager already installed,
 	// we check for its presence before execution.

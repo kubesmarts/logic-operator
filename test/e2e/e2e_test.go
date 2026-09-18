@@ -269,6 +269,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 	logicFlowRuntimeLifecycleTests()
 	durableTests()
+	platformTests()
 	logicFlowServiceTests()
 	webhookValidationTests()
 })
