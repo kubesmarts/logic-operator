@@ -460,6 +460,17 @@ func (r *LogicFlowRuntimeReconciler) mapConfigMapToRuntime(_ context.Context, ob
 	}
 }
 
+func (r *LogicFlowRuntimeReconciler) mapPodToRuntime(_ context.Context, obj client.Object) []reconcile.Request {
+	// Pods have selector labels (app.kubernetes.io/name=runtime-name)
+	rtName := obj.GetLabels()[LabelKeyName]
+	if rtName == "" {
+		return nil
+	}
+	return []reconcile.Request{
+		{NamespacedName: types.NamespacedName{Name: rtName, Namespace: obj.GetNamespace()}},
+	}
+}
+
 func runtimeRefLabelPredicate() predicate.Predicate {
 	return predicate.NewPredicateFuncs(func(obj client.Object) bool {
 		_, ok := obj.GetLabels()[logicv1.LabelRuntimeRef]
@@ -475,6 +486,10 @@ func (r *LogicFlowRuntimeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&corev1.ConfigMap{},
 			handler.EnqueueRequestsFromMapFunc(r.mapConfigMapToRuntime),
 			builder.WithPredicates(runtimeRefLabelPredicate()),
+		).
+		Watches(&corev1.Pod{},
+			handler.EnqueueRequestsFromMapFunc(r.mapPodToRuntime),
+			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
 		).
 		Named("logicflowruntime").
 		Complete(r)
