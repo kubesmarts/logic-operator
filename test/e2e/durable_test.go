@@ -338,16 +338,18 @@ func durableTests() {
 			_, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
 
-			verifyOneReady := func(g Gomega) {
+			By("waiting for deployment to scale down completely")
+			verifyOneReplica := func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "deployment",
 					durableRuntimeName, "-n", namespace,
-					"-o", "jsonpath={.status.availableReplicas}")
+					"-o", "jsonpath={.status.replicas}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(out).To(Equal("1"))
+				g.Expect(out).To(Equal("1"), "expected total replicas to be 1 (all excess pods terminated)")
 			}
-			Eventually(verifyOneReady, 2*time.Minute, 5*time.Second).Should(Succeed())
+			Eventually(verifyOneReplica, 2*time.Minute, 5*time.Second).Should(Succeed())
 
+			By("verifying excess leases are cleaned up")
 			verifyOneLease := func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "leases",
 					"-n", namespace,
