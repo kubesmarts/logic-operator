@@ -227,15 +227,6 @@ var _ = Describe("LogicPlatform Controller", func() {
 			Expect(svc.Labels).To(HaveKeyWithValue(testLabelKeyName, name))
 			Expect(svc.Labels).To(HaveKeyWithValue(testLabelKeyManagedBy, LabelManagedBy))
 		})
-
-		It("should include ServiceAccount when persistence is configured", func() {
-			reconcilePlatformAndFetch(ctx, r, nn)
-
-			var dep appsv1.Deployment
-			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
-
-			Expect(dep.Spec.Template.Spec.ServiceAccountName).To(Equal(name))
-		})
 	})
 
 	Context("Data Index status updates", func() {

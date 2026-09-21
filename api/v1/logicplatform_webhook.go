@@ -69,11 +69,6 @@ func (v *LogicPlatformValidator) validate(_ context.Context, obj *LogicPlatform)
 		return nil
 	}
 
-	// Validate persistence is configured when Data Index is enabled
-	if obj.Spec.DataIndex.Persistence == nil {
-		return fmt.Errorf("spec.dataIndex.persistence is required when Data Index is enabled")
-	}
-
 	// Validate PostgreSQL persistence configuration
 	if err := v.validatePostgreSQLPersistence(obj.Spec.DataIndex.Persistence); err != nil {
 		return err
@@ -122,8 +117,8 @@ func (v *LogicPlatformValidator) validateIngress(ingress *DataIndexIngressSpec) 
 }
 
 func (v *LogicPlatformValidator) validatePostgreSQLPersistence(persistence *PersistenceOptionsSpec) error {
-	if persistence.PostgreSQL == nil {
-		return nil
+	if persistence == nil || persistence.PostgreSQL == nil {
+		return fmt.Errorf("spec.dataIndex.persistence is required when Data Index is enabled")
 	}
 
 	pg := persistence.PostgreSQL

@@ -27,7 +27,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -49,8 +48,6 @@ type LogicPlatformReconciler struct {
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch;create;update;patch;delete
 
@@ -63,33 +60,31 @@ type LogicPlatformReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
 func (r *LogicPlatformReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
-	var rt logicv1.LogicPlatform
-	if err := r.Get(ctx, req.NamespacedName, &rt); err != nil {
+	var plat logicv1.LogicPlatform
+	if err := r.Get(ctx, req.NamespacedName, &plat); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Create ServiceAccount and RoleBinding if persistence is configured
-	if rt.Spec.DataIndex.Persistence != nil {
-		if err := r.applyServiceAccount(ctx, &rt); err != nil {
-			return ctrl.Result{}, err
-		}
+	if !plat.Spec.DataIndex.Enabled {
+		log.Info("DataIndex is disabled, skipping reconciliation")
+		return ctrl.Result{}, nil
 	}
 
-	if err := r.applyDeployment(ctx, &rt); err != nil {
+	if err := r.applyDeployment(ctx, &plat); err != nil {
 		return ctrl.Result{}, err
 	}
-	if err := r.applyService(ctx, &rt); err != nil {
+	if err := r.applyService(ctx, &plat); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	// Apply or delete Ingress/Route based on enabled flag
-	if err := r.applyIngress(ctx, &rt); err != nil {
+	if err := r.applyIngress(ctx, &plat); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	if err := r.updateStatus(ctx, &rt); err != nil {
+	if err := r.updateStatus(ctx, &plat); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -111,9 +106,6 @@ func (r *LogicPlatformReconciler) applyDeployment(ctx context.Context, plat *log
 		SelectorLabels(plat.Name),
 		opts...,
 	)
-	if plat.Spec.DataIndex.Persistence != nil {
-		spec.Template.Spec.WithServiceAccountName(plat.Name)
-	}
 	deployment := appsv1ac.Deployment(plat.Name, plat.Namespace).
 		WithLabels(childLabels).
 		WithOwnerReferences(OwnerRef(plat, logicv1.LogicPlatformKind)).
@@ -125,54 +117,6 @@ func (r *LogicPlatformReconciler) applyDeployment(ctx context.Context, plat *log
 func (r *LogicPlatformReconciler) applyService(ctx context.Context, plat *logicv1.LogicPlatform) error {
 	svc := QuarkusService(plat, logicv1.LogicPlatformKind)
 	return r.Apply(ctx, svc, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
-}
-
-func (r *LogicPlatformReconciler) applyServiceAccount(ctx context.Context, plat *logicv1.LogicPlatform) error {
-	isController := true
-	ownerRef := metav1.OwnerReference{
-		APIVersion:         logicv1.GroupVersion.String(),
-		Kind:               logicv1.LogicPlatformKind,
-		Name:               plat.Name,
-		UID:                plat.UID,
-		Controller:         &isController,
-		BlockOwnerDeletion: &isController,
-	}
-
-	sa := &corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            plat.Name,
-			Namespace:       plat.Namespace,
-			OwnerReferences: []metav1.OwnerReference{ownerRef},
-		},
-	}
-	if err := r.Create(ctx, sa); err != nil && !apierrors.IsAlreadyExists(err) {
-		return err
-	}
-
-	rb := &rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            plat.Name + "-durable",
-			Namespace:       plat.Namespace,
-			OwnerReferences: []metav1.OwnerReference{ownerRef},
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "ClusterRole",
-			Name:     ClusterRoleDurable,
-		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      plat.Name,
-				Namespace: plat.Namespace,
-			},
-		},
-	}
-	if err := r.Create(ctx, rb); err != nil && !apierrors.IsAlreadyExists(err) {
-		return err
-	}
-
-	return nil
 }
 
 func (r *LogicPlatformReconciler) applyIngress(ctx context.Context, plat *logicv1.LogicPlatform) error {
