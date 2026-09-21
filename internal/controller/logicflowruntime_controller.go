@@ -157,9 +157,18 @@ func (r *LogicFlowRuntimeReconciler) reconcileLeases(ctx context.Context, rt *lo
 
 	desired := effectiveReplicas(&rt.Spec.ApplicationSpec)
 
+	// Get deployment for owner references (only needed when creating new leases)
 	var dep appsv1.Deployment
+	var deploymentFound bool
 	if err := r.Get(ctx, client.ObjectKeyFromObject(rt), &dep); err != nil {
-		return err
+		if !apierrors.IsNotFound(err) {
+			return err
+		}
+		// Deployment not found - we can still clean up excess leases
+		log.V(1).Info("Deployment not found, skipping new lease creation but proceeding with cleanup")
+		deploymentFound = false
+	} else {
+		deploymentFound = true
 	}
 
 	var leaseList coordinationv1.LeaseList
@@ -180,11 +189,15 @@ func (r *LogicFlowRuntimeReconciler) reconcileLeases(ctx context.Context, rt *lo
 		existing[leaseList.Items[i].Name] = struct{}{}
 	}
 
-	desiredNames := make(map[string]struct{}, desired)
+	// Always create leases 0 to desired-1 (index-based)
 	for i := int32(0); i < desired; i++ {
 		name := fmt.Sprintf(LeaseMemberNameFmt, rt.Name, i)
-		desiredNames[name] = struct{}{}
 		if _, ok := existing[name]; ok {
+			continue
+		}
+		// Only create new leases if Deployment exists (needed for owner references)
+		if !deploymentFound {
+			log.V(1).Info("skipping new lease creation, deployment not found", "lease", name)
 			continue
 		}
 		lease := newMemberLease(name, rt.Namespace, rt.Name, &dep)
@@ -195,17 +208,36 @@ func (r *LogicFlowRuntimeReconciler) reconcileLeases(ctx context.Context, rt *lo
 		}
 	}
 
+	// Delete excess leases (only unheld ones)
+	prefix := fmt.Sprintf("flow-pool-member-%s-", rt.Name)
 	for i := range leaseList.Items {
-		if _, ok := desiredNames[leaseList.Items[i].Name]; !ok {
-			if leaseHeldByRunningPod(&leaseList.Items[i], runningPods) {
-				log.V(1).Info("skipping deletion of lease held by running pod",
-					"lease", leaseList.Items[i].Name,
-					"holder", *leaseList.Items[i].Spec.HolderIdentity)
-				continue
-			}
-			if err := r.Delete(ctx, &leaseList.Items[i]); err != nil && !apierrors.IsNotFound(err) {
-				return err
-			}
+		// Parse index from lease name (e.g., "flow-pool-member-runtime-00" -> 0)
+		var idx int32
+		_, err := fmt.Sscanf(leaseList.Items[i].Name, prefix+"%02d", &idx)
+		if err != nil {
+			log.V(1).Info("failed to parse lease index, skipping",
+				"lease", leaseList.Items[i].Name,
+				"error", err)
+			continue
+		}
+
+		// Keep leases in desired range (0 to desired-1)
+		if idx < desired {
+			continue
+		}
+
+		// Excess lease (index >= desired)
+		isHeld := leaseHeldByRunningPod(&leaseList.Items[i], runningPods)
+		if isHeld {
+			log.V(1).Info("skipping deletion of excess lease held by running pod",
+				"lease", leaseList.Items[i].Name,
+				"holder", *leaseList.Items[i].Spec.HolderIdentity)
+			continue
+		}
+
+		// Delete unheld excess lease
+		if err := r.Delete(ctx, &leaseList.Items[i]); err != nil && !apierrors.IsNotFound(err) {
+			return err
 		}
 	}
 
