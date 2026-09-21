@@ -275,7 +275,7 @@ var _ = Describe("LogicPlatform Controller", func() {
 		It("should set GraphQL and Metrics endpoints", func() {
 			plat := reconcilePlatformAndFetch(ctx, r, nn)
 
-			expectedBaseURL := fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", name, testNamespace, QuarkusPort)
+			expectedBaseURL := fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", name, testNamespace, defaultPort)
 			expectedGraphQLEndpoint := fmt.Sprintf("%s/graphql", expectedBaseURL)
 			expectedMetricsEndpoint := fmt.Sprintf("%s/q/metrics", expectedBaseURL)
 

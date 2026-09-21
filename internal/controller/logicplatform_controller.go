@@ -284,7 +284,7 @@ func (r *LogicPlatformReconciler) updateStatusService(ctx context.Context, plat 
 
 func (r *LogicPlatformReconciler) internalServiceURL(plat *logicv1.LogicPlatform) string {
 	return fmt.Sprintf("http://%s.%s.svc.cluster.local:%d",
-		plat.Name, plat.Namespace, QuarkusPort)
+		plat.Name, plat.Namespace, defaultPort)
 }
 
 func (r *LogicPlatformReconciler) resolveExternalURL(ctx context.Context, plat *logicv1.LogicPlatform) (string, error) {

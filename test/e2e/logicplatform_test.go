@@ -162,7 +162,7 @@ func platformTests() {
 				"-o", "jsonpath={.spec.ports[0].port}")
 			out, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(out).To(Equal("8080"))
+			Expect(out).To(Equal("80"))
 		})
 
 		It("should have DataIndex pod ready", func() {
