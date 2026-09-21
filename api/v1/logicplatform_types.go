@@ -395,7 +395,7 @@ type DataIndexIngressSpec struct {
 	Host string `json:"host,omitempty"`
 
 	// IngressClassName selects the Ingress controller (Kubernetes only).
-	// Defaults to "nginx" if not specified.
+	// If not specified, uses the cluster's default IngressClass.
 	// +optional
 	IngressClassName *string `json:"ingressClassName,omitempty"`
 

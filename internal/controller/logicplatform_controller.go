@@ -68,7 +68,7 @@ func (r *LogicPlatformReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	if !plat.Spec.DataIndex.Enabled {
-		log.Info("DataIndex is disabled, skipping reconciliation")
+		log.V(1).Info("DataIndex is disabled, skipping reconciliation")
 		return ctrl.Result{}, nil
 	}
 
@@ -361,9 +361,13 @@ func (r *LogicPlatformReconciler) updateStatusPersistence(ctx context.Context, p
 	// Check if service exists (if using serviceRef)
 	if pg.ServiceRef != nil {
 		var svc corev1.Service
+		svcNamespace := pg.ServiceRef.Namespace
+		if svcNamespace == "" {
+			svcNamespace = plat.Namespace
+		}
 		svcKey := client.ObjectKey{
 			Name:      pg.ServiceRef.Name,
-			Namespace: plat.Namespace,
+			Namespace: svcNamespace,
 		}
 		err := r.Get(ctx, svcKey, &svc)
 		if apierrors.IsNotFound(err) {

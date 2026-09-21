@@ -9604,7 +9604,7 @@ spec:
                       ingressClassName:
                         description: |-
                           IngressClassName selects the Ingress controller (Kubernetes only).
-                          Defaults to "nginx" if not specified.
+                          If not specified, uses the cluster's default IngressClass.
                         type: string
                       tls:
                         description: TLS configures HTTPS/TLS termination.
