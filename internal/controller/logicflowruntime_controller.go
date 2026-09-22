@@ -124,7 +124,7 @@ func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *lo
 		WithFlowVolumeMounts(configMaps),
 	}
 	if rt.Spec.Persistence != nil {
-		opts = append(opts, WithDurableEnvVars(rt))
+		opts = append(opts, WithDurableEnvVars(rt), DurableStartupProbe())
 	}
 	spec := ToDeploymentSpec(
 		ContainerNameRunner,
