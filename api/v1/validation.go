@@ -2,7 +2,11 @@ package v1
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const (
@@ -10,6 +14,11 @@ const (
 	FlowRunnerImage      = "quarkus-flow-runner"
 	ImageVariantMinimal  = "minimal"
 	ImageVariantStandard = "standard"
+
+	DataIndexRegistry = "quay.io/kubesmarts"
+	DataIndexImage    = "data-index-service"
+	DataIndexVersion  = "2.0.0-SNAPSHOT"
+	DataIndexVariant  = "postgresql"
 )
 
 func isKnownRunnerImage(image string) bool {
@@ -53,4 +62,37 @@ func ValidateSecuritySpec(sec RuntimeSecuritySpec) error {
 		}
 	}
 	return nil
+}
+
+// DefaultDataIndexImage returns the default Data Index service image
+func DefaultDataIndexImage() string {
+	return fmt.Sprintf("%s/%s:%s-%s", DataIndexRegistry, DataIndexImage, DataIndexVersion, DataIndexVariant)
+}
+
+var imageFormatRegex = regexp.MustCompile(`^[a-z0-9.-]+(/[a-z0-9._-]+)*:[a-zA-Z0-9._-]+$`)
+
+// ValidateImageFormat validates that an image string follows the expected format
+func ValidateImageFormat(image string) error {
+	if !imageFormatRegex.MatchString(image) {
+		return fmt.Errorf("invalid image format: %q", image)
+	}
+	return nil
+}
+
+// DefaultDataIndexResources returns default resource requirements for Data Index based on helm values.
+// Resources align with logic-apps/data-index/helm/data-index/values.yaml:
+//
+//	requests: cpu: 250m, memory: 512Mi
+//	limits: cpu: 1000m, memory: 1Gi
+func DefaultDataIndexResources() corev1.ResourceRequirements {
+	return corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("250m"),
+			corev1.ResourceMemory: resource.MustParse("512Mi"),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("1000m"),
+			corev1.ResourceMemory: resource.MustParse("1Gi"),
+		},
+	}
 }

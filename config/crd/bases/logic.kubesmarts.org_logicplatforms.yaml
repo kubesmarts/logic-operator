@@ -9565,11 +9565,215 @@ spec:
 
                       Defaults to true.
                     type: boolean
-                  fluentBit:
+                  ingress:
                     description: |-
-                      FluentBit configures the Fluent Bit DaemonSet for log forwarding.
+                      Ingress configures external access to the Data Index GraphQL API.
 
-                      When configured, the operator will deploy a Fluent Bit DaemonSet in the namespace
+                      When enabled, the operator creates an Ingress (Kubernetes) or Route (OpenShift)
+                      to expose the Data Index service externally. This allows users to query workflow
+                      instances from outside the cluster.
+
+                      Example:
+                        ingress:
+                          enabled: true
+                          host: data-index.example.com
+                          tls:
+                            enabled: true
+                            certManager:
+                              issuerRef:
+                                name: letsencrypt-prod
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          Annotations for the Ingress/Route resource.
+                          Can be used for additional configuration like rate limiting, CORS, etc.
+                        type: object
+                      enabled:
+                        description: |-
+                          Enabled determines whether to create Ingress/Route for external access.
+                          When true, host must be specified.
+                        type: boolean
+                      host:
+                        description: |-
+                          Host is the external hostname for accessing Data Index.
+                          Required when Enabled is true.
+                          Example: data-index.example.com
+                        type: string
+                      ingressClassName:
+                        description: |-
+                          IngressClassName selects the Ingress controller (Kubernetes only).
+                          If not specified, uses the cluster's default IngressClass.
+                        type: string
+                      tls:
+                        description: TLS configures HTTPS/TLS termination.
+                        properties:
+                          certManager:
+                            description: |-
+                              CertManager configures automatic certificate generation.
+                              Mutually exclusive with SecretRef.
+                            properties:
+                              issuerRef:
+                                description: IssuerRef references a cert-manager Issuer
+                                  or ClusterIssuer.
+                                properties:
+                                  group:
+                                    default: cert-manager.io
+                                    description: Group is the API group of the Issuer.
+                                    type: string
+                                  kind:
+                                    default: ClusterIssuer
+                                    description: Kind is either "Issuer" or "ClusterIssuer".
+                                    enum:
+                                    - Issuer
+                                    - ClusterIssuer
+                                    type: string
+                                  name:
+                                    description: Name of the Issuer/ClusterIssuer.
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                            required:
+                            - issuerRef
+                            type: object
+                          enabled:
+                            default: false
+                            description: Enabled determines whether to use HTTPS.
+                            type: boolean
+                          secretRef:
+                            description: |-
+                              SecretRef references an existing TLS Secret.
+                              Mutually exclusive with CertManager.
+                            properties:
+                              name:
+                                default: ""
+                                description: |-
+                                  Name of the referent.
+                                  This field is effectively required, but due to backwards compatibility is
+                                  allowed to be empty. Instances of this type with an empty value here are
+                                  almost certainly wrong.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                type: string
+                            type: object
+                            x-kubernetes-map-type: atomic
+                        type: object
+                    type: object
+                  persistence:
+                    description: |-
+                      Persistence configures database connectivity for the Data Index service.
+
+                      Data Index requires PostgreSQL to store workflow instance data, process
+                      definitions, and execution history. The database schema should be isolated
+                      from other services (use a different databaseSchema than runtimes).
+
+                      Example:
+                        persistence:
+                          postgresql:
+                            secretRef:
+                              name: postgres-credentials
+                            serviceRef:
+                              name: postgres
+                              databaseSchema: data-index
+                    maxProperties: 2
+                    properties:
+                      dbMigrationStrategy:
+                        default: service
+                        description: |-
+                          DB Migration approach for the target application. Use the following values as described.
+                          job: use job based approach provided by the Logic operator.
+                          service: service itself shall migrate the db and will not use Logic operator.
+                          none: no database migration functionality needed.
+                        type: string
+                      postgresql:
+                        description: Connect configured services to a postgresql database.
+                        maxProperties: 2
+                        minProperties: 2
+                        properties:
+                          jdbcUrl:
+                            description: |-
+                              PostgreSql JDBC URL. Mutually exclusive to serviceRef.
+                              e.g. "jdbc:postgresql://host:port/database?currentSchema=workflows"
+                            type: string
+                          secretRef:
+                            description: Secret reference to the database user credentials
+                            properties:
+                              name:
+                                description: Name of the postgresql credentials secret.
+                                type: string
+                              passwordKey:
+                                description: Defaults to POSTGRESQL_PASSWORD
+                                type: string
+                              userKey:
+                                description: Defaults to POSTGRESQL_USER
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          serviceRef:
+                            description: Application reference to postgresql datasource.
+                              Mutually exclusive to jdbcUrl.
+                            properties:
+                              databaseName:
+                                description: Name of postgresql database to be used.
+                                  Defaults to "logicflow"
+                                type: string
+                              databaseSchema:
+                                description: Schema of postgresql database to be used.
+                                  When empty, the database default schema is used
+                                  (typically "public").
+                                type: string
+                              name:
+                                description: Name of the postgresql k8s service.
+                                type: string
+                              namespace:
+                                description: Namespace of the postgresql k8s service.
+                                  Defaults to the LogicPlatform's local namespace.
+                                type: string
+                              port:
+                                description: Port to use when connecting to the postgresql
+                                  k8s service. Defaults to 5432.
+                                type: integer
+                            required:
+                            - name
+                            type: object
+                          tls:
+                            description: |-
+                              TLS configuration for PostgreSQL connections.
+                              When enabled, the operator will append SSL parameters to the JDBC URL.
+                            properties:
+                              enabled:
+                                default: false
+                                description: |-
+                                  Enabled determines whether to use TLS/SSL for PostgreSQL connections.
+                                  If true, SSL parameters will be added to the JDBC URL based on tlsMode.
+                                  Defaults to false.
+                                type: boolean
+                              tlsMode:
+                                default: prefer
+                                description: |-
+                                  TLSMode specifies the SSL connection mode for PostgreSQL.
+                                  Defaults to "prefer" when enabled is true.
+                                  See: https://www.postgresql.org/docs/current/libpq-ssl.html
+                                enum:
+                                - disable
+                                - allow
+                                - prefer
+                                - require
+                                - verify-ca
+                                - verify-full
+                                type: string
+                            type: object
+                        required:
+                        - secretRef
+                        type: object
+                    type: object
+                  vector:
+                    description: |-
+                      Vector configures the Vector DaemonSet for log forwarding.
+
+                      When configured, the operator will deploy a Vector DaemonSet in the namespace
                       to collect and forward logs from all pods (Data Index and workflow runtimes) to
                       external log aggregation systems.
 
@@ -9577,8 +9781,8 @@ spec:
                       event inflow for the platform).
 
                       Example:
-                        fluentBit:
-                          image: fluent/fluent-bit:2.0
+                        vector:
+                          image: vector/vector:2.0
                           resources:
                             requests:
                               memory: 128Mi
@@ -9586,8 +9790,8 @@ spec:
                     properties:
                       container:
                         description: |-
-                          Container configures the Fluent Bit DaemonSet container.
-                          Use this for full control over the Fluent Bit configuration.
+                          Container configures the Vector DaemonSet container.
+                          Use this for full control over the Vector configuration.
                         properties:
                           args:
                             description: |-
@@ -10928,10 +11132,8 @@ spec:
                         type: object
                       image:
                         description: |-
-                          Image specifies the Fluent Bit container image.
+                          Image specifies the Vector container image.
                           This is a convenience field - if container.image is set, it takes precedence.
-
-                          Example: fluent/fluent-bit:2.0.8
                         type: string
                       imagePullPolicy:
                         description: PullPolicy describes a policy for if/when to
@@ -10939,7 +11141,7 @@ spec:
                         type: string
                       resources:
                         description: |-
-                          Resources specifies compute resource requirements for the Fluent Bit DaemonSet pods.
+                          Resources specifies compute resource requirements for the Vector DaemonSet pods.
                           This is a convenience field - if container.resources is set, it takes precedence.
                         properties:
                           claims:
@@ -10997,115 +11199,6 @@ spec:
                               otherwise to an implementation-defined value. Requests cannot exceed Limits.
                               More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
                             type: object
-                        type: object
-                    type: object
-                  persistence:
-                    description: |-
-                      Persistence configures database connectivity for the Data Index service.
-
-                      Data Index requires PostgreSQL to store workflow instance data, process
-                      definitions, and execution history. The database schema should be isolated
-                      from other services (use a different databaseSchema than runtimes).
-
-                      Example:
-                        persistence:
-                          postgresql:
-                            secretRef:
-                              name: postgres-credentials
-                            serviceRef:
-                              name: postgres
-                              databaseSchema: data-index
-                    maxProperties: 2
-                    properties:
-                      dbMigrationStrategy:
-                        default: service
-                        description: |-
-                          DB Migration approach for the target application. Use the following values as described.
-                          job: use job based approach provided by the Logic operator.
-                          service: service itself shall migrate the db and will not use Logic operator.
-                          none: no database migration functionality needed.
-                        type: string
-                      postgresql:
-                        description: Connect configured services to a postgresql database.
-                        maxProperties: 2
-                        minProperties: 2
-                        properties:
-                          jdbcUrl:
-                            description: |-
-                              PostgreSql JDBC URL. Mutually exclusive to serviceRef.
-                              e.g. "jdbc:postgresql://host:port/database?currentSchema=workflows"
-                            type: string
-                          secretRef:
-                            description: Secret reference to the database user credentials
-                            properties:
-                              name:
-                                description: Name of the postgresql credentials secret.
-                                type: string
-                              passwordKey:
-                                description: Defaults to POSTGRESQL_PASSWORD
-                                type: string
-                              userKey:
-                                description: Defaults to POSTGRESQL_USER
-                                type: string
-                            required:
-                            - name
-                            type: object
-                          serviceRef:
-                            description: Application reference to postgresql datasource.
-                              Mutually exclusive to jdbcUrl.
-                            properties:
-                              databaseName:
-                                description: Name of postgresql database to be used.
-                                  Defaults to "logicflow"
-                                type: string
-                              databaseSchema:
-                                description: Schema of postgresql database to be used.
-                                  When empty, the database default schema is used
-                                  (typically "public").
-                                type: string
-                              name:
-                                description: Name of the postgresql k8s service.
-                                type: string
-                              namespace:
-                                description: Namespace of the postgresql k8s service.
-                                  Defaults to the LogicPlatform's local namespace.
-                                type: string
-                              port:
-                                description: Port to use when connecting to the postgresql
-                                  k8s service. Defaults to 5432.
-                                type: integer
-                            required:
-                            - name
-                            type: object
-                          tls:
-                            description: |-
-                              TLS configuration for PostgreSQL connections.
-                              When enabled, the operator will append SSL parameters to the JDBC URL.
-                            properties:
-                              enabled:
-                                default: false
-                                description: |-
-                                  Enabled determines whether to use TLS/SSL for PostgreSQL connections.
-                                  If true, SSL parameters will be added to the JDBC URL based on tlsMode.
-                                  Defaults to false.
-                                type: boolean
-                              tlsMode:
-                                default: prefer
-                                description: |-
-                                  TLSMode specifies the SSL connection mode for PostgreSQL.
-                                  Defaults to "prefer" when enabled is true.
-                                  See: https://www.postgresql.org/docs/current/libpq-ssl.html
-                                enum:
-                                - disable
-                                - allow
-                                - prefer
-                                - require
-                                - verify-ca
-                                - verify-full
-                                type: string
-                            type: object
-                        required:
-                        - secretRef
                         type: object
                     type: object
                 type: object
@@ -20708,70 +20801,35 @@ spec:
                 description: |-
                   DataIndex contains status for the Data Index service.
                   This includes the service deployment status, database connectivity,
-                  and Fluent Bit DaemonSet status (if configured).
+                  and Vector DaemonSet status (if configured).
                 properties:
-                  fluentBit:
-                    description: |-
-                      FluentBit contains status for the Fluent Bit DaemonSet (if enabled).
-                      This field is only populated when spec.dataIndex.fluentBit is configured.
-                    properties:
-                      daemonSetRef:
-                        description: DaemonSetRef references the Fluent Bit DaemonSet
-                          resource.
-                        properties:
-                          name:
-                            default: ""
-                            description: |-
-                              Name of the referent.
-                              This field is effectively required, but due to backwards compatibility is
-                              allowed to be empty. Instances of this type with an empty value here are
-                              almost certainly wrong.
-                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                            type: string
-                        type: object
-                        x-kubernetes-map-type: atomic
-                      metricsEndpoint:
-                        description: |-
-                          MetricsEndpoint is the internal cluster URL for Prometheus metrics.
-                          This points to the Fluent Bit Application endpoint.
-
-                          Example: http://fluent-bit.default.svc.cluster.local:2020/api/v1/metrics/prometheus
-                        type: string
-                      ready:
-                        description: |-
-                          Ready indicates whether the Fluent Bit DaemonSet is ready.
-                          This is true when the DaemonSet is successfully deployed and operational.
-                        type: boolean
-                    required:
-                    - ready
-                    type: object
                   persistence:
-                    description: Persistence contains status for the Data Index database
-                      connection.
+                    description: |-
+                      Persistence contains status for the Data Index persistence configuration validation.
+                      This validates that secrets and service refs exist, not runtime database connectivity.
                     properties:
-                      connected:
-                        description: |-
-                          Connected indicates whether the database connection is established.
-                          The operator tests connectivity during reconciliation.
-                        type: boolean
                       error:
                         description: |-
-                          Error contains any database connection or schema error message.
-                          This field is populated when Connected=false or SchemaReady=false.
+                          Error contains any configuration validation error message.
+                          This field is populated when Valid=false.
                         type: string
-                      schemaReady:
-                        description: |-
-                          SchemaReady indicates whether the database schema is initialized and up-to-date.
-                          This is true after successful schema migrations.
+                      secretExists:
+                        description: SecretExists indicates whether the referenced
+                          secret exists.
                         type: boolean
-                      schemaVersion:
+                      serviceExists:
                         description: |-
-                          SchemaVersion is the current schema version in the database.
-                          This corresponds to the migration version number.
-                        type: string
+                          ServiceExists indicates whether the referenced service exists (if using serviceRef).
+                          Only populated when using serviceRef instead of JDBC URL.
+                        type: boolean
+                      valid:
+                        description: |-
+                          Valid indicates whether the persistence configuration is valid.
+                          This checks that referenced secrets and service refs exist in the cluster.
+                        type: boolean
                     required:
-                    - connected
-                    - schemaReady
+                    - secretExists
+                    - valid
                     type: object
                   service:
                     description: Service contains status for the Data Index service
@@ -20856,10 +20914,68 @@ spec:
                             type: string
                         type: object
                         x-kubernetes-map-type: atomic
+                      url:
+                        description: |-
+                          URL is the external URL to access Data Index (via Ingress/Route).
+                          Populated when spec.dataIndex.ingress is enabled.
+
+                          Example: https://data-index.example.com
+                        type: string
+                    required:
+                    - ready
+                    type: object
+                  vector:
+                    description: |-
+                      Vector contains status for the Vector DaemonSet (if enabled).
+                      This field is only populated when spec.dataIndex.vector is configured.
+                    properties:
+                      daemonSetRef:
+                        description: DaemonSetRef references the Vector DaemonSet
+                          resource.
+                        properties:
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      metricsEndpoint:
+                        description: |-
+                          MetricsEndpoint is the internal cluster URL for Prometheus metrics.
+                          This points to the Vector Application endpoint.
+
+                          Example: http://vector.default.svc.cluster.local:2020/api/v1/metrics/prometheus
+                        type: string
+                      ready:
+                        description: |-
+                          Ready indicates whether the Vector DaemonSet is ready.
+                          This is true when the DaemonSet is successfully deployed and operational.
+                        type: boolean
                     required:
                     - ready
                     type: object
                 type: object
+              ingressRef:
+                description: |-
+                  IngressRef references the Ingress resource (Kubernetes).
+                  Populated when spec.dataIndex.ingress is enabled on Kubernetes.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               observedGeneration:
                 description: |-
                   ObservedGeneration is the generation of the spec that was last reconciled.
@@ -20869,6 +20985,22 @@ spec:
                 type: integer
               phase:
                 type: string
+              routeRef:
+                description: |-
+                  RouteRef references the Route resource (OpenShift).
+                  Populated when spec.dataIndex.ingress is enabled on OpenShift.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
             type: object
         type: object
     served: true

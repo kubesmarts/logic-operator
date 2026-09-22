@@ -352,24 +352,13 @@ func (r *LogicFlowServiceReconciler) updateStatus(ctx context.Context, svc *logi
 }
 
 func (r *LogicFlowServiceReconciler) resolveURL(ctx context.Context, svc *logicv1.LogicFlowService) (string, error) {
-	scheme := "http"
-	if svc.Spec.Ingress.TLS.Enabled {
-		scheme = "https"
-	}
-
-	host, err := r.resolveHost(ctx, svc)
-	if err != nil {
-		return "", err
-	}
-	if host == "" {
-		return "", nil
-	}
-
-	return fmt.Sprintf("%s://%s/", scheme, host), nil
-}
-
-func (r *LogicFlowServiceReconciler) resolveHost(ctx context.Context, svc *logicv1.LogicFlowService) (string, error) {
+	// Gateway API uses different resource (HTTPRoute), so handle separately
 	if svc.Spec.Ingress.GatewayRef != nil {
+		scheme := "http"
+		if svc.Spec.Ingress.TLS.Enabled {
+			scheme = "https"
+		}
+
 		var httpRoute gatewayv1.HTTPRoute
 		if err := r.Get(ctx, client.ObjectKeyFromObject(svc), &httpRoute); err != nil {
 			if apierrors.IsNotFound(err) {
@@ -378,46 +367,18 @@ func (r *LogicFlowServiceReconciler) resolveHost(ctx context.Context, svc *logic
 			return "", err
 		}
 		if len(httpRoute.Spec.Hostnames) > 0 {
-			return string(httpRoute.Spec.Hostnames[0]), nil
+			return fmt.Sprintf("%s://%s/", scheme, string(httpRoute.Spec.Hostnames[0])), nil
 		}
 		return "", nil
 	}
 
-	if utils.IsOpenShift() {
-		var route routev1.Route
-		if err := r.Get(ctx, client.ObjectKeyFromObject(svc), &route); err != nil {
-			if apierrors.IsNotFound(err) {
-				return "", nil
-			}
-			return "", err
-		}
-		for _, ingress := range route.Status.Ingress {
-			if ingress.Host != "" {
-				return ingress.Host, nil
-			}
-		}
-		return route.Spec.Host, nil
+	// For Route/Ingress, use common helper
+	url, err := ResolveIngressURL(ctx, r.Client, client.ObjectKeyFromObject(svc), svc.Spec.Ingress.TLS.Enabled)
+	if err != nil || url == "" {
+		return url, err
 	}
-
-	var ingress networkingv1.Ingress
-	if err := r.Get(ctx, client.ObjectKeyFromObject(svc), &ingress); err != nil {
-		if apierrors.IsNotFound(err) {
-			return "", nil
-		}
-		return "", err
-	}
-	if len(ingress.Spec.Rules) > 0 && ingress.Spec.Rules[0].Host != "" {
-		return ingress.Spec.Rules[0].Host, nil
-	}
-	for _, lb := range ingress.Status.LoadBalancer.Ingress {
-		if lb.Hostname != "" {
-			return lb.Hostname, nil
-		}
-		if lb.IP != "" {
-			return lb.IP, nil
-		}
-	}
-	return "", nil
+	// Add trailing slash for backward compatibility
+	return url + "/", nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

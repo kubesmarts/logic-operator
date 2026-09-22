@@ -111,9 +111,17 @@ type LogicPlatformStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// DataIndex contains status for the Data Index service.
 	// This includes the service deployment status, database connectivity,
-	// and Fluent Bit DaemonSet status (if configured).
+	// and Vector DaemonSet status (if configured).
 	// +optional
 	DataIndex DataIndexStatus `json:"dataIndex,omitempty"`
+	// IngressRef references the Ingress resource (Kubernetes).
+	// Populated when spec.dataIndex.ingress is enabled on Kubernetes.
+	// +optional
+	IngressRef *corev1.LocalObjectReference `json:"ingressRef,omitempty"`
+	// RouteRef references the Route resource (OpenShift).
+	// Populated when spec.dataIndex.ingress is enabled on OpenShift.
+	// +optional
+	RouteRef *corev1.LocalObjectReference `json:"routeRef,omitempty"`
 	// Conditions represent the latest available observations of the platform's state.
 	// +optional
 	// +listType=map
@@ -127,13 +135,14 @@ type DataIndexStatus struct {
 	// Service contains status for the Data Index service deployment.
 	// +optional
 	Service DataIndexServiceStatus `json:"service,omitempty"`
-	// Persistence contains status for the Data Index database connection.
+	// Persistence contains status for the Data Index persistence configuration validation.
+	// This validates that secrets and service refs exist, not runtime database connectivity.
 	// +optional
-	Persistence PostgresSQLStatus `json:"persistence,omitempty"`
-	// FluentBit contains status for the Fluent Bit DaemonSet (if enabled).
-	// This field is only populated when spec.dataIndex.fluentBit is configured.
+	Persistence *PersistenceConfigStatus `json:"persistence,omitempty"`
+	// Vector contains status for the Vector DaemonSet (if enabled).
+	// This field is only populated when spec.dataIndex.vector is configured.
 	// +optional
-	FluentBit *FluentBitStatus `json:"fluentBit,omitempty"`
+	Vector *VectorStatus `json:"vector,omitempty"`
 }
 
 // DataIndexServiceStatus contains status information for the Data Index service deployment.
@@ -162,6 +171,12 @@ type DataIndexServiceStatus struct {
 	// Example: http://data-index.default.svc.cluster.local:8080/q/metrics
 	// +optional
 	MetricsEndpoint string `json:"metricsEndpoint,omitempty"`
+	// URL is the external URL to access Data Index (via Ingress/Route).
+	// Populated when spec.dataIndex.ingress is enabled.
+	//
+	// Example: https://data-index.example.com
+	// +optional
+	URL string `json:"url,omitempty"`
 }
 
 // ReplicaStatus shows the current state of replicas for a deployment.
@@ -178,39 +193,40 @@ type ReplicaStatus struct {
 	Updated int32 `json:"updated,omitempty"`
 }
 
-// FluentBitStatus contains status information for the Fluent Bit DaemonSet.
+// VectorStatus contains status information for the Vector DaemonSet.
 //
-// There is a 1:1 relationship between LogicPlatform and the Fluent Bit DaemonSet.
+// There is a 1:1 relationship between LogicPlatform and the Vector DaemonSet.
 // One DaemonSet per platform coordinates all event inflow from Data Index and runtimes.
-type FluentBitStatus struct {
-	// Ready indicates whether the Fluent Bit DaemonSet is ready.
+type VectorStatus struct {
+	// Ready indicates whether the Vector DaemonSet is ready.
 	// This is true when the DaemonSet is successfully deployed and operational.
 	Ready bool `json:"ready"`
-	// DaemonSetRef references the Fluent Bit DaemonSet resource.
+	// DaemonSetRef references the Vector DaemonSet resource.
 	// +optional
 	DaemonSetRef corev1.LocalObjectReference `json:"daemonSetRef,omitempty"`
 	// MetricsEndpoint is the internal cluster URL for Prometheus metrics.
-	// This points to the Fluent Bit Application endpoint.
+	// This points to the Vector Application endpoint.
 	//
-	// Example: http://fluent-bit.default.svc.cluster.local:2020/api/v1/metrics/prometheus
+	// Example: http://vector.default.svc.cluster.local:2020/api/v1/metrics/prometheus
 	// +optional
 	MetricsEndpoint string `json:"metricsEndpoint,omitempty"`
 }
 
-// PostgresSQLStatus contains status information for a PostgreSQL database connection.
-type PostgresSQLStatus struct {
-	// Connected indicates whether the database connection is established.
-	// The operator tests connectivity during reconciliation.
-	Connected bool `json:"connected"`
-	// SchemaReady indicates whether the database schema is initialized and up-to-date.
-	// This is true after successful schema migrations.
-	SchemaReady bool `json:"schemaReady"`
-	// SchemaVersion is the current schema version in the database.
-	// This corresponds to the migration version number.
+// PersistenceConfigStatus validates persistence configuration without testing runtime connectivity.
+// The operator checks that referenced secrets and services exist, but does not connect to the database.
+// Actual database connectivity is verified by the application's health checks.
+type PersistenceConfigStatus struct {
+	// Valid indicates whether the persistence configuration is valid.
+	// This checks that referenced secrets and service refs exist in the cluster.
+	Valid bool `json:"valid"`
+	// SecretExists indicates whether the referenced secret exists.
+	SecretExists bool `json:"secretExists"`
+	// ServiceExists indicates whether the referenced service exists (if using serviceRef).
+	// Only populated when using serviceRef instead of JDBC URL.
 	// +optional
-	SchemaVersion string `json:"schemaVersion,omitempty"`
-	// Error contains any database connection or schema error message.
-	// This field is populated when Connected=false or SchemaReady=false.
+	ServiceExists bool `json:"serviceExists,omitempty"`
+	// Error contains any configuration validation error message.
+	// This field is populated when Valid=false.
 	// +optional
 	Error string `json:"error,omitempty"`
 }
@@ -265,46 +281,6 @@ func init() {
 //
 // The Data Index service is optional but recommended for production deployments as it
 // enables powerful querying capabilities and workflow observability.
-//
-// Example (minimal configuration):
-//
-//	dataIndex:
-//	  enabled: true
-//	  application:
-//	    image: quay.io/kubesmarts/data-index:2.0.0
-//	    replicas: 2
-//	  persistence:
-//	    postgresql:
-//	      secretRef:
-//	        name: postgres-credentials
-//	      serviceRef:
-//	        name: postgres
-//	        databaseSchema: data-index
-//
-// Example (with FluentBit log forwarding):
-//
-//	dataIndex:
-//	  enabled: true
-//	  application:
-//	    image: quay.io/kubesmarts/data-index:2.0.0
-//	    replicas: 2
-//	    resources:
-//	      requests:
-//	        memory: 512Mi
-//	        cpu: 250m
-//	  persistence:
-//	    postgresql:
-//	      secretRef:
-//	        name: postgres-credentials
-//	      serviceRef:
-//	        name: postgres
-//	        databaseSchema: data-index
-//	  fluentBit:
-//	    image: fluent/fluent-bit:2.0
-//	    resources:
-//	      requests:
-//	        memory: 128Mi
-//	        cpu: 100m
 type DataIndexSpec struct {
 	// Enabled determines whether to deploy the Data Index service.
 	// When false, the operator will not create any Data Index resources.
@@ -349,11 +325,11 @@ type DataIndexSpec struct {
 	//         name: postgres
 	//         databaseSchema: data-index
 	// +optional
-	Persistence PersistenceOptionsSpec `json:"persistence,omitempty"`
+	Persistence *PersistenceOptionsSpec `json:"persistence,omitempty"`
 
-	// FluentBit configures the Fluent Bit DaemonSet for log forwarding.
+	// Vector configures the Vector DaemonSet for log forwarding.
 	//
-	// When configured, the operator will deploy a Fluent Bit DaemonSet in the namespace
+	// When configured, the operator will deploy a Vector DaemonSet in the namespace
 	// to collect and forward logs from all pods (Data Index and workflow runtimes) to
 	// external log aggregation systems.
 	//
@@ -361,70 +337,74 @@ type DataIndexSpec struct {
 	// event inflow for the platform).
 	//
 	// Example:
-	//   fluentBit:
-	//     image: fluent/fluent-bit:2.0
+	//   vector:
+	//     image: vector/vector:2.0
 	//     resources:
 	//       requests:
 	//         memory: 128Mi
 	//         cpu: 100m
 	// +optional
-	FluentBit *FluentBitSpec `json:"fluentBit,omitempty"`
+	Vector *VectorSpec `json:"vector,omitempty"`
+
+	// Ingress configures external access to the Data Index GraphQL API.
+	//
+	// When enabled, the operator creates an Ingress (Kubernetes) or Route (OpenShift)
+	// to expose the Data Index service externally. This allows users to query workflow
+	// instances from outside the cluster.
+	//
+	// Example:
+	//   ingress:
+	//     enabled: true
+	//     host: data-index.example.com
+	//     tls:
+	//       enabled: true
+	//       certManager:
+	//         issuerRef:
+	//           name: letsencrypt-prod
+	// +optional
+	Ingress *DataIndexIngressSpec `json:"ingress,omitempty"`
 }
 
-// FluentBitSpec configures the Fluent Bit log forwarding DaemonSet.
-//
-// Fluent Bit is deployed as a DaemonSet (one pod per node) to collect logs
-// from all pods in the namespace and forward them to external systems
-// (e.g., Elasticsearch, CloudWatch, Kafka, Loki).
-//
-// The DaemonSet runs on every node and mounts the node's /var/log directory
-// to collect container logs. It can be configured to filter, transform, and
-// route logs based on pod labels and namespaces.
-//
-// Configuration precedence:
-//  1. container fields (most specific)
-//  2. Top-level image/resources fields (convenience shortcuts)
-//
-// Example (using shortcuts):
-//
-//	fluentBit:
-//	  image: fluent/fluent-bit:2.0
-//	  resources:
-//	    requests:
-//	      memory: 128Mi
-//	      cpu: 100m
-//
-// Example (using container for full control):
-//
-//	fluentBit:
-//	  container:
-//	    image: fluent/fluent-bit:2.0
-//	    resources:
-//	      requests:
-//	        memory: 128Mi
-//	    volumeMounts:
-//	    - name: fluent-bit-config
-//	      mountPath: /fluent-bit/etc/
-//	    env:
-//	    - name: FLB_OUTPUT
-//	      value: elasticsearch
-//
-// Note: The Replicas field in PodTemplateSpec is ignored for DaemonSet workloads,
-// as DaemonSets automatically run one pod per node.
-type FluentBitSpec struct {
-	// Container configures the Fluent Bit DaemonSet container.
-	// Use this for full control over the Fluent Bit configuration.
+type VectorSpec struct {
+	// Container configures the Vector DaemonSet container.
+	// Use this for full control over the Vector configuration.
 	// +optional
 	Container ContainerSpec `json:"container,omitempty"`
-	// Image specifies the Fluent Bit container image.
+	// Image specifies the Vector container image.
 	// This is a convenience field - if container.image is set, it takes precedence.
-	//
-	// Example: fluent/fluent-bit:2.0.8
 	// +optional
 	Image           string            `json:"image,omitempty"`
 	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
-	// Resources specifies compute resource requirements for the Fluent Bit DaemonSet pods.
+	// Resources specifies compute resource requirements for the Vector DaemonSet pods.
 	// This is a convenience field - if container.resources is set, it takes precedence.
 	// +optional
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+}
+
+// DataIndexIngressSpec configures external access to the Data Index service.
+type DataIndexIngressSpec struct {
+	// Enabled determines whether to create Ingress/Route for external access.
+	// When true, host must be specified.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Host is the external hostname for accessing Data Index.
+	// Required when Enabled is true.
+	// Example: data-index.example.com
+	// +optional
+	Host string `json:"host,omitempty"`
+
+	// IngressClassName selects the Ingress controller (Kubernetes only).
+	// If not specified, uses the cluster's default IngressClass.
+	// +optional
+	IngressClassName *string `json:"ingressClassName,omitempty"`
+
+	// Annotations for the Ingress/Route resource.
+	// Can be used for additional configuration like rate limiting, CORS, etc.
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
+
+	// TLS configures HTTPS/TLS termination.
+	// +optional
+	TLS TLSSpec `json:"tls,omitempty"`
 }

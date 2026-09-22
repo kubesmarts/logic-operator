@@ -9,6 +9,10 @@ const (
 	QuarkusFlowRunner   = logicv1.FlowRunnerImage
 	QuarkusFlowVersion  = "1.0.0"
 
+	DataIndexRegistry = logicv1.DataIndexRegistry
+	DataIndexImage    = logicv1.DataIndexImage
+	DataIndexVersion  = logicv1.DataIndexVersion
+
 	ImageVariantMinimal  = logicv1.ImageVariantMinimal
 	ImageVariantStandard = logicv1.ImageVariantStandard
 

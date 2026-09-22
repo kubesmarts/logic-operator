@@ -83,6 +83,24 @@ func DefaultProbes() ContainerOption {
 	}
 }
 
+// DurableStartupProbe returns a ContainerOption that adds a startup probe for durable runtimes.
+// This gives the runtime up to 60 seconds (12 failures × 5s) to acquire a lease and become ready,
+// after which the pod is restarted if still unhealthy. User-specified startup probes are preserved.
+func DurableStartupProbe() ContainerOption {
+	return func(c *corev1ac.ContainerApplyConfiguration) {
+		if c.StartupProbe == nil {
+			c.WithStartupProbe(corev1ac.Probe().
+				WithHTTPGet(corev1ac.HTTPGetAction().
+					WithPath("/q/health/ready").
+					WithPort(intstr.FromInt32(QuarkusPort))).
+				WithInitialDelaySeconds(0).
+				WithPeriodSeconds(5).
+				WithTimeoutSeconds(3).
+				WithFailureThreshold(12))
+		}
+	}
+}
+
 // WithPersistenceEnvVars returns a ContainerOption that appends Quarkus datasource environment variables.
 // The namespace parameter is the owning CR's namespace, used as fallback when serviceRef.namespace is empty.
 func WithPersistenceEnvVars(p *logicv1.PersistenceOptionsSpec, namespace string) ContainerOption {
@@ -195,12 +213,28 @@ func WithDurableEnvVars(rt *logicv1.LogicFlowRuntime) ContainerOption {
 			filtered = append(filtered, e)
 		}
 		c.Env = filtered
-		c.WithEnv(
+
+		// Set defaults, but allow users to override lease timeout via env vars
+		defaultEnvs := []*corev1ac.EnvVarApplyConfiguration{
 			envLiteral("QUARKUS_FLOW_DURABLE_KUBE_LEASE_LEADER_ENABLED", "false"),
 			envLiteral("QUARKUS_FLOW_DURABLE_KUBE_POOL_NAME", rt.Name),
 			envFieldRef("POD_NAME", "metadata.name"),
 			envFieldRef("POD_NAMESPACE", "metadata.namespace"),
-		)
+		}
+
+		// Add lease timeout default if user hasn't specified it
+		hasLeaseTimeout := false
+		for _, e := range c.Env {
+			if e.Name != nil && *e.Name == "QUARKUS_FLOW_DURABLE_KUBE_LEASE_TIMEOUT" {
+				hasLeaseTimeout = true
+				break
+			}
+		}
+		if !hasLeaseTimeout {
+			defaultEnvs = append(defaultEnvs, envLiteral("QUARKUS_FLOW_DURABLE_KUBE_LEASE_TIMEOUT", "PT60S"))
+		}
+
+		c.WithEnv(defaultEnvs...)
 	}
 }
 

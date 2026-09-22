@@ -124,7 +124,7 @@ func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *lo
 		WithFlowVolumeMounts(configMaps),
 	}
 	if rt.Spec.Persistence != nil {
-		opts = append(opts, WithDurableEnvVars(rt))
+		opts = append(opts, WithDurableEnvVars(rt), DurableStartupProbe())
 	}
 	spec := ToDeploymentSpec(
 		ContainerNameRunner,
@@ -157,9 +157,18 @@ func (r *LogicFlowRuntimeReconciler) reconcileLeases(ctx context.Context, rt *lo
 
 	desired := effectiveReplicas(&rt.Spec.ApplicationSpec)
 
+	// Get deployment for owner references (only needed when creating new leases)
 	var dep appsv1.Deployment
+	var deploymentFound bool
 	if err := r.Get(ctx, client.ObjectKeyFromObject(rt), &dep); err != nil {
-		return err
+		if !apierrors.IsNotFound(err) {
+			return err
+		}
+		// Deployment not found - we can still clean up excess leases
+		log.V(1).Info("Deployment not found, skipping new lease creation but proceeding with cleanup")
+		deploymentFound = false
+	} else {
+		deploymentFound = true
 	}
 
 	var leaseList coordinationv1.LeaseList
@@ -180,11 +189,15 @@ func (r *LogicFlowRuntimeReconciler) reconcileLeases(ctx context.Context, rt *lo
 		existing[leaseList.Items[i].Name] = struct{}{}
 	}
 
-	desiredNames := make(map[string]struct{}, desired)
+	// Always create leases 0 to desired-1 (index-based)
 	for i := int32(0); i < desired; i++ {
 		name := fmt.Sprintf(LeaseMemberNameFmt, rt.Name, i)
-		desiredNames[name] = struct{}{}
 		if _, ok := existing[name]; ok {
+			continue
+		}
+		// Only create new leases if Deployment exists (needed for owner references)
+		if !deploymentFound {
+			log.V(1).Info("skipping new lease creation, deployment not found", "lease", name)
 			continue
 		}
 		lease := newMemberLease(name, rt.Namespace, rt.Name, &dep)
@@ -195,17 +208,32 @@ func (r *LogicFlowRuntimeReconciler) reconcileLeases(ctx context.Context, rt *lo
 		}
 	}
 
-	for i := range leaseList.Items {
-		if _, ok := desiredNames[leaseList.Items[i].Name]; !ok {
-			if leaseHeldByRunningPod(&leaseList.Items[i], runningPods) {
-				log.V(1).Info("skipping deletion of lease held by running pod",
+	// Delete excess leases when count > desired
+	// We can only delete unheld leases. During scale-down, Kubernetes may terminate
+	// any pod (e.g., the one holding lease-00), leaving a low-index lease unheld while
+	// a high-index lease is held. We delete any unheld lease to bring count down to desired.
+	// The creation loop (above) ensures we always have leases 0..desired-1, filling gaps.
+	currentCount := int32(len(leaseList.Items))
+	if currentCount > desired {
+		deletedCount := int32(0)
+		for i := range leaseList.Items {
+			if currentCount-deletedCount <= desired {
+				break
+			}
+
+			isHeld := leaseHeldByRunningPod(&leaseList.Items[i], runningPods)
+			if isHeld {
+				log.V(1).Info("skipping deletion of held lease during scale-down",
 					"lease", leaseList.Items[i].Name,
 					"holder", *leaseList.Items[i].Spec.HolderIdentity)
 				continue
 			}
+
+			// Delete unheld lease to reduce count toward desired
 			if err := r.Delete(ctx, &leaseList.Items[i]); err != nil && !apierrors.IsNotFound(err) {
 				return err
 			}
+			deletedCount++
 		}
 	}
 
@@ -428,6 +456,17 @@ func (r *LogicFlowRuntimeReconciler) mapConfigMapToRuntime(_ context.Context, ob
 	}
 }
 
+func (r *LogicFlowRuntimeReconciler) mapPodToRuntime(_ context.Context, obj client.Object) []reconcile.Request {
+	// Pods have selector labels (app.kubernetes.io/name=runtime-name)
+	rtName := obj.GetLabels()[LabelKeyName]
+	if rtName == "" {
+		return nil
+	}
+	return []reconcile.Request{
+		{NamespacedName: types.NamespacedName{Name: rtName, Namespace: obj.GetNamespace()}},
+	}
+}
+
 func runtimeRefLabelPredicate() predicate.Predicate {
 	return predicate.NewPredicateFuncs(func(obj client.Object) bool {
 		_, ok := obj.GetLabels()[logicv1.LabelRuntimeRef]
@@ -443,6 +482,10 @@ func (r *LogicFlowRuntimeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&corev1.ConfigMap{},
 			handler.EnqueueRequestsFromMapFunc(r.mapConfigMapToRuntime),
 			builder.WithPredicates(runtimeRefLabelPredicate()),
+		).
+		Watches(&corev1.Pod{},
+			handler.EnqueueRequestsFromMapFunc(r.mapPodToRuntime),
+			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
 		).
 		Named("logicflowruntime").
 		Complete(r)

@@ -21,7 +21,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const LogicFlowRuntimeKind = "LogicFlowRuntime"
+const (
+	LogicFlowRuntimeKind = "LogicFlowRuntime"
+	LogicPlatformKind    = "LogicPlatform"
+)
 
 // LogicFlowRuntimeSpec defines the desired state of LogicFlowRuntime.
 //

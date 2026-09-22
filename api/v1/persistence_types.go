@@ -88,7 +88,7 @@ type PersistenceOptionsSpec struct {
 	// none: no database migration functionality needed.
 	// +optional
 	// +kubebuilder:default:=service
-	DBMigrationStrategy string `json:"dbMigrationStrategy,omitempty"`
+	DBMigrationStrategy DBMigrationStrategyType `json:"dbMigrationStrategy,omitempty"`
 }
 
 // PersistencePostgreSQL configures a PostgreSQL database connection.

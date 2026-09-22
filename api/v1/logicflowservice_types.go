@@ -95,49 +95,6 @@ type IngressSpec struct {
 }
 
 // TLSSpec configures TLS/HTTPS termination.
-type TLSSpec struct {
-	// Enabled determines whether to use HTTPS.
-	// +optional
-	// +kubebuilder:default=false
-	Enabled bool `json:"enabled,omitempty"`
-
-	// SecretRef references an existing TLS Secret.
-	// Mutually exclusive with CertManager.
-	// +optional
-	SecretRef corev1.LocalObjectReference `json:"secretRef,omitempty"`
-
-	// CertManager configures automatic certificate generation.
-	// Mutually exclusive with SecretRef.
-	// +optional
-	CertManager *CertManagerSpec `json:"certManager,omitempty"`
-}
-
-// CertManagerSpec configures automatic TLS certificate generation via cert-manager.
-type CertManagerSpec struct {
-	// IssuerRef references a cert-manager Issuer or ClusterIssuer.
-	// +required
-	IssuerRef CertManagerIssuerRef `json:"issuerRef"`
-}
-
-// CertManagerIssuerRef references a cert-manager Issuer or ClusterIssuer.
-// Matches cert-manager's ObjectReference pattern.
-type CertManagerIssuerRef struct {
-	// Name of the Issuer/ClusterIssuer.
-	// +required
-	Name string `json:"name"`
-
-	// Kind is either "Issuer" or "ClusterIssuer".
-	// +optional
-	// +kubebuilder:default=ClusterIssuer
-	// +kubebuilder:validation:Enum=Issuer;ClusterIssuer
-	Kind string `json:"kind,omitempty"`
-
-	// Group is the API group of the Issuer.
-	// +optional
-	// +kubebuilder:default=cert-manager.io
-	Group string `json:"group,omitempty"`
-}
-
 // GatewayRef references a Gateway for HTTPRoute parentRefs.
 type GatewayRef struct {
 	// Name of the Gateway.
