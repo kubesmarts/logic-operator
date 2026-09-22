@@ -112,33 +112,102 @@ vet: ## Run go vet against code.
 test: manifests generate fmt vet setup-envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
-# TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
-# The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
-# CertManager is installed by default; skip with:
-# - CERT_MANAGER_INSTALL_SKIP=true
+##@ E2E Tests
+#
+# E2E test workflow:
+#   1. make setup-test-e2e   # One-time: creates cluster, installs cert-manager, deploys operator
+#   2. make test-e2e         # Run tests (can repeat without rebuilding)
+#   3. make cleanup-test-e2e # Clean up when done
+#
+# The setup-test-e2e target creates a Kind cluster and installs all required infrastructure:
+# - Kind cluster (KIND_CLUSTER name)
+# - cert-manager
+# - Operator image (builds and loads E2E_IMG)
+# - Required test images (postgres, quarkus-flow-runner, data-index)
+# - CRDs and operator deployment
+#
 KIND_CLUSTER ?= logic-operator-test-e2e
+E2E_IMG ?= example.com/logic-operator:v0.0.1
 
 .PHONY: setup-test-e2e
-setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
+setup-test-e2e: manifests generate fmt vet ## Set up complete E2E test infrastructure (cluster, cert-manager, operator)
 	@command -v $(KIND) >/dev/null 2>&1 || { \
 		echo "Kind is not installed. Please install Kind manually."; \
 		exit 1; \
 	}
+	@echo "Setting up E2E test infrastructure..."
 	@case "$$($(KIND) get clusters)" in \
 		*"$(KIND_CLUSTER)"*) \
-			echo "Kind cluster '$(KIND_CLUSTER)' already exists. Skipping creation." ;; \
+			echo "Kind cluster '$(KIND_CLUSTER)' already exists." ;; \
 		*) \
 			echo "Creating Kind cluster '$(KIND_CLUSTER)'..."; \
 			$(KIND) create cluster --name $(KIND_CLUSTER) ;; \
 	esac
+	@echo "Checking if cert-manager is installed..."
+	@if ! $(KUBECTL) get namespace cert-manager >/dev/null 2>&1; then \
+		echo "Installing cert-manager $(CERT_MANAGER_VERSION)..."; \
+		$(KUBECTL) apply -f $(CERT_MANAGER_URL); \
+		echo "Waiting for cert-manager deployments to be ready..."; \
+		$(KUBECTL) wait --namespace cert-manager --for=condition=available deployment --all --timeout=120s; \
+	else \
+		echo "cert-manager is already installed."; \
+	fi
+	@echo "Waiting for cert-manager CRDs to be established..."
+	@$(KUBECTL) wait --for condition=established --timeout=60s crd/certificates.cert-manager.io crd/issuers.cert-manager.io
+	@echo "Verifying cert-manager API is responsive..."
+	@for i in 1 2 3 4 5; do \
+		if $(KUBECTL) get certificates --all-namespaces >/dev/null 2>&1; then \
+			echo "cert-manager API is ready"; \
+			break; \
+		else \
+			echo "Waiting for cert-manager API to be responsive (attempt $$i/5)..."; \
+			sleep 3; \
+		fi; \
+	done
+	@echo "Building operator image $(E2E_IMG)..."
+	$(CONTAINER_TOOL) build -t $(E2E_IMG) .
+	@echo "Loading operator image into Kind cluster..."
+	$(KIND) load docker-image $(E2E_IMG) --name $(KIND_CLUSTER)
+	@echo "Pulling and loading postgres image for E2E tests..."
+	docker pull postgres:16-alpine
+	$(KIND) load docker-image postgres:16-alpine --name $(KIND_CLUSTER)
+	@echo "Pulling and loading quarkus-flow-runner image for E2E tests..."
+	docker pull quay.io/quarkiverse/quarkus-flow-runner:1.0.0-standard
+	$(KIND) load docker-image quay.io/quarkiverse/quarkus-flow-runner:1.0.0-standard --name $(KIND_CLUSTER)
+	@echo "Pulling and loading data-index-service image for E2E tests..."
+	docker pull quay.io/kubesmarts/data-index-service:2.0.0-SNAPSHOT-postgresql
+	$(KIND) load docker-image quay.io/kubesmarts/data-index-service:2.0.0-SNAPSHOT-postgresql --name $(KIND_CLUSTER)
+	@echo "Installing CRDs..."
+	$(MAKE) install
+	@echo "Deploying operator..."
+	$(MAKE) deploy IMG=$(E2E_IMG)
+	@echo "Waiting for operator to be ready..."
+	@kubectl wait --namespace logic-operator-system \
+		--for=condition=ready pod \
+		--selector=control-plane=controller-manager \
+		--timeout=120s
+	@echo "Waiting for webhook CA bundles to be injected..."
+	@bash -c 'while [ -z "$$(kubectl get validatingwebhookconfiguration logic-operator-validating-webhook-configuration -o jsonpath="{.webhooks[0].clientConfig.caBundle}" 2>/dev/null)" ]; do echo "Waiting for validating webhook CA bundle..."; sleep 5; done'
+	@bash -c 'while [ -z "$$(kubectl get mutatingwebhookconfiguration logic-operator-mutating-webhook-configuration -o jsonpath="{.webhooks[0].clientConfig.caBundle}" 2>/dev/null)" ]; do echo "Waiting for mutating webhook CA bundle..."; sleep 5; done'
+	@echo "Waiting for webhook endpoints to be ready..."
+	@for i in 1 2 3 4 5 6 7 8 9 10; do \
+		if kubectl get endpoints -n logic-operator-system logic-operator-webhook-service -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null | grep -q .; then \
+			echo "Webhook endpoints are ready"; \
+			break; \
+		else \
+			echo "Waiting for webhook endpoints (attempt $$i/10)..."; \
+			sleep 3; \
+		fi; \
+	done
+	@echo "E2E test infrastructure is ready!"
 
 .PHONY: test-e2e
-test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
+test-e2e: ## Run E2E tests (requires setup-test-e2e to be run first)
 	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v
-	$(MAKE) cleanup-test-e2e
 
 .PHONY: cleanup-test-e2e
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
+	@echo "Deleting Kind cluster '$(KIND_CLUSTER)'..."
 	@$(KIND) delete cluster --name $(KIND_CLUSTER)
 
 ##@ Local Development (KIND)

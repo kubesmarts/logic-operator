@@ -143,7 +143,9 @@ make kind-delete    # delete the KIND cluster
 | `make run` | Run the operator out-of-cluster (day-to-day development) |
 | `make test` | Run unit and integration tests |
 | `make lint` | Run golangci-lint |
-| `make test-e2e` | Run end-to-end tests (creates its own cluster) |
+| `make setup-test-e2e` | Set up E2E test infrastructure (cluster, cert-manager, operator) |
+| `make test-e2e` | Run end-to-end tests (requires setup-test-e2e first) |
+| `make cleanup-test-e2e` | Delete the E2E test cluster |
 
 Run `make help` for the full list.
 

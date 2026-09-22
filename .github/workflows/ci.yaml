@@ -82,20 +82,11 @@ jobs:
         with:
           go-version: '1.26'
 
-      - name: Create Kind cluster
-        uses: helm/kind-action@v1
-        with:
-          cluster_name: logic-operator-test-e2e
-
-      - name: Build operator image
-        run: make docker-build IMG=example.com/logic-operator:v0.0.1
-
-      - name: Load image into Kind
-        run: kind load docker-image example.com/logic-operator:v0.0.1 --name logic-operator-test-e2e
+      - name: Set up E2E test infrastructure
+        run: make setup-test-e2e
 
       - name: Run e2e tests
-        run: |
-          KIND_CLUSTER=logic-operator-test-e2e go test ./test/e2e/ -v -ginkgo.v -timeout 15m
+        run: make test-e2e
 
       - name: Collect failure logs
         if: failure()

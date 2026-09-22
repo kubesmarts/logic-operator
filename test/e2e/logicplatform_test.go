@@ -98,7 +98,7 @@ func platformTests() {
 				"-n", namespace, "--ignore-not-found")
 			_, _ = utils.Run(cmd)
 
-			// Note: Don't delete durableInfraNamespace here as it might be shared with durable tests
+			// Note: PostgreSQL infra namespace is cleaned up in the global AfterAll
 		})
 
 		It("should deploy DataIndex deployment", func() {

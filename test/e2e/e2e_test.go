@@ -45,49 +45,39 @@ const metricsRoleBindingName = "logic-operator-metrics-binding"
 var _ = Describe("Manager", Ordered, func() {
 	var controllerPodName string
 
-	// Before running the tests, set up the environment by creating the namespace,
-	// enforce the restricted security policy to the namespace, installing CRDs,
-	// and deploying the controller.
+	// BeforeAll: Infrastructure (cluster, cert-manager, CRDs, controller) is set up by Makefile.
+	// This only validates the infrastructure is ready.
 	BeforeAll(func() {
-		By("creating manager namespace")
-		cmd := exec.Command("kubectl", "create", "ns", namespace)
-		_, err := utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to create namespace")
+		By("validating that infrastructure is ready")
+		// Validate controller is running
+		cmd := exec.Command("kubectl", "get", "pods",
+			"-l", "control-plane=controller-manager",
+			"-n", namespace,
+			"-o", "jsonpath={.items[0].status.phase}")
+		out, err := utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred(), "Controller pod not found - did you run 'make setup-test-e2e'?")
+		Expect(out).To(Equal("Running"), "Controller pod is not running")
 
-		By("labeling the namespace to enforce the restricted security policy")
-		cmd = exec.Command("kubectl", "label", "--overwrite", "ns", namespace,
-			"pod-security.kubernetes.io/enforce=restricted")
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to label namespace with restricted policy")
-
-		By("installing CRDs")
-		cmd = exec.Command("make", "install")
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to install CRDs")
-
-		By("deploying the controller-manager")
-		cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", projectImage))
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager")
-
-		By("waiting for controller-manager pod to be ready")
-		waitForController := func(g Gomega) {
-			cmd := exec.Command("kubectl", "get", "pods",
-				"-l", "control-plane=controller-manager",
-				"-n", namespace,
-				"-o", "jsonpath={.items[0].status.phase}")
-			out, err := utils.Run(cmd)
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(out).To(Equal("Running"))
-		}
-		Eventually(waitForController, 2*time.Minute, 5*time.Second).Should(Succeed())
+		// Store controller pod name for logging in AfterEach
+		cmd = exec.Command("kubectl", "get", "pods",
+			"-l", "control-plane=controller-manager",
+			"-o", "go-template={{ range .items }}{{ if not .metadata.deletionTimestamp }}{{ .metadata.name }}{{ \"\\n\" }}{{ end }}{{ end }}",
+			"-n", namespace)
+		podOutput, err := utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred())
+		podNames := utils.GetNonEmptyLines(podOutput)
+		Expect(podNames).To(HaveLen(1))
+		controllerPodName = podNames[0]
 	})
 
-	// After all tests have been executed, clean up by undeploying the controller, uninstalling CRDs,
-	// and deleting the namespace.
+	// AfterAll: Clean up test-specific resources only.
+	// Infrastructure (controller, CRDs, cert-manager, cluster) is preserved for reuse.
+	// Use 'make cleanup-test-e2e' to delete the cluster when done.
 	AfterAll(func() {
+		By("cleaning up test-specific resources")
+
 		By("cleaning up the curl pod for metrics")
-		cmd := exec.Command("kubectl", "delete", "pod", "curl-metrics", "-n", namespace)
+		cmd := exec.Command("kubectl", "delete", "pod", "curl-metrics", "-n", namespace, "--ignore-not-found")
 		_, _ = utils.Run(cmd)
 
 		By("cleaning up the metrics ClusterRoleBinding")
@@ -95,17 +85,12 @@ var _ = Describe("Manager", Ordered, func() {
 			metricsRoleBindingName, "--ignore-not-found")
 		_, _ = utils.Run(cmd)
 
-		By("undeploying the controller-manager")
-		cmd = exec.Command("make", "undeploy")
+		By("cleaning up PostgreSQL infra namespace")
+		cmd = exec.Command("kubectl", "delete", "namespace", "e2e-durable-infra", "--ignore-not-found")
 		_, _ = utils.Run(cmd)
 
-		By("uninstalling CRDs")
-		cmd = exec.Command("make", "uninstall")
-		_, _ = utils.Run(cmd)
-
-		By("removing manager namespace")
-		cmd = exec.Command("kubectl", "delete", "ns", namespace)
-		_, _ = utils.Run(cmd)
+		// Note: Controller, CRDs, cert-manager, and namespace are preserved for test reuse
+		// Use 'make cleanup-test-e2e' to tear down the entire cluster
 	})
 
 	// After each test, check for failures and collect logs, events,
