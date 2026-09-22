@@ -51,18 +51,6 @@ stringData:
 func platformTests() {
 	Context("LogicPlatform with DataIndex", Ordered, func() {
 		BeforeAll(func() {
-			By("waiting for webhook certificate to be ready")
-			waitForWebhookCert := func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "secret",
-					"logic-operator-webhook-server-cert",
-					"-n", namespace,
-					"-o", "jsonpath={.data}")
-				out, err := utils.Run(cmd)
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(out).To(ContainSubstring("tls.crt"))
-			}
-			Eventually(waitForWebhookCert, 2*time.Minute, 5*time.Second).Should(Succeed())
-
 			By("creating infra namespace for PostgreSQL (if not exists)")
 			cmd := exec.Command("kubectl", "create", "namespace", durableInfraNamespace)
 			_, _ = utils.Run(cmd) // ignore error if namespace already exists
