@@ -349,22 +349,6 @@ func durableTests() {
 			}
 			Eventually(verifyOneAvailable, 2*time.Minute, 5*time.Second).Should(Succeed())
 
-			By("DEBUG: checking pod states after scale-down")
-			cmd = exec.Command("kubectl", "get", "pods",
-				"-n", namespace,
-				"-l", fmt.Sprintf("app.kubernetes.io/name=%s", durableRuntimeName),
-				"-o", "custom-columns=NAME:.metadata.name,STATUS:.status.phase,DELETION:.metadata.deletionTimestamp")
-			out, _ := utils.Run(cmd)
-			GinkgoWriter.Printf("Pod states:\n%s\n", out)
-
-			By("DEBUG: checking lease states before cleanup verification")
-			cmd = exec.Command("kubectl", "get", "leases",
-				"-n", namespace,
-				"-l", fmt.Sprintf("%s=%s", controller.LabelDurablePool, durableRuntimeName),
-				"-o", "custom-columns=NAME:.metadata.name,HOLDER:.spec.holderIdentity")
-			out, _ = utils.Run(cmd)
-			GinkgoWriter.Printf("Lease states:\n%s\n", out)
-
 			By("verifying excess leases are cleaned up")
 			verifyOneLease := func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "leases",
@@ -375,12 +359,6 @@ func durableTests() {
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(strings.TrimSpace(out)).NotTo(BeEmpty(), "expected 1 lease to remain")
 				lines := strings.Split(strings.TrimSpace(out), "\n")
-
-				// DEBUG: Print actual lease count and names
-				if len(lines) != 1 {
-					GinkgoWriter.Printf("DEBUG: Expected 1 lease, got %d:\n%s\n", len(lines), out)
-				}
-
 				g.Expect(lines).To(HaveLen(1))
 			}
 			Eventually(verifyOneLease, time.Minute, 5*time.Second).Should(Succeed())

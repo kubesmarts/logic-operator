@@ -208,36 +208,32 @@ func (r *LogicFlowRuntimeReconciler) reconcileLeases(ctx context.Context, rt *lo
 		}
 	}
 
-	// Delete excess leases (only unheld ones)
-	prefix := fmt.Sprintf("flow-pool-member-%s-", rt.Name)
-	for i := range leaseList.Items {
-		// Parse index from lease name (e.g., "flow-pool-member-runtime-00" -> 0)
-		var idx int32
-		_, err := fmt.Sscanf(leaseList.Items[i].Name, prefix+"%02d", &idx)
-		if err != nil {
-			log.V(1).Info("failed to parse lease index, skipping",
-				"lease", leaseList.Items[i].Name,
-				"error", err)
-			continue
-		}
+	// Delete excess leases when count > desired
+	// We can only delete unheld leases. During scale-down, Kubernetes may terminate
+	// any pod (e.g., the one holding lease-00), leaving a low-index lease unheld while
+	// a high-index lease is held. We delete any unheld lease to bring count down to desired.
+	// The creation loop (above) ensures we always have leases 0..desired-1, filling gaps.
+	currentCount := int32(len(leaseList.Items))
+	if currentCount > desired {
+		deletedCount := int32(0)
+		for i := range leaseList.Items {
+			if currentCount-deletedCount <= desired {
+				break
+			}
 
-		// Keep leases in desired range (0 to desired-1)
-		if idx < desired {
-			continue
-		}
+			isHeld := leaseHeldByRunningPod(&leaseList.Items[i], runningPods)
+			if isHeld {
+				log.V(1).Info("skipping deletion of held lease during scale-down",
+					"lease", leaseList.Items[i].Name,
+					"holder", *leaseList.Items[i].Spec.HolderIdentity)
+				continue
+			}
 
-		// Excess lease (index >= desired)
-		isHeld := leaseHeldByRunningPod(&leaseList.Items[i], runningPods)
-		if isHeld {
-			log.V(1).Info("skipping deletion of excess lease held by running pod",
-				"lease", leaseList.Items[i].Name,
-				"holder", *leaseList.Items[i].Spec.HolderIdentity)
-			continue
-		}
-
-		// Delete unheld excess lease
-		if err := r.Delete(ctx, &leaseList.Items[i]); err != nil && !apierrors.IsNotFound(err) {
-			return err
+			// Delete unheld lease to reduce count toward desired
+			if err := r.Delete(ctx, &leaseList.Items[i]); err != nil && !apierrors.IsNotFound(err) {
+				return err
+			}
+			deletedCount++
 		}
 	}
 

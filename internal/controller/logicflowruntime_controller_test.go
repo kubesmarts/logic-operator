@@ -913,8 +913,9 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 			rt2 := reconcileAndFetch(ctx, r, nn)
 			leases := listLeases(ctx, name)
+			// Should delete 2 unheld leases, keeping 1
+			// Don't care which lease remains - next reconcile will recreate missing low-index ones
 			Expect(leases).To(HaveLen(1))
-			Expect(leases[0].Name).To(Equal(fmt.Sprintf(LeaseMemberNameFmt, name, 0)))
 			Expect(rt2.Status.LeaseReplicas).To(Equal(int32(1)))
 		})
 
@@ -955,13 +956,16 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 			reconcileAndFetch(ctx, r, nn)
 			leases := listLeases(ctx, name)
 
+			// The held lease (lease-02) must NOT be deleted
 			leaseNames := make([]string, len(leases))
 			for i := range leases {
 				leaseNames[i] = leases[i].Name
 			}
-			Expect(leaseNames).To(ContainElement(fmt.Sprintf(LeaseMemberNameFmt, name, 0)))
-			Expect(leaseNames).To(ContainElement(lease02Name))
-			Expect(leaseNames).NotTo(ContainElement(fmt.Sprintf(LeaseMemberNameFmt, name, 1)))
+			Expect(leaseNames).To(ContainElement(lease02Name), "held lease must not be deleted")
+
+			// We deleted 2 unheld leases (lease-00 and lease-01), keeping only the held lease-02
+			// Next reconcile will recreate lease-00
+			Expect(leases).To(HaveLen(1), "should delete all unheld leases when count > desired")
 		})
 	})
 

@@ -519,7 +519,7 @@ func TestWithDurableEnvVars_SetsAllEnvVars(t *testing.T) {
 
 	WithDurableEnvVars(rt)(c)
 
-	g.Expect(c.Env).To(gomega.HaveLen(4))
+	g.Expect(c.Env).To(gomega.HaveLen(5))
 	g.Expect(*c.Env[0].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_LEASE_LEADER_ENABLED"))
 	g.Expect(*c.Env[0].Value).To(gomega.Equal("false"))
 	g.Expect(*c.Env[1].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_POOL_NAME"))
@@ -528,6 +528,8 @@ func TestWithDurableEnvVars_SetsAllEnvVars(t *testing.T) {
 	g.Expect(*c.Env[2].ValueFrom.FieldRef.FieldPath).To(gomega.Equal("metadata.name"))
 	g.Expect(*c.Env[3].Name).To(gomega.Equal("POD_NAMESPACE"))
 	g.Expect(*c.Env[3].ValueFrom.FieldRef.FieldPath).To(gomega.Equal("metadata.namespace"))
+	g.Expect(*c.Env[4].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_LEASE_TIMEOUT"))
+	g.Expect(*c.Env[4].Value).To(gomega.Equal("PT60S"))
 }
 
 func TestWithDurableEnvVars_FiltersUserDuplicates(t *testing.T) {
@@ -543,12 +545,36 @@ func TestWithDurableEnvVars_FiltersUserDuplicates(t *testing.T) {
 
 	WithDurableEnvVars(rt)(c)
 
-	g.Expect(c.Env).To(gomega.HaveLen(5))
+	g.Expect(c.Env).To(gomega.HaveLen(6))
 	g.Expect(*c.Env[0].Name).To(gomega.Equal("OTHER_VAR"))
 	g.Expect(*c.Env[0].Value).To(gomega.Equal("keep"))
 	g.Expect(*c.Env[1].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_LEASE_LEADER_ENABLED"))
 	g.Expect(*c.Env[2].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_POOL_NAME"))
 	g.Expect(*c.Env[2].Value).To(gomega.Equal(testRuntimeName))
+	g.Expect(*c.Env[3].Name).To(gomega.Equal("POD_NAME"))
+	g.Expect(*c.Env[4].Name).To(gomega.Equal("POD_NAMESPACE"))
+	g.Expect(*c.Env[5].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_LEASE_TIMEOUT"))
+	g.Expect(*c.Env[5].Value).To(gomega.Equal("PT60S"))
+}
+
+func TestWithDurableEnvVars_AllowsUserLeaseTimeout(t *testing.T) {
+	g := gomega.NewWithT(t)
+	rt := &logicv1.LogicFlowRuntime{}
+	rt.Name = testRuntimeName
+	c := corev1ac.Container().WithName("test").
+		WithEnv(
+			corev1ac.EnvVar().WithName("QUARKUS_FLOW_DURABLE_KUBE_LEASE_TIMEOUT").WithValue("PT90S"),
+		)
+
+	WithDurableEnvVars(rt)(c)
+
+	g.Expect(c.Env).To(gomega.HaveLen(5))
+	// User-provided lease timeout should be preserved
+	g.Expect(*c.Env[0].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_LEASE_TIMEOUT"))
+	g.Expect(*c.Env[0].Value).To(gomega.Equal("PT90S"))
+	// Immutable vars should be set
+	g.Expect(*c.Env[1].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_LEASE_LEADER_ENABLED"))
+	g.Expect(*c.Env[2].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_POOL_NAME"))
 	g.Expect(*c.Env[3].Name).To(gomega.Equal("POD_NAME"))
 	g.Expect(*c.Env[4].Name).To(gomega.Equal("POD_NAMESPACE"))
 }
