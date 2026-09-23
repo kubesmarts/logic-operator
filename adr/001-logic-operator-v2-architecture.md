@@ -1,9 +1,14 @@
 # Logic Operator v2.0 - Design Specification
 
 **Date**: 2026-06-22  
-**Last Updated**: 2026-08-20  
+**Last Updated**: 2026-09-22  
 **Status**: Active (Partially Implemented)  
 **Migration Strategy**: Clean Slate - New Operator
+
+> **⚠️ DEPRECATION NOTICE (2026-09-22):**  
+> References to **FluentD** and **FluentBit** in this document are **deprecated**.  
+> The operator now uses **Vector** as the log collector for Data Index.  
+> See [ADR 002: LogicPlatform Vector Implementation](002-logicplatform-vector-implementation.md) for current architecture.
 
 ---
 
@@ -37,8 +42,8 @@
 | HPA / Autoscaling | ✅ Implemented | [HPA Support](implementation/hpa-support.md) |
 | Metrics / Observability (basic) | ✅ Implemented | `internal/controller/` |
 | E2E Tests (minimal runtime lifecycle) | ✅ Implemented | [E2E Plan](implementation/e2e-minimal-runtime-plan.md) |
-| LogicPlatform Controller (local mode) | 🔄 In Progress | EPIC 5 (#8) |
-| Data Index Integration (FluentD + PostgreSQL + GraphQL) | ⏳ Pending | EPIC 6 (#9) |
+| LogicPlatform Controller (local mode) | 🔄 In Progress | EPIC 5 (#8), [ADR 002](002-logicplatform-vector-implementation.md) |
+| Data Index Integration (Vector + PostgreSQL + GraphQL) | 🔄 In Progress | EPIC 6 (#9), [ADR 002](002-logicplatform-vector-implementation.md) |
 | Multi-version support & traffic splitting | ⏳ Pending | EPIC 8 (#11) |
 | LogicPlatform Centralized Mode | ⏳ Pending | EPIC 9 (#12) |
 | Migration Guide & Documentation | ⏳ Pending | EPIC 11 (#14) |
@@ -46,7 +51,9 @@
 
 ### Data Index Note
 
-The original design specified **FluentBit** for log collection. Based on implementation research, **FluentD** is the supported/production choice; FluentBit support is community-maintained and intended for testing only. The Data Index section below has been updated accordingly.
+~~The original design specified **FluentBit** for log collection. Based on implementation research, **FluentD** is the supported/production choice; FluentBit support is community-maintained and intended for testing only.~~
+
+**UPDATE (2026-09-22)**: The operator now uses **Vector** for log collection, replacing both FluentD and FluentBit. See [ADR 002: LogicPlatform Vector Implementation](002-logicplatform-vector-implementation.md) for details.
 
 ---
 
@@ -58,7 +65,7 @@ Refactor the Logic Operator to:
 1. **Drop SonataFlow** in favor of **Quarkus Flow** runtime
 2. **Support Serverless Workflow Specification v1.0.0** exclusively
 3. **Remove builder/container complexity** - use dynamic workflow loading
-4. **Implement new Data Index (MODE1)** - FluentD + PostgreSQL + GraphQL
+4. **Implement new Data Index (MODE1)** - Vector + PostgreSQL + GraphQL
 5. **Support multi-version workflows** - side-by-side version execution
 6. **Upgrade to latest Operator SDK**
 
@@ -88,7 +95,7 @@ Refactor the Logic Operator to:
 │                                                               │
 │  Controllers:                                                 │
 │  ├── LogicPlatformController                                 │
-│  │   ├── Manages FluentD DaemonSet (Data Index)             │
+│  │   ├── Manages Vector DaemonSet (Data Index)              │
 │  │   ├── Manages Data Index Service (GraphQL API)           │
 │  │   └── Provides runtime defaults                          │
 │  │                                                            │
@@ -123,7 +130,7 @@ Refactor the Logic Operator to:
 │  ├── Persists state to PostgreSQL (via Data Index)          │
 │  └── Emits CloudEvents as JSON logs to stdout               │
 │                                                               │
-│  FluentD DaemonSet (production; FluentBit for testing only): │
+│  Vector DaemonSet (log collector):                           │
 │  ├── Tails /var/log/containers/*_<namespace>_*.log          │
 │  ├── Filters: eventType=io.serverlessworkflow.*             │
 │  └── Streams to PostgreSQL staging tables                   │
@@ -218,18 +225,18 @@ spec:
   dataIndex:
     enabled: true
     
-    # FluentD DaemonSet (mode=local or remote; FluentBit image available for community/testing)
-    fluentD:
-      image: fluent/fluentd:v1.17
+    # Vector DaemonSet (log collector)
+    vector:
+      watchNamespaces: ["*"]  # All namespaces
+      image: timberio/vector:0.54.0-distroless-libc
       resources:
         requests:
           memory: "128Mi"
           cpu: "100m"
         limits:
           memory: "512Mi"
-          cpu: "500m"
-      nodeSelector: {}
-      tolerations: []
+          cpu: "1000m"
+      debugEvents: false
     
     # Data Index Service (mode=local or central)
     service:
@@ -290,12 +297,12 @@ status:
   
   # Data Index status
   dataIndex:
-    fluentD:
+    vector:
       ready: true
       daemonSetRef:
-        name: logic-platform-fluentd
+        name: vector
       nodes: 3
-      metricsEndpoint: http://logic-platform-fluentd.prod.svc:24231/metrics
+      metricsEndpoint: http://vector.prod.svc:9598/metrics
     service:
       ready: true
       deploymentRef:
@@ -317,7 +324,7 @@ status:
   - type: Ready
     status: "True"
     lastTransitionTime: "2026-06-22T10:00:00Z"
-  - type: FluentDReady
+  - type: VectorReady
     status: "True"
   - type: DataIndexServiceReady
     status: "True"
@@ -662,9 +669,9 @@ status:
 
 ## Data Index Architecture
 
-### MODE1: FluentD + PostgreSQL + GraphQL
+### MODE1: Vector + PostgreSQL + GraphQL
 
-> **Note**: FluentD is the production-supported log collector. FluentBit is community-maintained and available for testing only.
+> **UPDATE (2026-09-22)**: The operator now uses **Vector** for log collection. See [ADR 002](002-logicplatform-vector-implementation.md) for current implementation details.
 
 #### Architecture Flow
 
@@ -673,15 +680,15 @@ Quarkus Flow Runner
   ↓ Emits JSON structured logs to stdout
 Kubernetes /var/log/containers/*.log
   ↓ Container logs captured by K8s
-FluentD DaemonSet (production) / FluentBit (community/testing)
+Vector DaemonSet
   ├─ Tails /var/log/containers/*_<namespace>_*.log
   ├─ Filters: eventType=io.serverlessworkflow.*
-  ├─ Routes by event type (started, completed, faulted)
-  └─ INSERT into PostgreSQL staging tables
+  ├─ Routes by event type (workflow, task)
+  └─ INSERT into PostgreSQL raw tables
 PostgreSQL
-  ├─ Staging: workflow_instance_events (raw JSONB)
-  ├─ Triggers: Extract & UPSERT into final tables
-  └─ Final: workflow_instances, task_executions
+  ├─ Raw: workflow_events_raw, task_events_raw (JSONB)
+  ├─ Triggers: Extract & UPSERT into normalized tables
+  └─ Normalized: workflow_instances, task_instances
 Data Index Service
   ├─ GraphQL API: /graphql, /graphql-ui
   ├─ Queries: getWorkflowInstances, getTaskExecutions
@@ -694,7 +701,7 @@ Data Index Service
 ```
 Namespace: prod
 ├── LogicPlatform (mode: local)
-├── FluentD DaemonSet → PostgreSQL prod
+├── Vector DaemonSet → PostgreSQL prod
 ├── Data Index Service → PostgreSQL prod
 └── LogicFlowRuntimes
 ```
@@ -708,23 +715,23 @@ Namespace: logic-infra
 
 Namespace: prod, staging, team-a
 ├── LogicPlatform (mode: remote, dataIndexRef → logic-infra)
-├── FluentD DaemonSet → PostgreSQL in logic-infra
+├── Vector DaemonSet → PostgreSQL in logic-infra
 └── LogicFlowRuntimes
 ```
 
 #### PostgreSQL Schema
 
-**Staging Tables** (FluentD writes; FluentBit also supported for testing):
+**Raw Event Tables** (Vector writes):
 ```sql
-CREATE TABLE workflow_instance_events (
+CREATE TABLE workflow_events_raw (
     tag VARCHAR(255),
-    time TIMESTAMP,
+    time TIMESTAMP WITH TIME ZONE,
     data JSONB  -- Complete Quarkus Flow event
 );
 
-CREATE TABLE task_execution_events (
+CREATE TABLE task_events_raw (
     tag VARCHAR(255),
-    time TIMESTAMP,
+    time TIMESTAMP WITH TIME ZONE,
     data JSONB
 );
 ```
@@ -1230,7 +1237,7 @@ spec:
 ### Phase 2: Data Index Integration ⏳ Pending (EPIC 6, #9)
 
 **Deliverables**:
-- [ ] FluentD DaemonSet generation (LogicPlatform controller, local mode)
+- [ ] Vector DaemonSet generation (LogicPlatform controller, local mode) - See [ADR 002](002-logicplatform-vector-implementation.md)
 - [ ] Data Index Service deployment
 - [ ] PostgreSQL connection management
 - [ ] GraphQL API integration in controllers
