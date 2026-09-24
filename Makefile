@@ -230,14 +230,20 @@ kind-create: ## Create a KIND cluster for local development.
 		*) \
 			echo "Creating Kind cluster '$(KIND_DEV_CLUSTER)'..."; \
 			$(KIND) create cluster --name $(KIND_DEV_CLUSTER) --config hack/kind-config.yaml; \
+			echo "Waiting for node to be Ready..."; \
+            $(KUBECTL) wait --for=condition=Ready node --all --timeout=90s; \
 			echo "Installing ingress-nginx..."; \
 			$(KUBECTL) apply -f $(INGRESS_NGINX_URL); \
+			echo "Waiting for ingress-nginx deployment to exist..."; \
+            for i in $$(seq 1 30); do $(KUBECTL) get deployment -n ingress-nginx ingress-nginx-controller >/dev/null 2>&1 && break || sleep 2; done; \
 			echo "Waiting for ingress-nginx to be ready..."; \
 			$(KUBECTL) wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=120s; \
 			echo "Installing cert-manager $(CERT_MANAGER_VERSION)..."; \
 			$(KUBECTL) apply -f $(CERT_MANAGER_URL); \
+			echo "Waiting for cert-manager deployments to exist..."; \
+            for i in $$(seq 1 30); do $(KUBECTL) get deployment -n cert-manager cert-manager >/dev/null 2>&1 && break || sleep 2; done; \
 			echo "Waiting for cert-manager to be ready..."; \
-			$(KUBECTL) wait --namespace cert-manager --for=condition=available deployment --all --timeout=120s ;; \
+			$(KUBECTL) wait --namespace cert-manager --for=condition=available deployment --all --timeout=180s ;; \
 	esac
 
 KIND_IMG ?= controller:dev
