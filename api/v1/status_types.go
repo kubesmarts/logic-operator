@@ -83,6 +83,12 @@ const (
 	ReasonTargetNamespaceMissing      = "TargetNamespaceMissing"
 )
 
+// Schema migration reasons, used by ConditionDBMigration on ClusterLogicPlatform and LogicFlowRuntime.
+const (
+	ReasonMigrationJobRunning = "MigrationJobRunning"
+	ReasonMigrationJobFailed  = "MigrationJobFailed"
+)
+
 // SetCondition sets a condition on a Conditions slice, handling insert/update
 // and LastTransitionTime (only updated when status actually changes).
 func SetCondition(conditions *[]metav1.Condition, conditionType string, status metav1.ConditionStatus, observedGeneration int64, reason, message string) {
@@ -115,7 +121,7 @@ func DerivePhase(conditions []metav1.Condition, readyReplicas int32) Application
 	for _, cond := range conditions {
 		if cond.Status == metav1.ConditionFalse {
 			phase = ApplicationPhasePending
-			if cond.Reason == ReasonProgressDeadlineExceeded {
+			if cond.Reason == ReasonProgressDeadlineExceeded || cond.Reason == ReasonMigrationJobFailed {
 				return ApplicationPhaseFailed
 			}
 		}

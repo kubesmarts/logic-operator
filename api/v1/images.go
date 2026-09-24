@@ -24,7 +24,6 @@ func DefaultGatewayImage() string {
 
 // DefaultDBMigratorImage returns the default DBMigrator image bundled with
 // this operator release.
-// TODO: add the default DBMigrator version to version.go file
 func DefaultDBMigratorImage() string {
-	return fmt.Sprintf("quay.io/kubesmarts/logic-db-migrator:%s", version.GetOperatorVersion())
+	return fmt.Sprintf("quay.io/kubesmarts/logic-db-migrator:%s", version.GetDBMigratorVersion())
 }

@@ -28,6 +28,7 @@ import (
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -62,6 +63,8 @@ type ClusterLogicPlatformReconciler struct {
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;delete
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -165,6 +168,13 @@ func updateClusterLogicPlatformReadiness(plat *logicv1.ClusterLogicPlatform) {
 		}
 	}
 
+	if len(migrationTargets(plat)) > 0 {
+		components++
+		if condition := logicv1.FindCondition(plat.Status.Conditions, logicv1.ConditionDBMigration); condition == nil || condition.Status != metav1.ConditionTrue {
+			notReady = append(notReady, "DB Migration")
+		}
+	}
+
 	if len(notReady) == 0 {
 		message := "All enabled platform components are ready"
 		if components == 0 {
@@ -184,10 +194,12 @@ func updateClusterLogicPlatformReadiness(plat *logicv1.ClusterLogicPlatform) {
 		logicv1.ConditionDataIndexPersistenceReady,
 		logicv1.ConditionVectorReady,
 		logicv1.ConditionWorkflowGatewayReady,
+		logicv1.ConditionDBMigration,
 	} {
 		condition := logicv1.FindCondition(plat.Status.Conditions, conditionType)
-		if condition != nil && condition.Status == metav1.ConditionFalse && condition.Reason == logicv1.ReasonProgressDeadlineExceeded {
-			reason = logicv1.ReasonProgressDeadlineExceeded
+		if condition != nil && condition.Status == metav1.ConditionFalse &&
+			(condition.Reason == logicv1.ReasonProgressDeadlineExceeded || condition.Reason == logicv1.ReasonMigrationJobFailed) {
+			reason = condition.Reason
 			break
 		}
 	}
@@ -207,6 +219,7 @@ func (r *ClusterLogicPlatformReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		Owns(&appsv1.DaemonSet{}).
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&corev1.ConfigMap{}).
+		Owns(&batchv1.Job{}).
 		Named("clusterlogicplatform")
 
 	// Add ownership for platform-specific resources
