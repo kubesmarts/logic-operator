@@ -44,6 +44,8 @@ What this actually costs the person deploying `LogicPlatform`/`LogicFlowRuntime`
 
 **Accepted limitation.** A `LogicFlowRuntime` that overrides `Persistence.PostgreSQL` away from what `RuntimeDefaults` resolves to — pointing at a different Postgres instance or schema — is not covered by `job`-strategy migration at all: the Platform only ever migrates the JDBC target its own `RuntimeDefaults.Persistence` resolves to.
 
+**Blocking gap this design assumes away.** Everything above presumes a `LogicFlowRuntime` that leaves its own `Persistence` unset actually runs against `RuntimeDefaults.Persistence` — i.e. that "inherits the Platform's defaults" is real, resolved behavior. It isn't, today: `LogicFlowRuntimeReconciler` (`internal/controller/logicflowruntime_controller.go`) reads only `rt.Spec.Persistence` when building the Deployment, with `if rt.Spec.Persistence == nil` branches that skip persistence configuration entirely rather than falling back to the Platform's `RuntimeDefaults`. No webhook or reconciler anywhere in the operator merges `LogicPlatformSpec.RuntimeDefaults` into a Runtime's effective config — the field exists on the type but nothing wires it. Concretely: a Runtime relying on inheritance would pass this design's migration gate (`RuntimeMigrationComplete=True` mirrors correctly) and then deploy with no JDBC configuration at all, not with the migrated database. Building that effective-config resolution is a prerequisite this ADR depends on but does not design — see Open Questions — and should land before Step 1's gating logic is trusted for any Runtime that doesn't set its own `Persistence` explicitly.
+
 ## User Experience
 
 **Before:** A user sets `dbMigrationStrategy: job` somewhere in `LogicPlatform`/`LogicFlowRuntime`, expecting the operator to manage schema migrations. Nothing happens — the field is ignored. The Deployment rolls out immediately, running `hibernate.database.generation=update` exactly as if `dbMigrationStrategy` had never been set. If a schema problem exists, the user's first signal is pods crash-looping after rollout, and diagnosing it means reading Hibernate stack traces out of pod logs.
@@ -171,15 +173,20 @@ This changes the generated CRD's field type (the wire format — a string — do
 `PersistenceOptionsSpec` also needs an optional override for the migrator image. Since every component uses the same `db-migrator` image by default (see Migrator Application), this is a single well-known default, not a per-component resolution — the field exists only so an advanced user can point at a custom or forked migrator image if they need to:
 
 ```go
-// MigrationImage overrides the container image used for schema migration Jobs
-// when DBMigrationStrategy is job. If unset, defaults to the operator's
-// well-known db-migrator image (see Migrator Application) —
-// the same image is used for every component (runner, Data Index, Quartz).
-// +optional
-MigrationImage string `json:"migrationImage,omitempty"`
+// +kubebuilder:validation:MaxProperties=3
+type PersistenceOptionsSpec struct {
+    // ... PostgreSQL, DBMigrationStrategy unchanged ...
+
+    // MigrationImage overrides the container image used for schema migration Jobs
+    // when DBMigrationStrategy is job. If unset, defaults to the operator's
+    // well-known db-migrator image (see Migrator Application) —
+    // the same image is used for every component (runner, Data Index, Quartz).
+    // +optional
+    MigrationImage string `json:"migrationImage,omitempty"`
+}
 ```
 
-`PersistenceOptionsSpec` also carries `+kubebuilder:validation:MaxProperties=2`, already exactly matching its 2 existing fields (`PostgreSQL`, `DBMigrationStrategy`). Adding `MigrationImage` as a 3rd optional field without bumping this to `MaxProperties=3` would make the API server reject `postgresql` + `migrationImage` set together — a silent way to defeat this exact field. The two changes must land together.
+`PersistenceOptionsSpec` currently carries `+kubebuilder:validation:MaxProperties=2`, already exactly matching its 2 existing fields (`PostgreSQL`, `DBMigrationStrategy`). Adding `MigrationImage` as a 3rd optional field without bumping this to `MaxProperties=3` — shown on the struct above — would make the API server reject `postgresql` + `migrationImage` set together — a silent way to defeat this exact field. The two changes must land together.
 
 This is a new field this design introduces — distinct from the `DBMigrationStrategy` fix above, which corrects a field that already exists.
 
@@ -192,6 +199,8 @@ This is a new field this design introduces — distinct from the `DBMigrationStr
 A status-bearing child CRD, one per schema-bearing stream that has `DBMigrationStrategy: job` — `<platform-name>-runtime-migration` (Step 1, later also carrying Step 3's Quartz stream) and `<platform-name>-data-index-migration` (Step 2). Both are owned by the same `LogicPlatform` (see Migration Ownership). It exists so "what's the current migration state of this schema" is a directly queryable, structured object instead of text buried in the owner's own condition `Message` — closing the audit-trail gap noted in Problem #4 for real, not just with a pass/fail bit.
 
 **Operator-owned only.** `spec` is written exclusively by `LogicPlatformReconciler` (see `LogicDbMigration` Controller below) — users don't author or edit it directly, only read it (`kubectl get logicdbmigrations`). No validating/defaulting webhook is needed for the same reason: the only writer is the operator itself.
+
+**This must be enforced by RBAC, not just convention.** `LogicDbMigrationSpec.Image`/`ScriptSource` end up running inside a Job with the target database's real credentials — any principal with `create`/`update` on `logicdbmigrations` could point either field at an arbitrary image and have the controller execute it. Every other CRD in this repo gets `<kind>_admin_role.yaml`/`_editor_role.yaml`/`_viewer_role.yaml` scaffolded by `kubebuilder create api` and wired into `config/rbac/kustomization.yaml` by default (see existing `logicplatform_editor_role.yaml`, etc.) — for `LogicDbMigration`, only the generated `logicdbmigration_viewer_role.yaml` (`get;list;watch`) may be added to `kustomization.yaml`; the `_admin_role.yaml`/`_editor_role.yaml` files must either not be generated or be left out of `kustomization.yaml` entirely, so no aggregated `edit`/`admin` ClusterRole ever grants write access to this CRD.
 
 **Ownership chain:** `LogicPlatform` → `LogicDbMigration` (owner ref, `controller=true`) → `batchv1.Job` (owner ref points at the `LogicDbMigration`, not at the Platform directly) → `Pod`. Deleting the parent Platform cascades through the migration CR to the Job. `LogicFlowRuntime` is never an owner or a creator of any `LogicDbMigration` — it only reads the Platform's condition.
 
@@ -289,10 +298,21 @@ Every migration Job is a single Kubernetes `batchv1.Job` running one Pod to comp
 4. Found, Failed: harvest whatever partial report exists
    → Phase=Failed, MigrationComplete=False/MigrationJobFailed
 5. Found, running: Phase=Running, requeue short backoff (e.g. 5s)
-6. Not found: create the Job, Phase=Pending→Running
+6. Not found, Status.JobRef == current hash && Status.Phase is Succeeded/Failed:
+   the Job already ran to completion and ttlSecondsAfterFinished GC'd it — the terminal
+   report was harvested into Status in step 3/4 before GC could run (see below); do not
+   recreate. No requeue for Succeeded; no requeue for Failed either (hard stop, see
+   Failure Handling) until the spec's hash changes.
+7. Not found, Status.JobRef names a different hash and that old Job still exists and is
+   non-terminal (spec changed — new JDBC target, image, or Include — while the previous
+   hash's Job was still Running): do NOT create the replacement yet. Requeue short backoff,
+   same as step 5. Serialize rather than cancel — killing a Flyway run mid-migration risks
+   a half-applied schema change, which is worse than a few extra seconds of staleness.
+8. Not found, otherwise (never created, or the old hash's Job is gone/terminal):
+   create the Job, Phase=Pending→Running
 ```
 
-Harvesting happens in the same reconcile that first observes the Job's terminal state — well before `ttlSecondsAfterFinished` (see Container Spec below) has any chance to garbage-collect the Job/Pod, so there's no race between "the report exists" and "the Job it came from is still readable."
+Harvesting happens in the same reconcile that first observes the Job's terminal state — well before `ttlSecondsAfterFinished` (see Container Spec below) has any chance to garbage-collect the Job/Pod, so there's no race between "the report exists" and "the Job it came from is still readable." Step 6 depends on that ordering: by the time GC removes a terminal Job, `Status.Phase`/`Status.JobRef` already reflect its outcome, so "Not found" alone must never be read as "never ran" — only the hash comparison against `Status.JobRef` can tell the two apart. Step 7 covers the same hash-mismatch case while the old Job is still active rather than already gone: the reconciler must serialize on it, not race a new Job against it.
 
 `internal/controller/migrationjob_objects.go` (new file) keeps the builder shape, now called only by `LogicDbMigrationReconciler`:
 
@@ -331,7 +351,7 @@ Kubernetes Jobs are immutable — `spec.template` can't be updated on an existin
 {migration.Name}-{hash}
 ```
 
-where `hash` is a short hash (e.g. first 8 hex chars of FNV or SHA256) of the JDBC connection target, schema, image reference, and `Include`, and — only for the unused `ScriptSource != nil` fallback — the init container's image reference too. `LogicDbMigrationStatus.JobRef` always names the current hash's Job. A completed old-hash Job doesn't need active deletion — `ttlSecondsAfterFinished` GCs it; the reconciler just stops looking it up once the hash changes.
+where `hash` is a short hash (e.g. first 8 hex chars of FNV or SHA256) of the JDBC connection target, schema, image reference, and `Include`, and — only for the unused `ScriptSource != nil` fallback — the init container's image reference too. `LogicDbMigrationStatus.JobRef` always names the current hash's Job. A completed old-hash Job doesn't need active deletion — `ttlSecondsAfterFinished` GCs it; the reconciler just stops looking it up once the hash changes. If the hash changes while the old-hash Job is still `Running`, the reconciler does not create the new-hash Job in the same reconcile — it serializes, requeuing until the old Job reaches a terminal state first (see `LogicDbMigration` Controller, reconcile step 7). Two Flyway processes racing the same JDBC target is worse than a short delay, and cancelling the old Job risks a half-applied migration.
 
 ### Container Spec (defaults for all steps)
 
@@ -457,7 +477,7 @@ on `logicdbmigration_controller.go` — no `batch`/`jobs` or `pods` RBAC exists 
 
 | File | Change |
 |---|---|
-| `api/v1/persistence_types.go` | `DBMigrationStrategy` field type fix, enum marker, doc comment update |
+| `api/v1/persistence_types.go` | `DBMigrationStrategy` field type fix, enum marker, doc comment update; new `MigrationImage` field with `MaxProperties` bumped 2→3 |
 | `api/v1/logicdbmigration_types.go` (new) | `LogicDbMigration`, `LogicDbMigrationSpec/Status`, `MigrationPhase`, `MigrationStreamStatus`, `LogicDbMigrationKind` |
 | `api/v1/status_types.go` | `ConditionMigrationComplete`, `ConditionRuntimeMigrationComplete`, `ReasonMigrationJobRunning`, `ReasonMigrationJobFailed` |
 | `api/v1/logicflowruntime_webhook.go` | Admission Warning when `Persistence.DBMigrationStrategy` is set directly on a `LogicFlowRuntime` |
@@ -468,6 +488,7 @@ on `logicdbmigration_controller.go` — no `batch`/`jobs` or `pods` RBAC exists 
 | `internal/controller/migrationjob_objects.go` (new) | Shared `migrationJobInputs`, `buildMigrationJob`, `migrationJobName`, hash logic — used only by `LogicDbMigrationReconciler` |
 | `utils/kubernetes/jobs.go` | Reuse `FindJob`/`JobHasFinished`; verify condition-handling correctness |
 | `config/crd/bases/*.yaml`, `config/rbac/role.yaml` | Regenerated via `make manifests` |
+| `config/rbac/logicdbmigration_viewer_role.yaml` (new) | Only the viewer role is wired into `kustomization.yaml`; `_admin_role.yaml`/`_editor_role.yaml` are not generated or not included (see `LogicDbMigration` CRD, "operator-owned only") |
 | `docs/` | User-facing documentation for all three strategies |
 
 ### Testing
@@ -565,6 +586,7 @@ Envtest: Platform with Quartz scheduling enabled + `job` strategy sets `LogicDbM
 
 ## Open Questions
 
+- **Step 1 (blocking):** `LogicFlowRuntimeReconciler` has no effective-config resolution for `RuntimeDefaults` today — it reads only `rt.Spec.Persistence`, with nil skipping persistence config entirely rather than falling back to `LogicPlatform.Spec.RuntimeDefaults.Persistence` (see Migration Ownership, "Blocking gap this design assumes away"). This ADR's gating logic depends on that resolution existing but does not design it — needs its own fix (in this repo) before Step 1 can be trusted for any Runtime that doesn't set `Persistence` explicitly.
 - **All steps:** Whether a validating webhook should reject a second `LogicPlatform` per namespace, to remove the ambiguity in how `LogicFlowRuntimeReconciler` resolves "its" Platform (see Migration Ownership) — this ADR assumes the convention but doesn't enforce it.
 - **Step 1/3:** Exact env var names (`LOGIC_DB_MIGRATOR_INCLUDE` and any others) and exit-code contract on failure (partial migration vs. connection failure vs. checksum mismatch) — depends on the companion quarkus-flow ADR's implementation.
 - **All steps:** `db-migrator` module creation and scaffolding within `logic-apps` (CI wiring for a new per-module image build, container registry/namespace, base image, initial Maven/Quarkus project shape) is a prerequisite this ADR assumes but doesn't perform — not designed here.
