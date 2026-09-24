@@ -2,317 +2,232 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sort"
+	"strings"
 
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
+	"github.com/kubesmarts/logic-operator/utils/kubernetes"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
-
-	batchv1ac "k8s.io/client-go/applyconfigurations/batch/v1"
-	corev1ac "k8s.io/client-go/applyconfigurations/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// dbMigratorComponent implements PlatformComponent for the DBMigrator Job.
-// nolint:unused // Kept intact for future re-enablement in the reconciliation loop.
+// dbMigratorComponent implements PlatformComponent for the schema migration Jobs.
 type dbMigratorComponent struct {
 	*ClusterLogicPlatformReconciler
 }
 
-// nolint:unused // Kept intact for future re-enablement in the reconciliation loop.
 func (c *dbMigratorComponent) Name() string { return "DBMigrator" }
 
-// nolint:unused // Kept intact for future re-enablement in the reconciliation loop.
+// Reconcile creates one Job per datastore with dbMigrationStrategy=job and removes Jobs no longer desired.
 func (c *dbMigratorComponent) Reconcile(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
 	log := logf.FromContext(ctx)
 
-	// Guard: DBMigrator image not configured, skip reconciliation
-	if plat.Spec.DBMigrator == nil || plat.Spec.DBMigrator.Image == "" {
-		log.V(1).Info("DBMigrator image not configured, skipping reconciliation")
-		return nil
-	}
+	desired := make(map[string]struct{})
+	var errs []error
+	for _, target := range migrationTargets(plat) {
+		job := buildMigrationJob(plat, target)
+		desired[job.Name] = struct{}{}
 
-	// Collect configured datastores
-	datastores := collectConfiguredDatastores(plat)
-	if len(datastores) == 0 {
-		log.V(1).Info("No databases configured, skipping DBMigrator reconciliation")
-		return nil
-	}
-
-	job := buildDBMigratorJob(plat)
-	if job == nil {
-		return nil
-	}
-
-	return c.Apply(ctx, job, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
-}
-
-// nolint:unused // Kept intact for future re-enablement in the reconciliation loop.
-func (c *dbMigratorComponent) UpdateStatus(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
-	log := logf.FromContext(ctx)
-
-	// Guard: DBMigrator image not configured, skip status update
-	if plat.Spec.DBMigrator == nil || plat.Spec.DBMigrator.Image == "" {
-		return nil
-	}
-
-	// Check if any databases are configured
-	datastores := collectConfiguredDatastores(plat)
-	if len(datastores) == 0 {
-		return nil
-	}
-
-	jobName := fmt.Sprintf("%s-db-migrator", plat.Name)
-	var job batchv1.Job
-	err := c.Get(ctx, client.ObjectKey{Name: jobName, Namespace: plat.Spec.TargetNamespace}, &job)
-
-	if apierrors.IsNotFound(err) {
-		// Job not yet created
-		logicv1.SetCondition(&plat.Status.Conditions, logicv1.ConditionDBMigration,
-			metav1.ConditionFalse, plat.Generation,
-			"JobNotCreated", "DBMigrator job not yet created")
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-
-	// Check job status
-	for _, cond := range job.Status.Conditions {
-		switch cond.Type {
-		case batchv1.JobComplete:
-			if cond.Status == corev1.ConditionTrue {
-				logicv1.SetCondition(&plat.Status.Conditions, logicv1.ConditionDBMigration,
-					metav1.ConditionTrue, plat.Generation,
-					"Complete", "Database migration completed successfully")
-				return nil
-			}
-		case batchv1.JobFailed:
-			if cond.Status == corev1.ConditionTrue {
-				logicv1.SetCondition(&plat.Status.Conditions, logicv1.ConditionDBMigration,
-					metav1.ConditionFalse, plat.Generation,
-					"Failed", fmt.Sprintf("Database migration failed: %s", cond.Message))
-				return nil
-			}
+		existing, err := kubernetes.FindJob(ctx, c.Client, job.Namespace, job.Name)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		// A succeeded Job removed by its TTL must not rerun; a failed one reruns once deleted.
+		if existing != nil || migrationSucceeded(plat, target.Datastore, job.Name) {
+			continue
+		}
+		log.Info("creating schema migration Job", "job", job.Name, "datastore", target.Datastore)
+		if err := c.Create(ctx, job); err != nil && !apierrors.IsAlreadyExists(err) {
+			errs = append(errs, err)
 		}
 	}
 
-	// Job is still running
-	log.V(1).Info("DBMigrator job is running", "job", jobName)
-	logicv1.SetCondition(&plat.Status.Conditions, logicv1.ConditionDBMigration,
-		metav1.ConditionFalse, plat.Generation,
-		"InProgress", "Database migration in progress")
+	errs = append(errs, c.deleteStaleMigrationJobs(ctx, plat, desired))
+	return errors.Join(errs...)
+}
+
+func (c *dbMigratorComponent) deleteStaleMigrationJobs(ctx context.Context, plat *logicv1.ClusterLogicPlatform, desired map[string]struct{}) error {
+	var jobs batchv1.JobList
+	if err := c.List(ctx, &jobs,
+		client.InNamespace(plat.Spec.TargetNamespace),
+		client.MatchingLabels{LabelKeyName: plat.Name, LabelKeyManagedBy: LabelManagedBy},
+		client.HasLabels{LabelMigrationDatastore},
+	); err != nil {
+		return err
+	}
+	for i := range jobs.Items {
+		if _, ok := desired[jobs.Items[i].Name]; ok {
+			continue
+		}
+		if err := c.Delete(ctx, &jobs.Items[i], client.PropagationPolicy(metav1.DeletePropagationBackground)); client.IgnoreNotFound(err) != nil {
+			return err
+		}
+	}
 	return nil
 }
 
-// datastoreTarget represents a unique migration target (host:port:database:schema)
-type datastoreTarget struct {
-	typeName   string // logical type: dataindex, runtime, quartz
-	host       string
-	port       int
-	database   string
-	schema     string
-	secretName string
-	secretRef  logicv1.PostgreSQLSecretOptions // includes UserKey/PasswordKey
-}
-
-// collectConfiguredDatastores returns all unique database targets across DataIndex, Runtime, and Quartz.
-// Dedup: only collapse targets that are the SAME logical type AND same connection.
-func collectConfiguredDatastores(plat *logicv1.ClusterLogicPlatform) []datastoreTarget {
-	var targets []datastoreTarget
-	seen := make(map[string]bool) // Key: typeName:host:port:database:schema
-
-	// DataIndex persistence
-	if plat.Spec.DataIndex != nil && plat.Spec.DataIndex.Persistence != nil &&
-		plat.Spec.DataIndex.Persistence.PostgreSQL != nil {
-		if target := extractDatastoreTarget("dataindex", plat.Spec.DataIndex.Persistence.PostgreSQL); target != nil {
-			key := fmt.Sprintf("%s:%s:%d:%s:%s", target.typeName, target.host, target.port, target.database, target.schema)
-			if !seen[key] {
-				targets = append(targets, *target)
-				seen[key] = true
-			}
-		}
-	}
-
-	// Runtime datastore
-	if plat.Spec.Runtime != nil && plat.Spec.Runtime.Persistence != nil && plat.Spec.Runtime.Persistence.Runtime.PostgreSQL != nil {
-		if target := extractDatastoreTargetSpec("runtime", &plat.Spec.Runtime.Persistence.Runtime); target != nil {
-			key := fmt.Sprintf("%s:%s:%d:%s:%s", target.typeName, target.host, target.port, target.database, target.schema)
-			if !seen[key] {
-				targets = append(targets, *target)
-				seen[key] = true
-			}
-		}
-	}
-
-	// Quartz datastore
-	if plat.Spec.Runtime != nil && plat.Spec.Runtime.Persistence != nil && plat.Spec.Runtime.Persistence.Quartz.PostgreSQL != nil {
-		if target := extractDatastoreTargetSpec("quartz", &plat.Spec.Runtime.Persistence.Quartz); target != nil {
-			key := fmt.Sprintf("%s:%s:%d:%s:%s", target.typeName, target.host, target.port, target.database, target.schema)
-			if !seen[key] {
-				targets = append(targets, *target)
-				seen[key] = true
-			}
-		}
-	}
-
-	return targets
-}
-
-// extractDatastoreTarget extracts a datastoreTarget from a PersistencePostgreSQL for DataIndex.
-// For DataIndex, use the operational secret (SecretRef).
-func extractDatastoreTarget(name string, pg *logicv1.PersistencePostgreSQL) *datastoreTarget {
-	if pg == nil {
-		return nil
-	}
-
-	svc := &pg.ServiceRef
-	host := BuildPostgresAddress(svc.Name, svc.Namespace, 0)
-	port := defaultPostgresPort
-	if svc.Port != nil {
-		port = *svc.Port
-	}
-	database := svc.DatabaseName
-	if database == "" {
-		database = "postgres"
-	}
-	schema := pg.ServiceRef.DatabaseSchema
-	if schema == "" {
-		schema = "public"
-	}
-
-	return &datastoreTarget{
-		typeName:   name,
-		host:       host,
-		port:       port,
-		database:   database,
-		schema:     schema,
-		secretName: pg.SecretRef.Name,
-		secretRef:  pg.SecretRef,
-	}
-}
-
-// extractDatastoreTargetSpec extracts a datastoreTarget from a DatastoreSpec (Runtime/Quartz).
-// For these, use the DDL secret (MigrationSecretRef, falling back to operational).
-func extractDatastoreTargetSpec(name string, ds *logicv1.DatastoreSpec) *datastoreTarget {
-	if ds == nil || ds.PostgreSQL == nil {
-		return nil
-	}
-
-	svc := &ds.PostgreSQL.ServiceRef
-	host := BuildPostgresAddress(svc.Name, svc.Namespace, 0)
-	port := defaultPostgresPort
-	if svc.Port != nil {
-		port = *svc.Port
-	}
-	database := svc.DatabaseName
-	if database == "" {
-		database = "postgres"
-	}
-	schema := ds.PostgreSQL.ServiceRef.DatabaseSchema
-	if schema == "" {
-		schema = "public"
-	}
-
-	// Use DDL secret (migration secret), falling back to operational
-	migSecret := logicv1.MigrationSecret(*ds)
-
-	return &datastoreTarget{
-		typeName:   name,
-		host:       host,
-		port:       port,
-		database:   database,
-		schema:     schema,
-		secretName: migSecret.Name,
-		secretRef:  migSecret,
-	}
-}
-
-// buildDBMigratorJob constructs the Job apply configuration for database migrations.
-func buildDBMigratorJob(plat *logicv1.ClusterLogicPlatform) *batchv1ac.JobApplyConfiguration {
-	targets := collectConfiguredDatastores(plat)
+// UpdateStatus mirrors each migration Job onto plat.Status.DBMigrator and the DBMigration condition.
+func (c *dbMigratorComponent) UpdateStatus(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
+	targets := migrationTargets(plat)
 	if len(targets) == 0 {
+		plat.Status.DBMigrator = nil
+		meta.RemoveStatusCondition(&plat.Status.Conditions, logicv1.ConditionDBMigration)
 		return nil
 	}
 
-	jobName := fmt.Sprintf("%s-db-migrator", plat.Name)
-	childLabels := ChildLabels(plat)
+	migrations := make([]logicv1.DatastoreMigrationStatus, 0, len(targets))
+	for _, target := range targets {
+		m, err := c.observeMigration(ctx, plat, target)
+		if err != nil {
+			return err
+		}
+		migrations = append(migrations, m)
+	}
+	plat.Status.DBMigrator = &logicv1.DBMigratorStatus{Migrations: migrations}
 
-	// Determine image
-	image := logicv1.DefaultDBMigratorImage()
-	if plat.Spec.DBMigrator != nil && plat.Spec.DBMigrator.Image != "" {
-		image = plat.Spec.DBMigrator.Image
+	var running, failed []string
+	for _, m := range migrations {
+		switch m.Phase {
+		case logicv1.MigrationPhaseFailed:
+			msg := m.Datastore
+			if m.Message != "" {
+				msg += ": " + m.Message
+			}
+			failed = append(failed, msg)
+		case logicv1.MigrationPhaseSucceeded:
+		default:
+			running = append(running, m.Datastore)
+		}
+	}
+	switch {
+	case len(failed) > 0:
+		logicv1.SetCondition(&plat.Status.Conditions, logicv1.ConditionDBMigration, metav1.ConditionFalse, plat.Generation,
+			logicv1.ReasonMigrationJobFailed, "Schema migration failed for "+strings.Join(failed, "; "))
+	case len(running) > 0:
+		logicv1.SetCondition(&plat.Status.Conditions, logicv1.ConditionDBMigration, metav1.ConditionFalse, plat.Generation,
+			logicv1.ReasonMigrationJobRunning, "Schema migration in progress for "+strings.Join(running, ", "))
+	default:
+		logicv1.SetCondition(&plat.Status.Conditions, logicv1.ConditionDBMigration, metav1.ConditionTrue, plat.Generation,
+			logicv1.ReasonReady, "Schema migration completed")
+	}
+	return nil
+}
+
+func (c *dbMigratorComponent) observeMigration(ctx context.Context, plat *logicv1.ClusterLogicPlatform, target migrationTarget) (logicv1.DatastoreMigrationStatus, error) {
+	jobName := buildMigrationJob(plat, target).Name
+	status := logicv1.DatastoreMigrationStatus{Datastore: target.Datastore, JobRef: jobName, Phase: logicv1.MigrationPhasePending}
+
+	job, err := kubernetes.FindJob(ctx, c.Client, plat.Spec.TargetNamespace, jobName)
+	if err != nil {
+		return status, err
+	}
+	if job == nil {
+		if migrationSucceeded(plat, target.Datastore, jobName) {
+			return *previousMigration(plat, target.Datastore), nil
+		}
+		return status, nil
 	}
 
-	// Build container spec with environment variables for all targets
-	containers := corev1ac.Container().
-		WithName("db-migrator").
-		WithImage(image).
-		WithImagePullPolicy(corev1.PullIfNotPresent)
-
-	// Build env vars for each target
-	for i, target := range targets {
-		prefix := fmt.Sprintf("DB_%d_", i)
-
-		// Determine secret keys (honor custom UserKey/PasswordKey)
-		userKey := target.secretRef.UserKey
-		if userKey == "" {
-			userKey = logicv1.DefaultPgsqlSecretUserKey
-		}
-		passwordKey := target.secretRef.PasswordKey
-		if passwordKey == "" {
-			passwordKey = logicv1.DefaultPgsqlSecretPasswordKey
-		}
-
-		// TODO: review these env vars, should follow Quarkus Flow documentation. The documentation should be linked here and in our docs.
-		// Host/Port/Database/Schema/Type
-		containers.WithEnv(
-			corev1ac.EnvVar().WithName(prefix+"TYPE").WithValue(target.typeName),
-			corev1ac.EnvVar().WithName(prefix+"HOST").WithValue(target.host),
-			corev1ac.EnvVar().WithName(prefix+"PORT").WithValue(fmt.Sprintf("%d", target.port)),
-			corev1ac.EnvVar().WithName(prefix+"DATABASE").WithValue(target.database),
-			corev1ac.EnvVar().WithName(prefix+"SCHEMA").WithValue(target.schema),
-		)
-
-		// Username and password from secret (using custom or default keys)
-		containers.WithEnv(
-			corev1ac.EnvVar().WithName(prefix+"USER").WithValueFrom(
-				corev1ac.EnvVarSource().WithSecretKeyRef(
-					corev1ac.SecretKeySelector().
-						WithName(target.secretName).
-						WithKey(userKey),
-				),
-			),
-			corev1ac.EnvVar().WithName(prefix+"PASSWORD").WithValueFrom(
-				corev1ac.EnvVarSource().WithSecretKeyRef(
-					corev1ac.SecretKeySelector().
-						WithName(target.secretName).
-						WithKey(passwordKey),
-				),
-			),
-		)
+	finished, succeeded := kubernetes.JobHasFinished(job)
+	if !finished {
+		status.Phase = logicv1.MigrationPhaseRunning
+		return status, nil
 	}
 
-	podSpec := corev1ac.PodSpec().
-		WithContainers(containers).
-		WithRestartPolicy(corev1.RestartPolicyOnFailure).
-		WithServiceAccountName("")
+	report, reportErr := c.harvestMigrationReport(ctx, job)
+	status.Streams = toStreamStatus(report.Streams, job.Status.CompletionTime)
+	if succeeded {
+		status.Phase = logicv1.MigrationPhaseSucceeded
+		return status, nil
+	}
+	status.Phase = logicv1.MigrationPhaseFailed
+	status.Message = report.Error
+	if reportErr != nil {
+		status.Message = reportErr.Error()
+	}
+	if status.Message == "" {
+		status.Message = fmt.Sprintf("Job %s failed", jobName)
+	}
+	return status, nil
+}
 
-	job := batchv1ac.Job(jobName, plat.Spec.TargetNamespace).
-		WithOwnerReferences(OwnerRef(plat, logicv1.ClusterLogicPlatformKind)).
-		WithLabels(childLabels).
-		WithSpec(
-			batchv1ac.JobSpec().
-				WithTemplate(
-					corev1ac.PodTemplateSpec().
-						WithLabels(childLabels).
-						WithSpec(podSpec),
-				).
-				WithBackoffLimit(int32(3)),
-		)
+// harvestMigrationReport reads the migrator's termination-message report off the Job's most
+// recently created Pod. backoffLimit can produce more than one Pod (retries), so the
+// list is sorted by CreationTimestamp rather than trusting List's return order.
+func (c *dbMigratorComponent) harvestMigrationReport(ctx context.Context, job *batchv1.Job) (migrationReport, error) {
+	var pods corev1.PodList
+	if err := c.List(ctx, &pods, client.InNamespace(job.Namespace), client.MatchingLabels{"job-name": job.Name}); err != nil {
+		return migrationReport{}, err
+	}
+	if len(pods.Items) == 0 {
+		return migrationReport{}, nil
+	}
+	sort.Slice(pods.Items, func(i, j int) bool {
+		return pods.Items[i].CreationTimestamp.Before(&pods.Items[j].CreationTimestamp)
+	})
+	pod := pods.Items[len(pods.Items)-1]
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.Name == MigrationContainerName && cs.State.Terminated != nil {
+			return parseMigrationReport(cs.State.Terminated.Message)
+		}
+	}
+	return migrationReport{}, nil
+}
 
-	return job
+func previousMigration(plat *logicv1.ClusterLogicPlatform, datastore string) *logicv1.DatastoreMigrationStatus {
+	if plat.Status.DBMigrator == nil {
+		return nil
+	}
+	for i := range plat.Status.DBMigrator.Migrations {
+		if plat.Status.DBMigrator.Migrations[i].Datastore == datastore {
+			return &plat.Status.DBMigrator.Migrations[i]
+		}
+	}
+	return nil
+}
+
+// pendingMigration returns the first target whose current Job has not succeeded according to
+// plat.Status, or nil when all have. Matching the JobRef ignores results of outdated Jobs.
+func pendingMigration(plat *logicv1.ClusterLogicPlatform, targets []migrationTarget) *logicv1.DatastoreMigrationStatus {
+	for _, target := range targets {
+		jobName := buildMigrationJob(plat, target).Name
+		prev := previousMigration(plat, target.Datastore)
+		if prev == nil || prev.JobRef != jobName {
+			return &logicv1.DatastoreMigrationStatus{Datastore: target.Datastore, JobRef: jobName, Phase: logicv1.MigrationPhasePending}
+		}
+		if prev.Phase != logicv1.MigrationPhaseSucceeded {
+			return prev
+		}
+	}
+	return nil
+}
+
+func migrationSucceeded(plat *logicv1.ClusterLogicPlatform, datastore, jobName string) bool {
+	prev := previousMigration(plat, datastore)
+	return prev != nil && prev.JobRef == jobName && prev.Phase == logicv1.MigrationPhaseSucceeded
+}
+
+// toStreamStatus uses the Job's completion time so repeated reconciles keep the status stable.
+func toStreamStatus(streams []migrationStreamReport, completedAt *metav1.Time) []logicv1.MigrationStreamStatus {
+	if len(streams) == 0 {
+		return nil
+	}
+	out := make([]logicv1.MigrationStreamStatus, 0, len(streams))
+	for _, s := range streams {
+		out = append(out, logicv1.MigrationStreamStatus{
+			Name:           s.Name,
+			AppliedVersion: s.AppliedVersion,
+			AppliedCount:   s.AppliedCount,
+			LastAppliedAt:  completedAt,
+		})
+	}
+	return out
 }

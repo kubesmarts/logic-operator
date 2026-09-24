@@ -49,6 +49,7 @@ OPERATOR_VERSION ?= {operator-version}
 GATEWAY_VERSION ?= {workflow-gateway-version}
 DATA_INDEX_VERSION ?= {data-index-version}
 QUARKUS_FLOW_RUNNER_VERSION ?= {quarkus-flow-runner-version}
+DB_MIGRATOR_VERSION ?= {db-migrator-version}
 ----
 
 Update these values before running the Release workflow. The workflow creates a single Git tag using `OPERATOR_VERSION`, but both versions are embedded in the operator image build arguments.

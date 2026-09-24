@@ -108,9 +108,11 @@ type DatastoreSpec struct {
 	// MigrationSecretRef references the DDL credential; defaults to PostgreSQL.SecretRef.
 	// +optional
 	MigrationSecretRef *PostgreSQLSecretOptions `json:"migrationSecretRef,omitempty"`
-	// DBMigrationStrategy is reserved; controllers do not act on it yet.
+	// DBMigrationStrategy selects who owns the schema: service (the workload migrates itself),
+	// job (the operator runs a logic-db-migrator Job before rollout), or none (externally managed).
 	// +optional
 	// +kubebuilder:default:=service
+	// +kubebuilder:validation:Enum=service;job;none
 	DBMigrationStrategy DBMigrationStrategyType `json:"dbMigrationStrategy,omitempty"`
 }
 

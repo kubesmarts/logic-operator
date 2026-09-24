@@ -27,6 +27,7 @@ var (
 	workflowGatewayVersion   = "unknown"
 	dataIndexVersion         = "unknown"
 	quarkusFlowRunnerVersion = "unknown"
+	dbMigratorVersion        = "unknown"
 )
 
 // GetGitCommit gets the source revision used to build the operator.
@@ -55,4 +56,10 @@ func GetDataIndexVersion() string {
 // bundled with this operator release.
 func GetQuarkusFlowRunnerVersion() string {
 	return quarkusFlowRunnerVersion
+}
+
+// GetDBMigratorVersion gets the logic-db-migrator image version bundled with
+// this operator release.
+func GetDBMigratorVersion() string {
+	return dbMigratorVersion
 }
