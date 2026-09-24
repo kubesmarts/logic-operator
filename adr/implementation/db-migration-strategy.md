@@ -38,7 +38,7 @@ What this actually costs the person deploying `LogicPlatform`/`LogicFlowRuntime`
 **Mechanism.** There is no formal binding between a `LogicFlowRuntime` and a specific `LogicPlatform` — no `PlatformRef` field exists. `LogicPlatformSpec.RuntimeDefaults` already assumes the convention this design relies on: one `LogicPlatform` supplies defaults "for all `LogicFlowRuntime` deployments in this namespace." `LogicFlowRuntimeReconciler` formalizes that convention as a namespace-scoped `List` for `LogicPlatform` (`client.InNamespace(rt.Namespace)`), expecting 0 or 1 result:
 - **0 Platforms:** nothing to gate on — the Runtime deploys immediately, equivalent to `service`/`none`.
 - **1 Platform:** the expected case — mirror its runtime-migration condition into the Runtime's own status.
-- **>1 Platforms:** ambiguous. A validating webhook rejecting a second `LogicPlatform` per namespace removes the ambiguity structurally (see Open Questions).
+- **>1 Platforms:** ambiguous. Rather than leave this unguarded pending a future webhook, this design treats it as a hard stop: `LogicFlowRuntimeReconciler` should block the Deployment (`ConditionMigrationComplete=False`, reason `MultipleLogicPlatforms`), and `DerivePhase` should treat that reason as a hard failure (`ApplicationPhaseFailed`), the same severity as a failed migration Job. A validating webhook rejecting a second `LogicPlatform` per namespace would remove the ambiguity structurally instead of just gating around it (see Open Questions).
 
 **Field semantics.** `LogicFlowRuntimeSpec` embeds `RuntimeSpec`, and `LogicPlatformSpec.RuntimeDefaults` is typed as that same `RuntimeSpec` — so `Persistence.DBMigrationStrategy` is technically still settable directly on a `LogicFlowRuntime`, but the operator never reads it for migration purposes there; only `LogicPlatform.Spec.RuntimeDefaults.Persistence.DBMigrationStrategy` (runtime/Quartz) and `LogicPlatform.Spec.DataIndex.Persistence.DBMigrationStrategy` (Data Index) are honored. Two changes prevent this from silently recreating Problem #1 one level down: `PersistenceOptionsSpec`'s doc comment is updated to state that `DBMigrationStrategy` specifically does not cascade to the flow-specific level (only `PostgreSQL` connection fields do), and `LogicFlowRuntime`'s admission webhook (`api/v1/logicflowruntime_webhook.go`) emits a non-blocking Warning when `Persistence.DBMigrationStrategy` is set to a non-default value directly on a Runtime, pointing at `LogicPlatform.Spec.RuntimeDefaults` instead.
 
@@ -52,7 +52,7 @@ What this actually costs the person deploying `LogicPlatform`/`LogicFlowRuntime`
 - Setting `dbMigrationStrategy: job` on `LogicPlatform.Spec.RuntimeDefaults.Persistence` actually does something: on the next reconcile, `LogicPlatformReconciler` creates a `LogicDbMigration`, which in turn creates a Job. Every `LogicFlowRuntime` in that namespace picks this up — `kubectl get logicflowruntime` / `kubectl describe` shows a `MigrationComplete` condition, `False`/`MigrationJobRunning` while it's in flight, `True` once schema is confirmed up to date. No Deployment (and therefore no pods) exist until that condition is `True` — a failed migration is visible *before* any pod starts, as `MigrationComplete=False`/`MigrationJobFailed`. Setting `dbMigrationStrategy` directly on an individual `LogicFlowRuntime` has no effect — only the Platform-level field does anything (see Migration Ownership).
 - `kubectl get logicdbmigrations` / `kubectl describe logicdbmigration <platform-name>-runtime-migration` gives the actual report — which schema version was applied, how many migrations ran — not just pass/fail, closing the "no audit trail" gap (Problem #4, see Migration Report). This survives independently of the Job's own `ttlSecondsAfterFinished` GC window.
 - First-time rollout of a `job`-strategy Platform takes somewhat longer (time for the Job to run) — the trade-off is explicit and documented, not a surprise. Subsequent reconciles where nothing changed re-run against an already-migrated schema and complete quickly (Flyway is idempotent — "0 pending migrations" is a fast, successful Job).
-- Users who set `dbMigrationStrategy: none` get an explicit, visible statement of intent ("schema is externally managed") instead of silently getting `update` regardless of what they asked for — the runtime is configured with `hibernate.database.generation=none`, so an unexpected schema drift from Hibernate auto-DDL can no longer happen by accident.
+- Users who set `dbMigrationStrategy: none` get an explicit, visible statement of intent ("schema is externally managed") instead of silently getting `update` regardless of what they asked for — the runtime is configured with `quarkus.hibernate-orm.schema-management.strategy=none`, so an unexpected schema drift from Hibernate auto-DDL can no longer happen by accident.
 - Users who don't touch the field at all (`service`, the default) see zero behavior change — today's `update` semantics continue exactly as before. Nobody is forced to adopt Job-based migration to keep working.
 - Once Steps 2 and 3 land, the same experience — a status condition to check, a `LogicDbMigration` report to inspect on failure, no silent no-op — extends to Data Index and to Quartz-enabled runtimes, rather than being a one-off special case for the flow schema alone.
 
@@ -75,10 +75,12 @@ Applies identically to every schema stream (runtime, Data Index, Quartz) — the
 | Strategy | Operator action | Component env |
 |---|---|---|
 | `service` (default) | No-op — today's behavior | `hibernate.database.generation=update` (current default, unchanged) |
-| `job` | Create migration Job before the component's Deployment; block the Deployment until it succeeds | `hibernate.database.generation=none` — Flyway already established the schema; Hibernate must not also attempt DDL |
-| `none` | No-op | `hibernate.database.generation=none` — schema is externally managed (DBA/Terraform/CI) |
+| `job` | Create migration Job before the component's Deployment; block the Deployment until it succeeds | `quarkus.hibernate-orm.schema-management.strategy=none` — Flyway already established the schema; Hibernate must not also attempt DDL |
+| `none` | No-op | `quarkus.hibernate-orm.schema-management.strategy=none` — schema is externally managed (DBA/Terraform/CI) |
 
-`job` and `none` result in the *same* runtime env var — the difference is entirely whether the operator ran a migration Job first. `DBMigrationStrategy` therefore needs to be read in two places: once in the Job-creation path (`job` only, by `LogicPlatformReconciler`), once when building each component's env vars (`job` and `none` both force `database.generation=none`; `service` leaves today's default alone).
+`job` and `none` result in the *same* runtime env var — the difference is entirely whether the operator ran a migration Job first. `DBMigrationStrategy` therefore needs to be read in two places: once in the Job-creation path (`job` only, by `LogicPlatformReconciler`), once when building each component's env vars (`job` and `none` both force `quarkus.hibernate-orm.schema-management.strategy=none`; `service` leaves today's default alone).
+
+Note: an earlier draft of this ADR named the property `hibernate.database.generation`. `quarkus.hibernate-orm.schema-management.strategy` is the correct, non-deprecated Quarkus property for this; its accepted values are `none`, `create`, `drop-and-create`, `drop`, `update`, `validate`.
 
 ## Migrator Application: `db-migrator`
 
@@ -176,6 +178,8 @@ This changes the generated CRD's field type (the wire format — a string — do
 // +optional
 MigrationImage string `json:"migrationImage,omitempty"`
 ```
+
+`PersistenceOptionsSpec` also carries `+kubebuilder:validation:MaxProperties=2`, already exactly matching its 2 existing fields (`PostgreSQL`, `DBMigrationStrategy`). Adding `MigrationImage` as a 3rd optional field without bumping this to `MaxProperties=3` would make the API server reject `postgresql` + `migrationImage` set together — a silent way to defeat this exact field. The two changes must land together.
 
 This is a new field this design introduces — distinct from the `DBMigrationStrategy` fix above, which corrects a field that already exists.
 
