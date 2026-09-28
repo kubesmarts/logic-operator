@@ -377,9 +377,9 @@ func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *lo
 		childLabels,
 		SelectorLabels(rt.Name),
 		DefaultRunnerImage(rt.Spec.Persistence),
-		WithPersistenceEnvVars(rt.Spec.Persistence, rt.Namespace),
+		WithQuarkusPersistenceEnvVars(rt.Spec.Persistence, rt.Namespace),
 		WithSecurityEnvVars(rt.Spec.Security),
-		DefaultProbes(),
+		DefaultQuarkusProbes(),
 		WithFlowSourcePath(),
 		WithFlowVolumeMounts(configMaps),
 	)

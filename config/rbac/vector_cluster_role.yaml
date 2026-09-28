@@ -1,0 +1,15 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  # there's a logic-operator- prefix in default/kustomization.yaml
+  name: vector
+  labels:
+    app.kubernetes.io/name: logic-operator
+    app.kubernetes.io/component: vector
+rules:
+  - apiGroups: [""]
+    resources:
+      - namespaces
+      - pods
+      - nodes
+    verbs: ["get", "list", "watch"]

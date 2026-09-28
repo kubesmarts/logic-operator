@@ -31,3 +31,7 @@ docs/antora/target/
 adr/handoff/
 docs/architecture-slide*.html
 docs/superpowers
+
+# Generated configs (synced from Go module dependencies)
+internal/controller/configs/*
+!internal/controller/configs/.gitkeep

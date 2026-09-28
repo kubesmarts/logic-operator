@@ -185,15 +185,15 @@ type PostgreSQLSecretOptions struct {
 }
 
 type SQLServiceOptions struct {
-	// Name of the postgresql k8s service.
+	// Name of the DB k8s service.
 	Name string `json:"name"`
-	// Namespace of the postgresql k8s service. Defaults to the LogicPlatform's local namespace.
+	// Namespace of the DB k8s service. Defaults to the LogicPlatform's local namespace.
 	// +optional
 	Namespace string `json:"namespace,omitempty"`
-	// Port to use when connecting to the postgresql k8s service. Defaults to 5432.
+	// Port to use when connecting to the DB k8s service.
 	// +optional
 	Port *int `json:"port,omitempty"`
-	// Name of postgresql database to be used. Defaults to "logicflow"
+	// Name of postgresql database to be used.
 	// +optional
 	DatabaseName string `json:"databaseName,omitempty"`
 }

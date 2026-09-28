@@ -13,6 +13,9 @@ import (
 // ContainerOption decorates the main container before it's placed in the pod spec.
 type ContainerOption func(*corev1ac.ContainerApplyConfiguration)
 
+// PodSpecOption decorates the pod spec before it's applied.
+type PodSpecOption func(*corev1ac.PodSpecApplyConfiguration)
+
 // WithEnvVars appends environment variables to the main container.
 func WithEnvVars(envs ...*corev1ac.EnvVarApplyConfiguration) ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
@@ -31,24 +34,7 @@ func ToDeploymentSpec(
 	selLabels map[string]string,
 	opts ...ContainerOption,
 ) *appsv1ac.DeploymentSpecApplyConfiguration {
-	container := resolveContainerAC(containerName, app)
-	for _, opt := range opts {
-		opt(container)
-	}
-	podSpec := toPodSpecAC(&app.PodTemplate, container)
-
-	templateLabels := MergeMaps(podLabels)
-	if app.PodTemplate.Metadata != nil {
-		templateLabels = MergeMaps(podLabels, app.PodTemplate.Metadata.Labels)
-	}
-
-	podTemplate := corev1ac.PodTemplateSpec().
-		WithLabels(templateLabels).
-		WithSpec(podSpec)
-
-	if app.PodTemplate.Metadata != nil && len(app.PodTemplate.Metadata.Annotations) > 0 {
-		podTemplate = podTemplate.WithAnnotations(app.PodTemplate.Metadata.Annotations)
-	}
+	podTemplate := toPodTemplateSpecAC(containerName, app, podLabels, opts...)
 
 	spec := appsv1ac.DeploymentSpec().
 		WithSelector(metav1ac.LabelSelector().WithMatchLabels(selLabels)).
@@ -129,9 +115,64 @@ func applyContainerFields(c *corev1ac.ContainerApplyConfiguration, cs *logicv1.C
 	}
 }
 
+func toPodTemplateSpecAC(containerName string,
+	app *logicv1.ApplicationSpec,
+	podLabels map[string]string,
+	containerOpts ...ContainerOption) *corev1ac.PodTemplateSpecApplyConfiguration {
+	container := resolveContainerAC(containerName, app)
+	for _, opt := range containerOpts {
+		opt(container)
+	}
+	podSpec := toPodSpecAC(&app.PodTemplate, container)
+
+	templateLabels := MergeMaps(podLabels)
+	if app.PodTemplate.Metadata != nil {
+		templateLabels = MergeMaps(podLabels, app.PodTemplate.Metadata.Labels)
+	}
+
+	podTemplate := corev1ac.PodTemplateSpec().
+		WithLabels(templateLabels).
+		WithSpec(podSpec)
+
+	if app.PodTemplate.Metadata != nil && len(app.PodTemplate.Metadata.Annotations) > 0 {
+		podTemplate = podTemplate.WithAnnotations(app.PodTemplate.Metadata.Annotations)
+	}
+
+	return podTemplate
+}
+
+// toPodTemplateSpecACWithPodOpts is like toPodTemplateSpecAC but also accepts PodSpecOptions.
+func toPodTemplateSpecACWithPodOpts(containerName string,
+	app *logicv1.ApplicationSpec,
+	podLabels map[string]string,
+	containerOpts []ContainerOption,
+	podOpts ...PodSpecOption) *corev1ac.PodTemplateSpecApplyConfiguration {
+	container := resolveContainerAC(containerName, app)
+	for _, opt := range containerOpts {
+		opt(container)
+	}
+	podSpec := toPodSpecAC(&app.PodTemplate, container, podOpts...)
+
+	templateLabels := MergeMaps(podLabels)
+	if app.PodTemplate.Metadata != nil {
+		templateLabels = MergeMaps(podLabels, app.PodTemplate.Metadata.Labels)
+	}
+
+	podTemplate := corev1ac.PodTemplateSpec().
+		WithLabels(templateLabels).
+		WithSpec(podSpec)
+
+	if app.PodTemplate.Metadata != nil && len(app.PodTemplate.Metadata.Annotations) > 0 {
+		podTemplate = podTemplate.WithAnnotations(app.PodTemplate.Metadata.Annotations)
+	}
+
+	return podTemplate
+}
+
 // toPodSpecAC converts a PodTemplateSpec into a PodSpecApplyConfiguration.
 // The main container is passed separately since it's resolved from the 3-tier precedence.
-func toPodSpecAC(pt *logicv1.PodTemplateSpec, mainContainer *corev1ac.ContainerApplyConfiguration) *corev1ac.PodSpecApplyConfiguration {
+// PodSpecOptions are applied after the spec is constructed, allowing customization of security policies.
+func toPodSpecAC(pt *logicv1.PodTemplateSpec, mainContainer *corev1ac.ContainerApplyConfiguration, opts ...PodSpecOption) *corev1ac.PodSpecApplyConfiguration {
 	mainName := ""
 	if mainContainer.Name != nil {
 		mainName = *mainContainer.Name
@@ -193,6 +234,11 @@ func toPodSpecAC(pt *logicv1.PodTemplateSpec, mainContainer *corev1ac.ContainerA
 	}
 	if pt.DNSConfig != nil {
 		ps.WithDNSConfig(convertTo[corev1ac.PodDNSConfigApplyConfiguration](pt.DNSConfig))
+	}
+
+	// Apply PodSpecOptions to allow customization of security policies and other pod-level settings
+	for _, opt := range opts {
+		opt(ps)
 	}
 
 	return ps
@@ -260,4 +306,12 @@ func restrictedPodSecurity() *corev1ac.PodSecurityContextApplyConfiguration {
 		WithRunAsNonRoot(true).
 		WithSeccompProfile(corev1ac.SeccompProfile().
 			WithType(corev1.SeccompProfileTypeRuntimeDefault))
+}
+
+// WithoutRestrictedSecurity removes the restricted pod security context.
+// Use this for workloads like Vector that need to run as root or with specific users.
+func WithoutRestrictedSecurity() PodSpecOption {
+	return func(ps *corev1ac.PodSpecApplyConfiguration) {
+		ps.WithSecurityContext(nil)
+	}
 }

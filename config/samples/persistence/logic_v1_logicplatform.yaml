@@ -1,0 +1,20 @@
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicPlatform
+metadata:
+  labels:
+    app.kubernetes.io/name: logic-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: flow-platform
+spec:
+  dataIndex:
+    persistence:
+      postgresql:
+        secretRef:
+          name: postgresql-secret
+        serviceRef:
+          name: postgresql
+          # use the same runtime database, so we simplify the example
+          databaseName: logicflow
+          databaseSchema: dataindex
+    vector:
+      enabled: true

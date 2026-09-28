@@ -27,6 +27,9 @@ spec:
     - jsonPath: .status.readyReplicas
       name: Ready
       type: string
+    - jsonPath: .status.conditions[?(@.type=='Ready')].reason
+      name: Reason
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -1443,8 +1446,7 @@ spec:
                           Mutually exclusive to jdbcUrl.
                         properties:
                           databaseName:
-                            description: Name of postgresql database to be used. Defaults
-                              to "logicflow"
+                            description: Name of postgresql database to be used.
                             type: string
                           databaseSchema:
                             description: Schema of postgresql database to be used.
@@ -1452,15 +1454,15 @@ spec:
                               "public").
                             type: string
                           name:
-                            description: Name of the postgresql k8s service.
+                            description: Name of the DB k8s service.
                             type: string
                           namespace:
-                            description: Namespace of the postgresql k8s service.
-                              Defaults to the LogicPlatform's local namespace.
+                            description: Namespace of the DB k8s service. Defaults
+                              to the LogicPlatform's local namespace.
                             type: string
                           port:
-                            description: Port to use when connecting to the postgresql
-                              k8s service. Defaults to 5432.
+                            description: Port to use when connecting to the DB k8s
+                              service.
                             type: integer
                         required:
                         - name

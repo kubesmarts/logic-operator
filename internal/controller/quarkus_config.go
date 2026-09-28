@@ -12,11 +12,8 @@ import (
 )
 
 const (
-	defaultPostgresPort      = 5432
-	defaultDatabaseName      = "logicflow"
-	defaultSecretUserKey     = "POSTGRESQL_USER"
-	defaultSecretPasswordKey = "POSTGRESQL_PASSWORD"
-	defaultPort              = 80
+	defaultDatabaseName = "logicflow"
+	defaultPort         = 80
 )
 
 func runnerImage(variant string) string {
@@ -24,12 +21,20 @@ func runnerImage(variant string) string {
 }
 
 func QuarkusService(owner metav1.Object, ownerKind string) *corev1ac.ServiceApplyConfiguration {
-	svc := corev1ac.Service(owner.GetName(), owner.GetNamespace()).
+	return QuarkusServiceWithSelector(owner, ownerKind, SelectorLabels(owner.GetName()))
+}
+
+func QuarkusServiceWithSelector(owner metav1.Object, ownerKind string, selectorLabels map[string]string) *corev1ac.ServiceApplyConfiguration {
+	return QuarkusServiceWithSelectorAndName(owner, ownerKind, selectorLabels, owner.GetName())
+}
+
+func QuarkusServiceWithSelectorAndName(owner metav1.Object, ownerKind string, selectorLabels map[string]string, serviceName string) *corev1ac.ServiceApplyConfiguration {
+	svc := corev1ac.Service(serviceName, owner.GetNamespace()).
 		WithOwnerReferences(OwnerRef(owner, ownerKind)).
 		WithLabels(ChildLabels(owner)).
 		WithSpec(
 			corev1ac.ServiceSpec().
-				WithSelector(SelectorLabels(owner.GetName())).
+				WithSelector(selectorLabels).
 				WithPorts(
 					corev1ac.ServicePort().
 						WithName("http").
@@ -56,9 +61,9 @@ func DefaultRunnerImage(persistence *logicv1.PersistenceOptionsSpec) ContainerOp
 	}
 }
 
-// DefaultProbes returns a ContainerOption that sets liveness and readiness probes
+// DefaultQuarkusProbes returns a ContainerOption that sets liveness and readiness probes
 // using the Quarkus SmallRye Health endpoints. User-specified probes are preserved.
-func DefaultProbes() ContainerOption {
+func DefaultQuarkusProbes() ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
 		if c.LivenessProbe == nil {
 			c.WithLivenessProbe(corev1ac.Probe().
@@ -101,18 +106,18 @@ func DurableStartupProbe() ContainerOption {
 	}
 }
 
-// WithPersistenceEnvVars returns a ContainerOption that appends Quarkus datasource environment variables.
+// WithQuarkusPersistenceEnvVars returns a ContainerOption that appends Quarkus datasource environment variables.
 // The namespace parameter is the owning CR's namespace, used as fallback when serviceRef.namespace is empty.
-func WithPersistenceEnvVars(p *logicv1.PersistenceOptionsSpec, namespace string) ContainerOption {
+func WithQuarkusPersistenceEnvVars(p *logicv1.PersistenceOptionsSpec, namespace string) ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
-		envs := persistenceEnvVars(p, namespace)
+		envs := persistenceQuarkusEnvVars(p, namespace)
 		if len(envs) > 0 {
 			c.WithEnv(envs...)
 		}
 	}
 }
 
-func persistenceEnvVars(p *logicv1.PersistenceOptionsSpec, namespace string) []*corev1ac.EnvVarApplyConfiguration {
+func persistenceQuarkusEnvVars(p *logicv1.PersistenceOptionsSpec, namespace string) []*corev1ac.EnvVarApplyConfiguration {
 	if p == nil || p.PostgreSQL == nil {
 		return nil
 	}
@@ -124,11 +129,11 @@ func persistenceEnvVars(p *logicv1.PersistenceOptionsSpec, namespace string) []*
 
 	userKey := pg.SecretRef.UserKey
 	if userKey == "" {
-		userKey = defaultSecretUserKey
+		userKey = logicv1.DefaultPgsqlSecretUserKey
 	}
 	passwordKey := pg.SecretRef.PasswordKey
 	if passwordKey == "" {
-		passwordKey = defaultSecretPasswordKey
+		passwordKey = logicv1.DefaultPgsqlSecretPasswordKey
 	}
 	envs = append(envs,
 		envFromSecret("QUARKUS_DATASOURCE_USERNAME", pg.SecretRef.Name, userKey),
@@ -323,30 +328,9 @@ func buildJdbcURL(ref *logicv1.PostgreSQLServiceOptions, fallbackNamespace strin
 	if dbName == "" {
 		dbName = defaultDatabaseName
 	}
-	url := fmt.Sprintf("jdbc:postgresql://%s.%s.svc:%d/%s", ref.Name, ns, port, dbName)
+	url := fmt.Sprintf("jdbc:postgresql://%s/%s", DefaultSvcAddress(ref.Name, ns, port), dbName)
 	if ref.DatabaseSchema != "" {
 		url += "?currentSchema=" + ref.DatabaseSchema
 	}
 	return url
-}
-
-func envLiteral(name, value string) *corev1ac.EnvVarApplyConfiguration {
-	return corev1ac.EnvVar().WithName(name).WithValue(value)
-}
-
-func envFieldRef(name, fieldPath string) *corev1ac.EnvVarApplyConfiguration {
-	return corev1ac.EnvVar().
-		WithName(name).
-		WithValueFrom(corev1ac.EnvVarSource().
-			WithFieldRef(corev1ac.ObjectFieldSelector().
-				WithFieldPath(fieldPath)))
-}
-
-func envFromSecret(name, secretName, key string) *corev1ac.EnvVarApplyConfiguration {
-	return corev1ac.EnvVar().
-		WithName(name).
-		WithValueFrom(corev1ac.EnvVarSource().
-			WithSecretKeyRef(corev1ac.SecretKeySelector().
-				WithName(secretName).
-				WithKey(key)))
 }

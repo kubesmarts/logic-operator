@@ -8,7 +8,7 @@
 > **⚠️ DEPRECATION NOTICE (2026-09-22):**  
 > References to **FluentD** and **FluentBit** in this document are **deprecated**.  
 > The operator now uses **Vector** as the log collector for Data Index.  
-> See [ADR 002: LogicPlatform Vector Implementation](002-logicplatform-vector-implementation.md) for current architecture.
+> See [ADR 002: LogicPlatform Vector Implementation](implementation/002-logicplatform-vector-implementation.md) for current architecture.
 
 ---
 
@@ -42,8 +42,8 @@
 | HPA / Autoscaling | ✅ Implemented | [HPA Support](implementation/hpa-support.md) |
 | Metrics / Observability (basic) | ✅ Implemented | `internal/controller/` |
 | E2E Tests (minimal runtime lifecycle) | ✅ Implemented | [E2E Plan](implementation/e2e-minimal-runtime-plan.md) |
-| LogicPlatform Controller (local mode) | 🔄 In Progress | EPIC 5 (#8), [ADR 002](002-logicplatform-vector-implementation.md) |
-| Data Index Integration (Vector + PostgreSQL + GraphQL) | 🔄 In Progress | EPIC 6 (#9), [ADR 002](002-logicplatform-vector-implementation.md) |
+| LogicPlatform Controller (local mode) | 🔄 In Progress | EPIC 5 (#8), [ADR 002](implementation/002-logicplatform-vector-implementation.md) |
+| Data Index Integration (Vector + PostgreSQL + GraphQL) | 🔄 In Progress | EPIC 6 (#9), [ADR 002](implementation/002-logicplatform-vector-implementation.md) |
 | Multi-version support & traffic splitting | ⏳ Pending | EPIC 8 (#11) |
 | LogicPlatform Centralized Mode | ⏳ Pending | EPIC 9 (#12) |
 | Migration Guide & Documentation | ⏳ Pending | EPIC 11 (#14) |
@@ -53,7 +53,7 @@
 
 ~~The original design specified **FluentBit** for log collection. Based on implementation research, **FluentD** is the supported/production choice; FluentBit support is community-maintained and intended for testing only.~~
 
-**UPDATE (2026-09-22)**: The operator now uses **Vector** for log collection, replacing both FluentD and FluentBit. See [ADR 002: LogicPlatform Vector Implementation](002-logicplatform-vector-implementation.md) for details.
+**UPDATE (2026-09-22)**: The operator now uses **Vector** for log collection, replacing both FluentD and FluentBit. See [ADR 002: LogicPlatform Vector Implementation](implementation/002-logicplatform-vector-implementation.md) for details.
 
 ---
 
@@ -671,7 +671,7 @@ status:
 
 ### MODE1: Vector + PostgreSQL + GraphQL
 
-> **UPDATE (2026-09-22)**: The operator now uses **Vector** for log collection. See [ADR 002](002-logicplatform-vector-implementation.md) for current implementation details.
+> **UPDATE (2026-09-22)**: The operator now uses **Vector** for log collection. See [ADR 002](implementation/002-logicplatform-vector-implementation.md) for current implementation details.
 
 #### Architecture Flow
 
@@ -1237,7 +1237,7 @@ spec:
 ### Phase 2: Data Index Integration ⏳ Pending (EPIC 6, #9)
 
 **Deliverables**:
-- [ ] Vector DaemonSet generation (LogicPlatform controller, local mode) - See [ADR 002](002-logicplatform-vector-implementation.md)
+- [ ] Vector DaemonSet generation (LogicPlatform controller, local mode) - See [ADR 002](implementation/002-logicplatform-vector-implementation.md)
 - [ ] Data Index Service deployment
 - [ ] PostgreSQL connection management
 - [ ] GraphQL API integration in controllers

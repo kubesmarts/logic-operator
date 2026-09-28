@@ -38,7 +38,6 @@ func TestChildLabels(t *testing.T) {
 func TestSelectorLabels(t *testing.T) {
 	g := gomega.NewWithT(t)
 	sel := SelectorLabels(testRuntimeName)
-	g.Expect(sel).To(gomega.HaveLen(2))
+	g.Expect(sel).To(gomega.HaveLen(1))
 	g.Expect(sel).To(gomega.HaveKeyWithValue(testLabelKeyName, testRuntimeName))
-	g.Expect(sel).To(gomega.HaveKeyWithValue(testLabelKeyManagedBy, LabelManagedBy))
 }

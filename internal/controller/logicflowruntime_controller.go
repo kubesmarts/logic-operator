@@ -117,9 +117,9 @@ func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *lo
 	childLabels := ChildLabels(rt)
 	opts := []ContainerOption{
 		DefaultRunnerImage(rt.Spec.Persistence),
-		WithPersistenceEnvVars(rt.Spec.Persistence, rt.Namespace),
+		WithQuarkusPersistenceEnvVars(rt.Spec.Persistence, rt.Namespace),
 		WithSecurityEnvVars(rt.Spec.Security),
-		DefaultProbes(),
+		DefaultQuarkusProbes(),
 		WithFlowSourcePath(),
 		WithFlowVolumeMounts(configMaps),
 	}
@@ -190,7 +190,7 @@ func (r *LogicFlowRuntimeReconciler) reconcileLeases(ctx context.Context, rt *lo
 	}
 
 	// Always create leases 0 to desired-1 (index-based)
-	for i := int32(0); i < desired; i++ {
+	for i := range desired {
 		name := fmt.Sprintf(LeaseMemberNameFmt, rt.Name, i)
 		if _, ok := existing[name]; ok {
 			continue
