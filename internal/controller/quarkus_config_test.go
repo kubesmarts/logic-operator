@@ -20,32 +20,6 @@ func TestPersistenceEnvVars_NilReturnsNil(t *testing.T) {
 	g.Expect(persistenceQuarkusEnvVars(&logicv1.PersistenceOptionsSpec{}, "default")).To(gomega.BeNil())
 }
 
-func TestPersistenceEnvVars_JdbcUrlWithDefaultSecretKeys(t *testing.T) {
-	g := gomega.NewWithT(t)
-	p := &logicv1.PersistenceOptionsSpec{
-		PostgreSQL: &logicv1.PersistencePostgreSQL{
-			SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
-			JdbcURL:   testJdbcURL,
-		},
-	}
-
-	envs := persistenceQuarkusEnvVars(p, "default")
-	g.Expect(envs).To(gomega.HaveLen(4))
-
-	g.Expect(*envs[0].Name).To(gomega.Equal("QUARKUS_DATASOURCE_DB_KIND"))
-	g.Expect(*envs[0].Value).To(gomega.Equal("postgresql"))
-
-	g.Expect(*envs[1].Name).To(gomega.Equal("QUARKUS_DATASOURCE_USERNAME"))
-	g.Expect(*envs[1].ValueFrom.SecretKeyRef.Name).To(gomega.Equal(testPGCreds))
-	g.Expect(*envs[1].ValueFrom.SecretKeyRef.Key).To(gomega.Equal("POSTGRESQL_USER"))
-
-	g.Expect(*envs[2].Name).To(gomega.Equal("QUARKUS_DATASOURCE_PASSWORD"))
-	g.Expect(*envs[2].ValueFrom.SecretKeyRef.Key).To(gomega.Equal("POSTGRESQL_PASSWORD"))
-
-	g.Expect(*envs[3].Name).To(gomega.Equal("QUARKUS_DATASOURCE_JDBC_URL"))
-	g.Expect(*envs[3].Value).To(gomega.Equal(testJdbcURL))
-}
-
 func TestPersistenceEnvVars_CustomSecretKeys(t *testing.T) {
 	g := gomega.NewWithT(t)
 	p := &logicv1.PersistenceOptionsSpec{
@@ -55,7 +29,11 @@ func TestPersistenceEnvVars_CustomSecretKeys(t *testing.T) {
 				UserKey:     "DB_USER",
 				PasswordKey: "DB_PASS",
 			},
-			JdbcURL: testJdbcURL,
+			ServiceRef: &logicv1.PostgreSQLServiceOptions{
+				SQLServiceOptions: &logicv1.SQLServiceOptions{
+					Name: testPostgresName,
+				},
+			},
 		},
 	}
 
@@ -86,20 +64,21 @@ func TestPersistenceEnvVars_ServiceRefBuildsJdbcUrl(t *testing.T) {
 	g.Expect(*jdbcEnv.Value).To(gomega.Equal("jdbc:postgresql://postgres.databases.svc.cluster.local:5433/workflows?currentSchema=runtime-schema"))
 }
 
-func TestPersistenceEnvVars_ServiceRefFallbackDefaults(t *testing.T) {
+func TestPersistenceEnvVars_ExplicitNamespace(t *testing.T) {
 	g := gomega.NewWithT(t)
 	p := &logicv1.PersistenceOptionsSpec{
 		PostgreSQL: &logicv1.PersistencePostgreSQL{
 			SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
 			ServiceRef: &logicv1.PostgreSQLServiceOptions{
 				SQLServiceOptions: &logicv1.SQLServiceOptions{
-					Name: testPostgresName,
+					Name:      testPostgresName,
+					Namespace: "my-namespace",
 				},
 			},
 		},
 	}
 
-	envs := persistenceQuarkusEnvVars(p, "my-namespace")
+	envs := persistenceQuarkusEnvVars(p, "default")
 	jdbcEnv := envs[len(envs)-1]
 	g.Expect(*jdbcEnv.Value).To(gomega.Equal("jdbc:postgresql://postgres.my-namespace.svc.cluster.local:5432/logicflow"))
 }
@@ -128,12 +107,18 @@ func TestPersistenceEnvVars_TLSAppendsSslMode(t *testing.T) {
 		p := &logicv1.PersistenceOptionsSpec{
 			PostgreSQL: &logicv1.PersistencePostgreSQL{
 				SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
-				JdbcURL:   testJdbcURL,
-				TLS:       &logicv1.TLSConnection{Enabled: true, TLSMode: logicv1.TLSModeRequire},
+				ServiceRef: &logicv1.PostgreSQLServiceOptions{
+					SQLServiceOptions: &logicv1.SQLServiceOptions{
+						Name:         "postgres",
+						Port:         ptr.To(5432),
+						DatabaseName: "mydb",
+					},
+				},
+				TLS: &logicv1.TLSConnection{Enabled: true, TLSMode: logicv1.TLSModeRequire},
 			},
 		}
 		envs := persistenceQuarkusEnvVars(p, "default")
-		g.Expect(*envs[len(envs)-1].Value).To(gomega.Equal("jdbc:postgresql://localhost:5432/mydb?sslmode=require"))
+		g.Expect(*envs[len(envs)-1].Value).To(gomega.Equal("jdbc:postgresql://postgres:5432/mydb?sslmode=require"))
 	})
 
 	t.Run("defaults to prefer when mode empty", func(t *testing.T) {
@@ -141,12 +126,18 @@ func TestPersistenceEnvVars_TLSAppendsSslMode(t *testing.T) {
 		p := &logicv1.PersistenceOptionsSpec{
 			PostgreSQL: &logicv1.PersistencePostgreSQL{
 				SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
-				JdbcURL:   testJdbcURL,
-				TLS:       &logicv1.TLSConnection{Enabled: true},
+				ServiceRef: &logicv1.PostgreSQLServiceOptions{
+					SQLServiceOptions: &logicv1.SQLServiceOptions{
+						Name:         "postgres",
+						Port:         ptr.To(5432),
+						DatabaseName: "mydb",
+					},
+				},
+				TLS: &logicv1.TLSConnection{Enabled: true},
 			},
 		}
 		envs := persistenceQuarkusEnvVars(p, "default")
-		g.Expect(*envs[len(envs)-1].Value).To(gomega.Equal("jdbc:postgresql://localhost:5432/mydb?sslmode=prefer"))
+		g.Expect(*envs[len(envs)-1].Value).To(gomega.Equal("jdbc:postgresql://postgres:5432/mydb?sslmode=prefer"))
 	})
 }
 
@@ -650,4 +641,40 @@ func TestWithMetricsEnvVars_NotInjectedAfterUpgrade(t *testing.T) {
 		g.Expect(*e.Name).NotTo(gomega.Equal("QUARKUS_FLOW_METRICS_ENABLED"),
 			"QUARKUS_FLOW_METRICS_ENABLED must not be injected in quarkus-flow 1.0.0+")
 	}
+}
+
+func TestStructuredLoggingEnvVars_Nil(t *testing.T) {
+	g := gomega.NewWithT(t)
+	envs := structuredLoggingEnvVars(nil)
+	g.Expect(envs).To(gomega.BeNil())
+}
+
+func TestStructuredLoggingEnvVars_IncludeWorkflowPayloads(t *testing.T) {
+	g := gomega.NewWithT(t)
+	logging := &logicv1.StructuredLoggingSpec{
+		IncludeWorkflowPayloads: ptr.To(true),
+	}
+	envs := structuredLoggingEnvVars(logging)
+	g.Expect(envs).To(gomega.HaveLen(1))
+	g.Expect(*envs[0].Name).To(gomega.Equal("QUARKUS_FLOW_STRUCTURED_LOGGING_INCLUDE_WORKFLOW_PAYLOADS"))
+	g.Expect(*envs[0].Value).To(gomega.Equal("true"))
+}
+
+func TestStructuredLoggingEnvVars_AllSettings(t *testing.T) {
+	g := gomega.NewWithT(t)
+	logging := &logicv1.StructuredLoggingSpec{
+		Enabled:                 ptr.To(true),
+		IncludeWorkflowPayloads: ptr.To(true),
+		IncludeTaskPayloads:     ptr.To(false),
+	}
+	envs := structuredLoggingEnvVars(logging)
+	g.Expect(envs).To(gomega.HaveLen(3))
+
+	envMap := make(map[string]string)
+	for _, e := range envs {
+		envMap[*e.Name] = *e.Value
+	}
+	g.Expect(envMap["QUARKUS_FLOW_STRUCTURED_LOGGING_ENABLED"]).To(gomega.Equal("true"))
+	g.Expect(envMap["QUARKUS_FLOW_STRUCTURED_LOGGING_INCLUDE_WORKFLOW_PAYLOADS"]).To(gomega.Equal("true"))
+	g.Expect(envMap["QUARKUS_FLOW_STRUCTURED_LOGGING_INCLUDE_TASK_PAYLOADS"]).To(gomega.Equal("false"))
 }

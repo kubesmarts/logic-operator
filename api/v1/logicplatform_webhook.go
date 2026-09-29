@@ -159,7 +159,7 @@ func (v *LogicPlatformValidator) validate(ctx context.Context, obj *LogicPlatfor
 	}
 
 	// Validate PostgreSQL persistence configuration
-	if err := v.validatePostgreSQLPersistence(obj.Spec.DataIndex.Persistence); err != nil {
+	if err := v.validatePostgreSQLPersistence(&obj.Spec.DataIndex); err != nil {
 		return err
 	}
 
@@ -222,7 +222,8 @@ func (v *LogicPlatformValidator) validateIngress(ingress *DataIndexIngressSpec) 
 	return nil
 }
 
-func (v *LogicPlatformValidator) validatePostgreSQLPersistence(persistence *PersistenceOptionsSpec) error {
+func (v *LogicPlatformValidator) validatePostgreSQLPersistence(dataIndex *DataIndexSpec) error {
+	persistence := dataIndex.Persistence
 	if persistence == nil || persistence.PostgreSQL == nil {
 		// TODO: change this when we introduce support to ES
 		return fmt.Errorf("spec.dataIndex.persistence is required when Data Index is enabled")
@@ -235,17 +236,26 @@ func (v *LogicPlatformValidator) validatePostgreSQLPersistence(persistence *Pers
 		return fmt.Errorf("spec.dataIndex.persistence.postgresql.secretRef.name is required")
 	}
 
-	// Ensure serviceRef is provided
+	if dataIndex.Vector != nil && dataIndex.Vector.Enabled && pg.ServiceRef == nil {
+		// Ensure serviceRef is provided
+		return fmt.Errorf("spec.dataIndex.persistence.postgresql.serviceRef is required when Vector is enabled")
+	}
+
 	if pg.ServiceRef == nil {
 		return fmt.Errorf("spec.dataIndex.persistence.postgresql.serviceRef is required")
 	}
 
-	// Validate service ref fields
-	if pg.ServiceRef.Name == "" {
-		return fmt.Errorf("spec.dataIndex.persistence.postgresql.serviceRef.name is required")
-	}
-	if pg.ServiceRef.DatabaseSchema == "" {
-		return fmt.Errorf("spec.dataIndex.persistence.postgresql.serviceRef.databaseSchema is required")
+	if pg.ServiceRef != nil {
+		// Validate service ref fields
+		if pg.ServiceRef.Name == "" {
+			return fmt.Errorf("spec.dataIndex.persistence.postgresql.serviceRef.name is required")
+		}
+		if pg.ServiceRef.DatabaseSchema == "" {
+			return fmt.Errorf("spec.dataIndex.persistence.postgresql.serviceRef.databaseSchema is required")
+		}
+		if pg.ServiceRef.DatabaseName == "" {
+			return fmt.Errorf("spec.dataIndex.persistence.postgresql.serviceRef.databaseName is required")
+		}
 	}
 
 	return nil

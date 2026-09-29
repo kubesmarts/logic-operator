@@ -65,6 +65,8 @@ const (
 	ReasonDataIndexDeploymentNotFound = "DataIndexDeploymentNotFound"
 	ReasonDataIndexServiceNotFound    = "DataIndexServiceNotFound"
 	ReasonPersistenceConfigInvalid    = "PersistenceConfigInvalid"
+	ReasonDatabaseUnreachable         = "DatabaseUnreachable"
+	ReasonDataIndexUnhealthy          = "DataIndexUnhealthy"
 	ReasonDaemonSetNotFound           = "DaemonSetNotFound"
 	ReasonDaemonSetProgressing        = "DaemonSetProgressing"
 	ReasonDisabled                    = "Disabled"

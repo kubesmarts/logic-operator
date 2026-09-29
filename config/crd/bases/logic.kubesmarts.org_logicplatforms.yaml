@@ -33,7 +33,7 @@ spec:
     - jsonPath: .status.conditions[?(@.type=='VectorReady')].reason
       name: Vector Reason
       type: string
-    - jsonPath: .status.dataIndex.service.graphQLEndpoint
+    - jsonPath: .status.dataIndex.service.graphqlEndpoint
       name: GraphQL URI
       type: string
     - jsonPath: .status.conditions[?(@.type=='Ready')].status
@@ -28979,6 +28979,11 @@ spec:
                       Persistence contains status for the Data Index persistence configuration validation.
                       This validates that secrets and service refs exist, not runtime database connectivity.
                     properties:
+                      databaseConnected:
+                        description: |-
+                          DatabaseConnected indicates whether the database is actually reachable.
+                          Checked via DataIndex readiness probe (when pod is ready) or direct connection test (when pod is starting).
+                        type: boolean
                       error:
                         description: |-
                           Error contains any configuration validation error message.

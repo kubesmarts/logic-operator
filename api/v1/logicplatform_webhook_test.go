@@ -48,7 +48,8 @@ func withDataIndexPersistence() func(*LogicPlatform) {
 				SecretRef: PostgreSQLSecretOptions{Name: "postgres-secret"},
 				ServiceRef: &PostgreSQLServiceOptions{
 					SQLServiceOptions: &SQLServiceOptions{
-						Name: "postgres",
+						Name:         "postgres",
+						DatabaseName: "dataindex",
 					},
 					DatabaseSchema: "data-index",
 				},

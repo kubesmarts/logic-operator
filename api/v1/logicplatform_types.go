@@ -224,6 +224,10 @@ type PersistenceConfigStatus struct {
 	// Only populated when using serviceRef instead of JDBC URL.
 	// +optional
 	ServiceExists bool `json:"serviceExists,omitempty"`
+	// DatabaseConnected indicates whether the database is actually reachable.
+	// Checked via DataIndex readiness probe (when pod is ready) or direct connection test (when pod is starting).
+	// +optional
+	DatabaseConnected *bool `json:"databaseConnected,omitempty"`
 	// Error contains any configuration validation error message.
 	// This field is populated when Valid=false.
 	// +optional
@@ -252,7 +256,7 @@ type PersistenceConfigStatus struct {
 // +kubebuilder:printcolumn:name="DataIndex Reason",type=string,JSONPath=`.status.conditions[?(@.type=='DataIndexDeploymentAvailable')].reason`
 // +kubebuilder:printcolumn:name="Vector Ready",type=boolean,JSONPath=`.status.dataIndex.vector.ready`
 // +kubebuilder:printcolumn:name="Vector Reason",type=string,JSONPath=`.status.conditions[?(@.type=='VectorReady')].reason`
-// +kubebuilder:printcolumn:name="GraphQL URI",type=string,JSONPath=`.status.dataIndex.service.graphQLEndpoint`
+// +kubebuilder:printcolumn:name="GraphQL URI",type=string,JSONPath=`.status.dataIndex.service.graphqlEndpoint`
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=='Ready')].status`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 type LogicPlatform struct {

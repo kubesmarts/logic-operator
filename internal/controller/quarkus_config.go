@@ -123,9 +123,8 @@ func persistenceQuarkusEnvVars(p *logicv1.PersistenceOptionsSpec, namespace stri
 	}
 
 	pg := p.PostgreSQL
-	envs := []*corev1ac.EnvVarApplyConfiguration{
-		envLiteral("QUARKUS_DATASOURCE_DB_KIND", "postgresql"),
-	}
+	envs := make([]*corev1ac.EnvVarApplyConfiguration, 0, 4)
+	envs = append(envs, envLiteral("QUARKUS_DATASOURCE_DB_KIND", "postgresql"))
 
 	userKey := pg.SecretRef.UserKey
 	if userKey == "" {
@@ -140,10 +139,7 @@ func persistenceQuarkusEnvVars(p *logicv1.PersistenceOptionsSpec, namespace stri
 		envFromSecret("QUARKUS_DATASOURCE_PASSWORD", pg.SecretRef.Name, passwordKey),
 	)
 
-	jdbcURL := pg.JdbcURL
-	if jdbcURL == "" && pg.ServiceRef != nil {
-		jdbcURL = buildJdbcURL(pg.ServiceRef, namespace)
-	}
+	jdbcURL := buildJdbcURL(pg.ServiceRef, namespace)
 	if pg.TLS != nil && pg.TLS.Enabled {
 		mode := string(pg.TLS.TLSMode)
 		if mode == "" {
@@ -155,9 +151,7 @@ func persistenceQuarkusEnvVars(p *logicv1.PersistenceOptionsSpec, namespace stri
 			jdbcURL += "?sslmode=" + mode
 		}
 	}
-	if jdbcURL != "" {
-		envs = append(envs, envLiteral("QUARKUS_DATASOURCE_JDBC_URL", jdbcURL))
-	}
+	envs = append(envs, envLiteral("QUARKUS_DATASOURCE_JDBC_URL", jdbcURL))
 
 	return envs
 }
@@ -167,6 +161,38 @@ func WithSecurityEnvVars(sec logicv1.RuntimeSecuritySpec) ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
 		c.WithEnv(securityEnvVars(sec)...)
 	}
+}
+
+// WithStructuredLoggingEnvVars returns a ContainerOption that configures structured logging environment variables.
+func WithStructuredLoggingEnvVars(logging *logicv1.StructuredLoggingSpec) ContainerOption {
+	return func(c *corev1ac.ContainerApplyConfiguration) {
+		envs := structuredLoggingEnvVars(logging)
+		if len(envs) > 0 {
+			c.WithEnv(envs...)
+		}
+	}
+}
+
+func structuredLoggingEnvVars(logging *logicv1.StructuredLoggingSpec) []*corev1ac.EnvVarApplyConfiguration {
+	if logging == nil {
+		return nil
+	}
+
+	var envs []*corev1ac.EnvVarApplyConfiguration
+
+	if logging.Enabled != nil {
+		envs = append(envs, envLiteral("QUARKUS_FLOW_STRUCTURED_LOGGING_ENABLED", fmt.Sprintf("%v", *logging.Enabled)))
+	}
+
+	if logging.IncludeWorkflowPayloads != nil {
+		envs = append(envs, envLiteral("QUARKUS_FLOW_STRUCTURED_LOGGING_INCLUDE_WORKFLOW_PAYLOADS", fmt.Sprintf("%v", *logging.IncludeWorkflowPayloads)))
+	}
+
+	if logging.IncludeTaskPayloads != nil {
+		envs = append(envs, envLiteral("QUARKUS_FLOW_STRUCTURED_LOGGING_INCLUDE_TASK_PAYLOADS", fmt.Sprintf("%v", *logging.IncludeTaskPayloads)))
+	}
+
+	return envs
 }
 
 // WithFlowSourcePath returns a ContainerOption that sets the QUARKUS_FLOW_RUNNER_SOURCE_PATH environment variable.
@@ -312,14 +338,13 @@ func oidcEnvVars(oidc *logicv1.OIDCAuthSpec) []*corev1ac.EnvVarApplyConfiguratio
 	return envs
 }
 
-func buildJdbcURL(ref *logicv1.PostgreSQLServiceOptions, fallbackNamespace string) string {
+func buildJdbcURL(ref *logicv1.PostgreSQLServiceOptions, _ string) string {
 	if ref.SQLServiceOptions == nil {
 		return ""
 	}
+	// Use namespace as provided. If empty, treat as external hostname (no fallback).
+	// For K8s services, the caller must explicitly set Namespace. If not set, it's treated as external.
 	ns := ref.Namespace
-	if ns == "" {
-		ns = fallbackNamespace
-	}
 	port := defaultPostgresPort
 	if ref.Port != nil {
 		port = *ref.Port
@@ -328,7 +353,7 @@ func buildJdbcURL(ref *logicv1.PostgreSQLServiceOptions, fallbackNamespace strin
 	if dbName == "" {
 		dbName = defaultDatabaseName
 	}
-	url := fmt.Sprintf("jdbc:postgresql://%s/%s", DefaultSvcAddress(ref.Name, ns, port), dbName)
+	url := fmt.Sprintf("jdbc:postgresql://%s/%s", BuildPostgresAddress(ref.Name, ns, port), dbName)
 	if ref.DatabaseSchema != "" {
 		url += "?currentSchema=" + ref.DatabaseSchema
 	}

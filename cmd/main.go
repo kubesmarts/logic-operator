@@ -213,8 +213,9 @@ func main() {
 	}
 
 	if err := (&controller.LogicPlatformReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		DatabaseConnector: &controller.PostgresConnector{},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "LogicPlatform")
 		os.Exit(1)

@@ -30,9 +30,6 @@ const (
 	VectorPort    = int32(9598) // Prometheus metrics
 	VectorAPIPort = int32(8686) // Health/readiness API
 
-	// Vector configuration
-	VectorPgSQLConfigMapName = "logic-vector-pgsql-configmap"
-
 	VectorConfigVolumeName     = "config"
 	VectorDataVolumeName       = "data"
 	VectorVarLogVolumeName     = "var-log"
@@ -45,10 +42,6 @@ const (
 
 	ClusterRoleVector = "logic-operator-vector"
 )
-
-func VectorPgSQLConfigMapAC(ns string) *corev1ac.ConfigMapApplyConfiguration {
-	return corev1ac.ConfigMap(VectorPgSQLConfigMapName, ns).WithData(map[string]string{"vector.yaml": vectorPostgreSQLConfig})
-}
 
 func VectorVolumes(plat *logicv1.LogicPlatform) []*corev1ac.VolumeApplyConfiguration {
 	vols := []*corev1ac.VolumeApplyConfiguration{
@@ -103,7 +96,7 @@ func VectorProbes() ContainerOption {
 	}
 }
 
-func WithVectorEnvVars(p *logicv1.PersistenceOptionsSpec) ContainerOption {
+func WithVectorEnvVars(plat *logicv1.LogicPlatform) ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
 		envs := []*corev1ac.EnvVarApplyConfiguration{
 			envFieldRef("VECTOR_SELF_NODE_NAME", "spec.nodeName"),
@@ -111,25 +104,35 @@ func WithVectorEnvVars(p *logicv1.PersistenceOptionsSpec) ContainerOption {
 			envFieldRef("VECTOR_SELF_POD_NAMESPACE", "metadata.namespace"),
 			envFieldRef("NODE_NAME", "spec.nodeName"),
 		}
-		if p != nil && p.PostgreSQL != nil {
+		// TODO: change the config to fetch for multiple namespaces
+		// TODO: extra_namespace_label_selector = "kubernetes.io/metadata.name in (namespace-a, namespace-b, namespace-c)"
+		if len(plat.Spec.DataIndex.Vector.WatchNamespaces) > 0 {
+			envs = append(envs, envLiteral("WORKFLOW_NAMESPACE", plat.Spec.DataIndex.Vector.WatchNamespaces[0]))
+		}
+		if plat.Spec.DataIndex.Persistence != nil && plat.Spec.DataIndex.Persistence.PostgreSQL != nil {
 			port := defaultPostgresPort
-			if p.PostgreSQL.ServiceRef.Port != nil {
-				port = *p.PostgreSQL.ServiceRef.Port
+			if plat.Spec.DataIndex.Persistence.PostgreSQL.ServiceRef.Port != nil {
+				port = *plat.Spec.DataIndex.Persistence.PostgreSQL.ServiceRef.Port
 			}
-			userKey := p.PostgreSQL.SecretRef.UserKey
+			userKey := plat.Spec.DataIndex.Persistence.PostgreSQL.SecretRef.UserKey
 			if userKey == "" {
 				userKey = logicv1.DefaultPgsqlSecretUserKey
 			}
-			passwordKey := p.PostgreSQL.SecretRef.PasswordKey
+			passwordKey := plat.Spec.DataIndex.Persistence.PostgreSQL.SecretRef.PasswordKey
 			if passwordKey == "" {
 				passwordKey = logicv1.DefaultPgsqlSecretPasswordKey
 			}
+			ns := plat.Spec.DataIndex.Persistence.PostgreSQL.ServiceRef.Namespace
+			if ns == "" {
+				ns = plat.Namespace
+			}
 			envs = append(envs,
-				envFromSecret("POSTGRES_USER", p.PostgreSQL.SecretRef.Name, userKey),
-				envFromSecret("POSTGRES_PASSWORD", p.PostgreSQL.SecretRef.Name, passwordKey),
+				envFromSecret("POSTGRES_USER", plat.Spec.DataIndex.Persistence.PostgreSQL.SecretRef.Name, userKey),
+				envFromSecret("POSTGRES_PASSWORD", plat.Spec.DataIndex.Persistence.PostgreSQL.SecretRef.Name, passwordKey),
 				envLiteral("POSTGRES_PORT", strconv.Itoa(port)),
-				envLiteral("POSTGRES_DB", p.PostgreSQL.ServiceRef.DatabaseSchema),
-				envLiteral("POSTGRES_HOST", DefaultSvcAddress(p.PostgreSQL.ServiceRef.Name, p.PostgreSQL.ServiceRef.Namespace, 0)),
+				envLiteral("POSTGRES_DB", plat.Spec.DataIndex.Persistence.PostgreSQL.ServiceRef.DatabaseName),
+				envLiteral("POSTGRES_SCHEMA", plat.Spec.DataIndex.Persistence.PostgreSQL.ServiceRef.DatabaseSchema),
+				envLiteral("POSTGRES_HOST", BuildPostgresAddress(plat.Spec.DataIndex.Persistence.PostgreSQL.ServiceRef.Name, ns, 0)),
 			)
 		}
 		c.WithEnv(envs...)

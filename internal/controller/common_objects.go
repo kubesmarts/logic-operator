@@ -72,9 +72,9 @@ func OwnerRefStandard(owner metav1.Object, kind string) metav1.OwnerReference {
 	}
 }
 
-func MergeMaps(maps ...map[string]string) map[string]string {
+func MergeMaps(mapList ...map[string]string) map[string]string {
 	result := make(map[string]string)
-	for _, m := range maps {
+	for _, m := range mapList {
 		for k, v := range m {
 			result[k] = v
 		}
@@ -82,11 +82,23 @@ func MergeMaps(maps ...map[string]string) map[string]string {
 	return result
 }
 
-func DefaultSvcAddress(svcName, ns string, port int) string {
-	if port == 0 {
-		return fmt.Sprintf("%s.%s.svc.cluster.local", svcName, ns)
+// BuildPostgresAddress constructs a PostgreSQL connection address.
+// If namespace is provided, treats svcName as a Kubernetes service and constructs the FQDN.
+// If namespace is empty, treats svcName as an external hostname/FQDN and uses it as-is.
+func BuildPostgresAddress(svcName, ns string, port int) string {
+	var host string
+	if ns != "" {
+		// Kubernetes service: construct FQDN
+		host = fmt.Sprintf("%s.%s.svc.cluster.local", svcName, ns)
+	} else {
+		// External hostname: use as-is (FQDN, hostname, or IP)
+		host = svcName
 	}
-	return fmt.Sprintf("%s.%s.svc.cluster.local:%d", svcName, ns, port)
+
+	if port == 0 {
+		return host
+	}
+	return fmt.Sprintf("%s:%d", host, port)
 }
 
 func envLiteral(name, value string) *corev1ac.EnvVarApplyConfiguration {

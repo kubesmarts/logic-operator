@@ -119,6 +119,7 @@ func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *lo
 		DefaultRunnerImage(rt.Spec.Persistence),
 		WithQuarkusPersistenceEnvVars(rt.Spec.Persistence, rt.Namespace),
 		WithSecurityEnvVars(rt.Spec.Security),
+		WithStructuredLoggingEnvVars(rt.Spec.Logging),
 		DefaultQuarkusProbes(),
 		WithFlowSourcePath(),
 		WithFlowVolumeMounts(configMaps),

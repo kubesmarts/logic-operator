@@ -32,7 +32,8 @@ const (
 // Configuration precedence: LogicFlowRuntime.spec > LogicPlatform.spec.runtimeDefaults > operator defaults
 type LogicFlowRuntimeSpec struct {
 	RuntimeSpec `json:",inline"`
-	Security    RuntimeSecuritySpec `json:"security,omitempty"`
+	Security    RuntimeSecuritySpec    `json:"security,omitempty"`
+	Logging     *StructuredLoggingSpec `json:"logging,omitempty"`
 }
 
 // LogicFlowRuntimeStatus defines the observed state of LogicFlowRuntime.
@@ -231,6 +232,32 @@ type SecretKeySelector struct {
 	// +optional
 	// +kubebuilder:default=value
 	Key string `json:"key,omitempty"`
+}
+
+// StructuredLoggingSpec configures structured JSON logging for workflow events.
+//
+// Structured logging enables Vector and observability platforms to capture workflow
+// execution data (events, metrics, payloads) for querying and analytics.
+type StructuredLoggingSpec struct {
+	// Enabled enables structured JSON logging for workflow events.
+	// Defaults to true (respects runner image defaults).
+	// +optional
+	// +kubebuilder:default=true
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// IncludeWorkflowPayloads includes workflow input/output data in structured logs.
+	// Required for Vector to capture workflow payloads into persistent storage.
+	// Defaults to false (sensitive data protection).
+	// WARNING: Enable only if you can store payloads securely.
+	// +optional
+	// +kubebuilder:default=false
+	IncludeWorkflowPayloads *bool `json:"includeWorkflowPayloads,omitempty"`
+
+	// IncludeTaskPayloads includes task input/output data in structured logs.
+	// Defaults to false (sensitive data protection).
+	// +optional
+	// +kubebuilder:default=false
+	IncludeTaskPayloads *bool `json:"includeTaskPayloads,omitempty"`
 }
 
 // RuntimeSpec defines configuration for LogicFlowRuntime deployments.

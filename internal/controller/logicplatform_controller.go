@@ -42,7 +42,8 @@ import (
 // LogicPlatformReconciler reconciles a LogicPlatform object
 type LogicPlatformReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme            *runtime.Scheme
+	DatabaseConnector DatabaseConnector
 }
 
 // +kubebuilder:rbac:groups=logic.kubesmarts.org,resources=logicplatforms,verbs=get;list;watch;create;update;patch;delete
@@ -413,9 +414,20 @@ func (r *LogicPlatformReconciler) updateStatusPersistence(ctx context.Context, p
 
 	// Set condition based on validation
 	if status.Valid {
-		logicv1.SetCondition(&plat.Status.Conditions, logicv1.ConditionDataIndexPersistenceReady,
-			metav1.ConditionTrue, plat.Generation,
-			logicv1.ReasonReady, "Persistence configuration is valid")
+		// Configuration is valid, check database connectivity
+		healthy, reason, message := r.checkPersistenceConnectivity(ctx, plat)
+		status.DatabaseConnected = &healthy
+		plat.Status.DataIndex.Persistence = status
+
+		if healthy {
+			logicv1.SetCondition(&plat.Status.Conditions, logicv1.ConditionDataIndexPersistenceReady,
+				metav1.ConditionTrue, plat.Generation,
+				reason, message)
+		} else {
+			logicv1.SetCondition(&plat.Status.Conditions, logicv1.ConditionDataIndexPersistenceReady,
+				metav1.ConditionFalse, plat.Generation,
+				reason, message)
+		}
 	} else {
 		logicv1.SetCondition(&plat.Status.Conditions, logicv1.ConditionDataIndexPersistenceReady,
 			metav1.ConditionFalse, plat.Generation,
@@ -452,7 +464,7 @@ func (r *LogicPlatformReconciler) applyVectorDaemonSet(ctx context.Context, plat
 	vectorLabels := MergeMaps(childLabels, vectorSelector)
 
 	containerOpts := []ContainerOption{
-		WithVectorEnvVars(plat.Spec.DataIndex.Persistence),
+		WithVectorEnvVars(plat),
 		WithVectorVolumeMounts(),
 		VectorProbes(),
 	}
@@ -619,9 +631,6 @@ func (r *LogicPlatformReconciler) updateVectorStatus(ctx context.Context, plat *
 	// If Vector is disabled, clear status
 	if plat.Spec.DataIndex.Vector == nil || !plat.Spec.DataIndex.Vector.Enabled {
 		plat.Status.DataIndex.Vector = nil
-		logicv1.SetCondition(&plat.Status.Conditions, logicv1.ConditionVectorReady,
-			metav1.ConditionFalse, plat.Generation,
-			logicv1.ReasonDisabled, "Vector is disabled")
 		return nil
 	}
 
@@ -671,6 +680,102 @@ func (r *LogicPlatformReconciler) updateVectorStatus(ctx context.Context, plat *
 	}
 
 	return nil
+}
+
+// checkPersistenceConnectivity checks database connectivity based on DataIndex pod readiness.
+// If pod is ready: readiness probe already verified DB, return success.
+// If pod is not ready: perform direct PostgreSQL check to diagnose startup issues.
+// If deployment doesn't exist yet: skip checks (will try again on next reconcile).
+func (r *LogicPlatformReconciler) checkPersistenceConnectivity(ctx context.Context, plat *logicv1.LogicPlatform) (bool, string, string) {
+	log := logf.FromContext(ctx)
+
+	// Check DataIndex deployment status
+	var deployment appsv1.Deployment
+	deploymentKey := client.ObjectKey{
+		Name:      dataIndexName(plat),
+		Namespace: plat.Namespace,
+	}
+	err := r.Get(ctx, deploymentKey, &deployment)
+	if err != nil {
+		// Deployment not created yet (normal during initial reconcile) - just skip checks
+		log.V(1).Info("DataIndex deployment not found yet, persistence config is valid")
+		return true, logicv1.ReasonReady, "Persistence configuration is valid"
+	}
+
+	// If pod is ready, readiness probe already verified DB connectivity
+	if deployment.Status.ReadyReplicas > 0 {
+		log.V(1).Info("DataIndex pod is ready, database connectivity verified")
+		return true, logicv1.ReasonReady, "DataIndex healthy, database connection verified"
+	}
+
+	// Pod not ready yet - perform direct PostgreSQL check to diagnose what's blocking startup
+	log.V(1).Info("DataIndex pod not ready, performing direct database check")
+	return r.checkPostgresDatabaseHealth(ctx, plat)
+}
+
+// checkPostgresDatabaseHealth attempts a direct PostgreSQL connection with 3-second timeout.
+// Used when DataIndex pod is not ready to diagnose startup issues.
+func (r *LogicPlatformReconciler) checkPostgresDatabaseHealth(ctx context.Context, plat *logicv1.LogicPlatform) (bool, string, string) {
+	log := logf.FromContext(ctx)
+
+	pg := plat.Spec.DataIndex.Persistence.PostgreSQL
+	if pg == nil || pg.ServiceRef == nil {
+		return false, logicv1.ReasonDatabaseUnreachable, "PostgreSQL not configured"
+	}
+
+	// Read credentials from secret
+	var secret corev1.Secret
+	secretKey := client.ObjectKey{
+		Name:      pg.SecretRef.Name,
+		Namespace: plat.Namespace,
+	}
+	if err := r.Get(ctx, secretKey, &secret); err != nil {
+		log.V(1).Info("failed to read PostgreSQL secret", "error", err)
+		return false, logicv1.ReasonDatabaseUnreachable, fmt.Sprintf("failed to read PostgreSQL credentials: %v", err)
+	}
+
+	userKey := pg.SecretRef.UserKey
+	if userKey == "" {
+		userKey = logicv1.DefaultPgsqlSecretUserKey
+	}
+	passwordKey := pg.SecretRef.PasswordKey
+	if passwordKey == "" {
+		passwordKey = logicv1.DefaultPgsqlSecretPasswordKey
+	}
+
+	user := string(secret.Data[userKey])
+	password := string(secret.Data[passwordKey])
+
+	// Build connection parameters
+	namespace := pg.ServiceRef.Namespace
+	if namespace == "" {
+		namespace = plat.Namespace
+	}
+	port := defaultPostgresPort
+	if pg.ServiceRef.Port != nil {
+		port = *pg.ServiceRef.Port
+	}
+
+	dbHost := BuildPostgresAddress(pg.ServiceRef.Name, namespace, 0)
+
+	// Test the connection via injected connector
+	if r.DatabaseConnector == nil {
+		log.V(1).Info("no database connector available, skipping check")
+		return true, logicv1.ReasonReady, "Persistence configuration is valid"
+	}
+
+	ok, err := r.DatabaseConnector.Ping(ctx, dbHost, port, user, password, pg.ServiceRef.DatabaseName)
+	if err != nil {
+		log.V(1).Info("failed to connect to PostgreSQL", "error", err)
+		return false, logicv1.ReasonDatabaseUnreachable, fmt.Sprintf("failed to connect to PostgreSQL: %v", err)
+	}
+
+	if ok {
+		log.V(1).Info("PostgreSQL connection successful")
+		return true, logicv1.ReasonReady, "PostgreSQL database connection verified"
+	}
+
+	return false, logicv1.ReasonDatabaseUnreachable, "PostgreSQL connection check failed"
 }
 
 // SetupWithManager sets up the controller with the Manager.

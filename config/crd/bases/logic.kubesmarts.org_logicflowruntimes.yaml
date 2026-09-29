@@ -1402,6 +1402,34 @@ spec:
                 - Never
                 - IfNotPresent
                 type: string
+              logging:
+                description: |-
+                  StructuredLoggingSpec configures structured JSON logging for workflow events.
+
+                  Structured logging enables Vector and observability platforms to capture workflow
+                  execution data (events, metrics, payloads) for querying and analytics.
+                properties:
+                  enabled:
+                    default: true
+                    description: |-
+                      Enabled enables structured JSON logging for workflow events.
+                      Defaults to true (respects runner image defaults).
+                    type: boolean
+                  includeTaskPayloads:
+                    default: false
+                    description: |-
+                      IncludeTaskPayloads includes task input/output data in structured logs.
+                      Defaults to false (sensitive data protection).
+                    type: boolean
+                  includeWorkflowPayloads:
+                    default: false
+                    description: |-
+                      IncludeWorkflowPayloads includes workflow input/output data in structured logs.
+                      Required for Vector to capture workflow payloads into persistent storage.
+                      Defaults to false (sensitive data protection).
+                      WARNING: Enable only if you can store payloads securely.
+                    type: boolean
+                type: object
               persistence:
                 description: |-
                   Persistence configures database connectivity.

@@ -132,7 +132,13 @@ func persistenceSpec() logicv1.LogicFlowRuntimeSpec {
 			Persistence: &logicv1.PersistenceOptionsSpec{
 				PostgreSQL: &logicv1.PersistencePostgreSQL{
 					SecretRef: logicv1.PostgreSQLSecretOptions{Name: "pg-creds"},
-					JdbcURL:   "jdbc:postgresql://pg.default.svc:5432/logicflow",
+					ServiceRef: &logicv1.PostgreSQLServiceOptions{
+						SQLServiceOptions: &logicv1.SQLServiceOptions{
+							Name:         "pg",
+							DatabaseName: "logicflow",
+						},
+						DatabaseSchema: "public",
+					},
 				},
 			},
 		},
@@ -273,7 +279,13 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 					Persistence: &logicv1.PersistenceOptionsSpec{
 						PostgreSQL: &logicv1.PersistencePostgreSQL{
 							SecretRef: logicv1.PostgreSQLSecretOptions{Name: "pg-creds"},
-							JdbcURL:   "jdbc:postgresql://pg.default.svc:5432/logicflow",
+							ServiceRef: &logicv1.PostgreSQLServiceOptions{
+								SQLServiceOptions: &logicv1.SQLServiceOptions{
+									Name:         "pg",
+									DatabaseName: "logicflow",
+								},
+								DatabaseSchema: "public",
+							},
 						},
 					},
 				},
@@ -316,7 +328,7 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 			jdbcURL := findEnvVar(envs, "QUARKUS_DATASOURCE_JDBC_URL")
 			Expect(jdbcURL).NotTo(BeNil())
-			Expect(jdbcURL.Value).To(Equal("jdbc:postgresql://pg.default.svc:5432/logicflow"))
+			Expect(jdbcURL.Value).To(Equal("jdbc:postgresql://pg:5432/logicflow?currentSchema=public"))
 		})
 	})
 

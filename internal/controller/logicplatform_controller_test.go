@@ -35,6 +35,25 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
+// MockDatabaseConnector implements DatabaseConnector for testing
+type MockDatabaseConnector struct {
+	ShouldSucceed bool
+	LastCall      struct {
+		Host   string
+		Port   int
+		User   string
+		Dbname string
+	}
+}
+
+func (m *MockDatabaseConnector) Ping(_ context.Context, host string, port int, user string, _ string, dbname string) (bool, error) {
+	m.LastCall.Host = host
+	m.LastCall.Port = port
+	m.LastCall.User = user
+	m.LastCall.Dbname = dbname
+	return m.ShouldSucceed, nil
+}
+
 func reconcilePlatformAndFetch(ctx context.Context, r *LogicPlatformReconciler, nn types.NamespacedName) *logicv1.LogicPlatform {
 	_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 	Expect(err).NotTo(HaveOccurred())
@@ -45,8 +64,9 @@ func reconcilePlatformAndFetch(ctx context.Context, r *LogicPlatformReconciler, 
 
 func newPlatformReconciler() *LogicPlatformReconciler {
 	return &LogicPlatformReconciler{
-		Client: k8sClient,
-		Scheme: k8sClient.Scheme(),
+		Client:            k8sClient,
+		Scheme:            k8sClient.Scheme(),
+		DatabaseConnector: &MockDatabaseConnector{ShouldSucceed: true},
 	}
 }
 
@@ -74,7 +94,7 @@ func dataIndexNameFor(platformName string) string {
 	return platformName + "-data-index"
 }
 
-func vectorNameFor(platformName string) string {
+func vectorNameFor(platformName string) string { //nolint:unparam
 	return platformName + "-vector"
 }
 
