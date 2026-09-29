@@ -116,6 +116,8 @@ Building and maintaining one shared migrator is simpler than one per schema: one
 
 Exit code alone answers "did it work," not "what's the schema's current state." The migrator writes a small JSON summary to its termination message before exiting; `LogicDbMigrationReconciler` reads it off the finished Pod (`pod.status.containerStatuses[].state.terminated.message`) in the same reconcile that observes the Job's terminal state, and copies it into `LogicDbMigrationStatus.Streams`.
 
+`backoffLimit` (see Container Spec) means a Job is not guaranteed exactly one Pod — a failed attempt can be retried into a second Pod before the Job's own terminal state is reached. The reconciler must not read an arbitrary matching Pod: list Pods by the Job's own selector (`batch.kubernetes.io/job-name`), and pick the one whose outcome matches the Job's terminal condition — the `Succeeded` Pod for a successful Job, or the most recent Pod by `status.startTime` for a `Failed` one — rather than the first Pod returned.
+
 ```json
 {
   "streams": [
@@ -236,6 +238,15 @@ type LogicDbMigrationSpec struct {
     // already resolves from the owning Platform's PersistenceOptionsSpec.
 }
 
+// MountedScriptSource configures the init container that populates externally-owned
+// migration scripts for a component whose schema isn't bundled into the migrator image.
+// Defined in api/v1 (not internal/controller) since it's part of the LogicDbMigrationSpec
+// wire format. Kept as a fallback mechanism; no current caller among Steps 1-3.
+type MountedScriptSource struct {
+    InitImage string `json:"initImage"` // the image publishing the .sql files
+    MountPath string `json:"mountPath"` // shared mount point, e.g. /migrations
+}
+
 // MigrationPhase summarizes a LogicDbMigration's current state.
 // +kubebuilder:validation:Enum=Pending;Running;Succeeded;Failed
 type MigrationPhase string
@@ -323,16 +334,10 @@ type migrationJobInputs struct {
     Image        string
     Include      []string                   // e.g. ["runtime"], ["data-index"], ["runtime","quartz"]
     ExtraEnv     []*corev1ac.EnvVarApplyConfiguration
-    ScriptSource *MountedScriptSource        // non-nil only for a component with no published extension yet;
-                                              // unset by Steps 1-3 today (see Two ways to supply migration scripts)
-}
-
-// MountedScriptSource configures the init container that populates externally-owned
-// migration scripts for a component whose schema isn't bundled into the migrator image.
-// Kept as a fallback mechanism; no current caller among Steps 1-3.
-type MountedScriptSource struct {
-    InitImage string // the image publishing the .sql files
-    MountPath string // shared mount point, e.g. /migrations
+    ScriptSource *logicv1.MountedScriptSource // non-nil only for a component with no published extension yet;
+                                              // unset by Steps 1-3 today (see Two ways to supply migration scripts).
+                                              // Type lives in api/v1 (see LogicDbMigration CRD) — it's part of
+                                              // LogicDbMigrationSpec's wire format, not controller-internal.
 }
 
 func buildMigrationJob(in migrationJobInputs) *batchv1.Job
@@ -364,7 +369,7 @@ where `hash` is a short hash (e.g. first 8 hex chars of FNV or SHA256) of the JD
 
 ### Failure Handling
 
-A `Failed` Job is a hard stop, not a transient state — the reconciler does not recreate a Job with the same hash automatically. Recovery requires either the user fixing the underlying issue and letting the operator regenerate a new-hash Job on the next spec change, or manually deleting the failed Job (which the operator recreates with the same hash on the next reconcile, since nothing else changed). No new API surface (e.g. a retry annotation) is proposed for v1 — flagged in Open Questions if this proves insufficient in practice.
+A `Failed` Job is a hard stop, not a transient state — the reconciler does not recreate a Job with the same hash automatically, even once the failed Job itself is gone. Reconcile step 6 (see `LogicDbMigration` Controller) treats a "Not found" result with a matching hash and a terminal `Status.Phase` as an already-known outcome, never as "never ran" — so manually deleting the failed Job does **not**, by itself, give the operator a reason to try again. Recovery requires the spec's hash to change: the user fixes the underlying issue and a subsequent spec change (JDBC target, image, or `Include`) regenerates a new-hash Job. No new API surface (e.g. a retry annotation) is proposed for v1 — flagged in Open Questions if this proves insufficient in practice.
 
 ---
 
@@ -392,8 +397,11 @@ A `Failed` Job is a hard stop, not a transient state — the reconciler does not
 1. Fetch LogicFlowRuntime
 2. List ConfigMaps
 3. reconcileMigrationGate — looks up the LogicPlatform in rt.Namespace (see Migration Ownership)
-   - 0 or Platform's RuntimeMigrationComplete == True: not gated, proceed
-   - Platform's RuntimeMigrationComplete == False: gated, requeue short backoff
+   - 0 Platforms, or 1 Platform with RuntimeDefaults.Persistence.DBMigrationStrategy != job: not gated, proceed
+   - 1 Platform with DBMigrationStrategy == job and RuntimeMigrationComplete == True: not gated, proceed
+   - 1 Platform with DBMigrationStrategy == job and RuntimeMigrationComplete == False, Unknown,
+     or absent (e.g. before the Platform's first status update): gated, requeue short backoff.
+     Absent must never be read as "not gated" — only a Platform with strategy != job skips the gate.
 4. applyDeployment (SSA) — gated: if migration is required and not yet complete,
    skip applying the Deployment entirely (see "Blocking mechanism")
 5. reconcilePodRBAC, reconcileLeases (unchanged, existing persistence-gated steps)
@@ -466,12 +474,13 @@ on `logicflowruntime_controller.go` — this reconciler only ever reads `LogicPl
 ### `LogicDbMigration` Controller RBAC
 
 ```go
+// +kubebuilder:rbac:groups=logic.kubesmarts.org,resources=logicdbmigrations,verbs=get;list;watch
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list
 // +kubebuilder:rbac:groups=logic.kubesmarts.org,resources=logicdbmigrations/status,verbs=get;update;patch
 ```
 
-on `logicdbmigration_controller.go` — no `batch`/`jobs` or `pods` RBAC exists anywhere in the operator today. `pods: get;list` is new specifically for harvesting the termination-message report (see Migration Report).
+on `logicdbmigration_controller.go` — no `batch`/`jobs` or `pods` RBAC exists anywhere in the operator today. `pods: get;list` is new specifically for harvesting the termination-message report (see Migration Report). The main-resource `get;list;watch` marker is required alongside the `/status` marker — without it the reconciler can neither fetch the `LogicDbMigration` CR nor be triggered by changes to it.
 
 ### Files
 
@@ -484,7 +493,8 @@ on `logicdbmigration_controller.go` — no `batch`/`jobs` or `pods` RBAC exists 
 | `internal/controller/logicplatform_controller.go` | `reconcileRuntimeMigration` (upserts `LogicDbMigration`), `updateStatusRuntimeMigration`, new RBAC marker |
 | `internal/controller/logicflowruntime_controller.go` | `reconcileMigrationGate` (looks up `LogicPlatform`), `updateStatusMigration`, reordered `Reconcile`, new RBAC marker |
 | `internal/controller/logicdbmigration_controller.go` (new) | `LogicDbMigrationReconciler` — builds/polls the Job, harvests the report, writes `LogicDbMigrationStatus` |
-| `internal/controller/quarkus_config.go` | `persistenceEnvVars()` reads `DBMigrationStrategy` to force `database.generation=none` for `job`/`none` |
+| `internal/controller/quarkus_config.go` | `persistenceEnvVars()` reads `DBMigrationStrategy` to force `quarkus.hibernate-orm.schema-management.strategy=none` for `job`/`none` (see Strategy Semantics — not the deprecated `database.generation` property) |
+| `cmd/main.go` | Register `LogicDbMigrationReconciler.SetupWithManager` — without this the new controller never runs |
 | `internal/controller/migrationjob_objects.go` (new) | Shared `migrationJobInputs`, `buildMigrationJob`, `migrationJobName`, hash logic — used only by `LogicDbMigrationReconciler` |
 | `utils/kubernetes/jobs.go` | Reuse `FindJob`/`JobHasFinished`; verify condition-handling correctness |
 | `config/crd/bases/*.yaml`, `config/rbac/role.yaml` | Regenerated via `make manifests` |
@@ -566,6 +576,7 @@ Given that prerequisite API exists:
 
 - **No new Job shape, no new image, no new resolution logic.** Because `db-migrator` always bundles both the runtime and Quartz migration scripts (see Migrator Application — bundling both costs nothing, they're small SQL files), Step 3 is purely a matter of what value the operator puts in `LogicDbMigrationSpec.Include`: `["runtime","quartz"]` instead of `["runtime"]`, on the *same* `<platform.Name>-runtime-migration` `LogicDbMigration` object Step 1 already creates — not a second one. `DefaultRunnerImage` and everything else about the Job's shape are unaffected.
 - **Distinguishing which stream failed is not a special case.** `LogicDbMigrationStatus.Streams` (see Migration Report) already reports one entry per stream applied in a Job — with `Include: ["runtime","quartz"]`, that's naturally two entries, and a partial failure shows up as one `Streams` entry present and the `error` field naming the other. No dedicated `ReasonMigrationJobFailedQuartz` or free-text convention is needed. It still depends on the migrator app's exit reporting being granular enough to tell the two streams apart — itself one of the companion ADR's open questions, not yet resolved there.
+- **Combining two streams in one invocation must not assume their script versions never collide.** A single `INCLUDE=runtime,quartz` run should give each stream its own Flyway history table (a per-stream `table=` setting in `db-migrator`, keyed by stream name) rather than assume the runtime and Quartz version ranges happen to stay non-overlapping — that coordination lives entirely in the companion extensions and isn't something this ADR can verify or enforce. Per-stream history tables make the combined case correct regardless of how the two extensions number their scripts.
 
 ### Files
 
