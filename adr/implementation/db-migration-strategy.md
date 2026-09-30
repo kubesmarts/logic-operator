@@ -100,6 +100,8 @@ Building and maintaining one shared migrator is simpler than one per schema: one
 
 **Bundled (published dependency)** — the default, and the mechanism for every schema this design covers, not only the ones `quarkus-flow` owns. `db-migrator` depends on `quarkus-flow-db-migration-runtime` and `quarkus-flow-db-migration-quartz` (the companion ADR's extension modules) as published Maven artifacts pulled cross-repo from `quarkus-flow`, and on `logic-apps`'s own Data Index migration extension as an ordinary in-repo module dependency — no publish/pull step needed for that one, since both live in `logic-apps`. All three always ship inside the one image, landing on the classpath at their isolated locations (`db/migration/flow-runtime`, `db/migration/flow-quartz`, `db/migration/data-index`). Which of them Flyway actually applies against a given database in a given invocation is controlled by an env var, not by what's on the classpath — everything bundled is always present in the image; the invocation just picks the subset to run. Picking up a new `quarkus-flow` script means bumping `db-migrator`'s dependency version and cutting a new image release, coupling `quarkus-flow`'s release cadence to the migrator's for schema changes; a new Data Index script just needs the in-repo dependency bumped as part of `logic-apps`'s own build (see Open Questions).
 
+Each bundled stream must resolve to its own Flyway history table (a per-stream `table=` setting in `db-migrator`, keyed by stream name), not one shared `flyway_schema_history` for the whole invocation — otherwise a combined invocation (Step 3's `INCLUDE=runtime,quartz`) can have two independently-versioned streams collide on the same version sequence (see Step 3, "Combining two streams in one invocation").
+
 **Mounted (runtime-supplied)** — kept as a fallback for any future schema owner that can't or hasn't yet published a proper extension; not used by any of Steps 1–3 today. Flyway supports filesystem-based migration locations alongside classpath ones, so the mechanism (an extra `locations` entry pointed at a mounted directory, populated by a Kubernetes init container the operator adds to the Job) stays available in `LogicDbMigrationSpec.ScriptSource` without a live consumer, rather than being designed away entirely — cheap to keep, and one less thing to redesign if a future component can't get a build-time dependency published in time.
 
 ### Container contract
@@ -217,8 +219,11 @@ type LogicDbMigrationSpec struct {
     // +required
     Component string `json:"component"`
 
-    // Image is the db-migrator image to run. Defaults to the operator's
-    // well-known image unless Persistence.MigrationImage overrides it.
+    // Image is the db-migrator image to run. There is no CRD default or webhook
+    // defaulting for this field — the caller (LogicPlatformReconciler) must resolve
+    // it to a concrete value (Persistence.MigrationImage if set, else the operator's
+    // well-known db-migrator image) before constructing this spec, since the only
+    // writer is the operator itself (see LogicDbMigration CRD, "Operator-owned only").
     // +required
     Image string `json:"image"`
 
@@ -286,6 +291,28 @@ type MigrationStreamStatus struct {
     AppliedVersion string       `json:"appliedVersion,omitempty"`
     AppliedCount   int32        `json:"appliedCount,omitempty"`
     LastAppliedAt  *metav1.Time `json:"lastAppliedAt,omitempty"`
+}
+
+// LogicDbMigration is the root CRD type — see LogicDbMigration CRD above.
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+type LogicDbMigration struct {
+    metav1.TypeMeta   `json:",inline"`
+    metav1.ObjectMeta `json:"metadata,omitempty"`
+
+    Spec   LogicDbMigrationSpec   `json:"spec,omitempty"`
+    Status LogicDbMigrationStatus `json:"status,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+type LogicDbMigrationList struct {
+    metav1.TypeMeta `json:",inline"`
+    metav1.ListMeta `json:"metadata,omitempty"`
+    Items           []LogicDbMigration `json:"items"`
+}
+
+func init() {
+    SchemeBuilder.Register(&LogicDbMigration{}, &LogicDbMigrationList{})
 }
 ```
 
@@ -356,7 +383,7 @@ Kubernetes Jobs are immutable — `spec.template` can't be updated on an existin
 {migration.Name}-{hash}
 ```
 
-where `hash` is a short hash (e.g. first 8 hex chars of FNV or SHA256) of the JDBC connection target, schema, image reference, and `Include`, and — only for the unused `ScriptSource != nil` fallback — the init container's image reference too. `LogicDbMigrationStatus.JobRef` always names the current hash's Job. A completed old-hash Job doesn't need active deletion — `ttlSecondsAfterFinished` GCs it; the reconciler just stops looking it up once the hash changes. If the hash changes while the old-hash Job is still `Running`, the reconciler does not create the new-hash Job in the same reconcile — it serializes, requeuing until the old Job reaches a terminal state first (see `LogicDbMigration` Controller, reconcile step 7). Two Flyway processes racing the same JDBC target is worse than a short delay, and cancelling the old Job risks a half-applied migration.
+where `hash` is a short hash (e.g. first 8 hex chars of FNV or SHA256) of the JDBC connection target, schema, image reference, `Include`, and the credential reference identity — the `ConnectionSecretRef` name and key(s) `persistenceEnvVars()` resolves credentials from, never the secret's own values — so switching to a different Secret (even one exposing the same JDBC URL) changes the hash instead of silently reusing a completed Job's name, and — only for the unused `ScriptSource != nil` fallback — the init container's image reference too. `LogicDbMigrationStatus.JobRef` always names the current hash's Job. A completed old-hash Job doesn't need active deletion — `ttlSecondsAfterFinished` GCs it; the reconciler just stops looking it up once the hash changes. If the hash changes while the old-hash Job is still `Running`, the reconciler does not create the new-hash Job in the same reconcile — it serializes, requeuing until the old Job reaches a terminal state first (see `LogicDbMigration` Controller, reconcile step 7). Two Flyway processes racing the same JDBC target is worse than a short delay, and cancelling the old Job risks a half-applied migration.
 
 ### Container Spec (defaults for all steps)
 
@@ -385,7 +412,7 @@ A `Failed` Job is a hard stop, not a transient state — the reconciler does not
 1. Fetch LogicPlatform
 2. reconcileRuntimeMigration — only if RuntimeDefaults.Persistence != nil && DBMigrationStrategy == job
    - upserts LogicDbMigration{Name: "<platform.Name>-runtime-migration",
-     Spec: {Component: "runtime", Include: ["runtime"], ...}} — Image left to its default
+     Spec: {Component: "runtime", Include: ["runtime"], ...}} — Image resolved by the caller to Persistence.MigrationImage or the well-known default (see LogicDbMigration CRD)
    - reads back the LogicDbMigration's Status; does not touch a Job directly
 3. updateStatus — includes updateStatusRuntimeMigration (mirrors LogicDbMigration's
    MigrationComplete condition onto LogicPlatformStatus.RuntimeMigrationComplete)
@@ -397,6 +424,12 @@ A `Failed` Job is a hard stop, not a transient state — the reconciler does not
 1. Fetch LogicFlowRuntime
 2. List ConfigMaps
 3. reconcileMigrationGate — looks up the LogicPlatform in rt.Namespace (see Migration Ownership)
+   - rt.Spec.Persistence.PostgreSQL explicitly set and different from the Platform's
+     RuntimeDefaults.Persistence.PostgreSQL (see Migration Ownership, "Accepted limitation"):
+     not gated by this Platform's runtime-schema migration — proceed, but set
+     MigrationComplete=True/Unmanaged rather than silently skipping the condition, so
+     `kubectl describe` shows this Runtime opted out rather than looking identical to
+     a Runtime that passed the gate
    - 0 Platforms, or 1 Platform with RuntimeDefaults.Persistence.DBMigrationStrategy != job: not gated, proceed
    - 1 Platform with DBMigrationStrategy == job and RuntimeMigrationComplete == True: not gated, proceed
    - 1 Platform with DBMigrationStrategy == job and RuntimeMigrationComplete == False, Unknown,
@@ -436,7 +469,7 @@ Requeue while migration is in flight: short backoff (e.g. `RequeueAfter: 5 * tim
 | `False` | `MigrationJobRunning` | `LogicDbMigration.Status.Phase` is `Pending`/`Running` |
 | `False` | `MigrationJobFailed` | `LogicDbMigration.Status.Phase` is `Failed` |
 
-**`MigrationComplete` condition (on `LogicFlowRuntimeStatus`)** — a second-hop mirror of the Platform's `RuntimeMigrationComplete`, the gate `applyDeployment` actually checks. The detailed report (which streams applied, what version) lives on `LogicDbMigration.Status`, not duplicated at either level — `kubectl describe logicflowruntime` tells you *whether* migration is done, `kubectl describe logicdbmigration <platform.Name>-runtime-migration` tells you *what happened*.
+**`MigrationComplete` condition (on `LogicFlowRuntimeStatus`)** — a second-hop mirror of the Platform's `RuntimeMigrationComplete`, the gate `applyDeployment` actually checks. The detailed report (which streams applied, what version) lives on `LogicDbMigration.Status`, not duplicated at either level — `kubectl describe logicflowruntime` tells you *whether* migration is done, `kubectl describe logicdbmigration <platform.Name>-runtime-migration` tells you *what happened*. One additional reason applies only at this level, not on `RuntimeMigrationComplete`: `True`/`Unmanaged` when `rt.Spec.Persistence.PostgreSQL` explicitly overrides the Platform's target (see Reconciliation Flow above) — the Runtime isn't covered by this migration at all, and the distinct reason keeps that visible instead of reading identically to a Runtime that passed the gate.
 
 New consts in `api/v1/status_types.go`, following the existing grouped style:
 
@@ -447,6 +480,7 @@ ConditionRuntimeMigrationComplete = "RuntimeMigrationComplete"
 ```go
 ReasonMigrationJobRunning = "MigrationJobRunning"
 ReasonMigrationJobFailed  = "MigrationJobFailed"
+ReasonMigrationUnmanaged  = "Unmanaged" // MigrationComplete only — Runtime overrides its own Persistence.PostgreSQL
 ```
 
 `DerivePhase` needs `MigrationComplete=False`/`MigrationJobFailed` to force `ApplicationPhaseFailed` (hard stop, unlike `DeploymentProgressing`'s "not ready yet"); `MigrationJobRunning` keeps phase at `Pending`.
@@ -523,7 +557,7 @@ on `logicdbmigration_controller.go` — no `batch`/`jobs` or `pods` RBAC exists 
 
 - **`DataIndexSpec.Persistence` is a value type, not a pointer** (`Persistence PersistenceOptionsSpec`, vs. `RuntimeDefaults.Persistence *PersistenceOptionsSpec`). The "has persistence" gate is therefore `DataIndex.Enabled && DataIndex.Persistence.PostgreSQL != nil`, not a nil-spec check — normalize to a pointer at the `LogicDbMigrationSpec` call site so `LogicDbMigrationReconciler` doesn't need a second code path.
 - **Same migrator image and mode as Step 1 (Bundled) — not the main Data Index app image.** `data-index-storage-migrations` is a plain Flyway-core library today (no Quarkus extension, no Dockerfile), pulled into `data-index-service-postgresql` only inside a `dev-flyway` Maven profile with production Flyway explicitly disabled — building a migrate-only mode into that production app isn't the design here (see Migrator Application for why). Instead, `logic-apps` packages it as a Quarkus extension (working name `data-index-db-migration`, exact naming TBD) that `db-migrator` takes a compile-time dependency on, the same way it already does on `quarkus-flow-db-migration-runtime`/`-quartz` — `LogicDbMigrationSpec.Include: ["data-index"]` selects it at invocation time, no `ScriptSource`/init container involved. Separately, `data-index-ingestion-kafka-service` depends on the same migrations module only at `scope=test`, so it carries no production Flyway wiring — whether it owns any schema of its own is unresolved and treated as out of scope for Step 2.
-- **No ordering dependency with Step 1's migration.** The runtime schema and Data Index each get their own `LogicDbMigration` object under the same `LogicPlatform`, reconciled independently by the same shared `LogicDbMigrationReconciler` — and (per the existing `databaseSchema` field's own doc comment: "use a different databaseSchema than runtimes") typically target different schemas even when sharing a Postgres server. Neither migration blocks the other — this is worth stating explicitly since it's a natural question once both exist.
+- **No ordering dependency between the two migrations — but only when their targets don't collide.** The runtime schema and Data Index each get their own `LogicDbMigration` object under the same `LogicPlatform`, reconciled independently by the same shared `LogicDbMigrationReconciler`, and (per the existing `databaseSchema` field's own doc comment: "use a different databaseSchema than runtimes") are *recommended*, not *required*, to target different schemas. The API permits `RuntimeDefaults.Persistence` and `DataIndex.Persistence` to resolve to the same effective JDBC target and schema, and nothing in this design detects that today. If they do collide, running both Jobs independently risks two Flyway processes racing the same `flyway_schema_history` table — the same hazard the hash-change case guards against within a single stream (see `LogicDbMigration` Controller, reconcile step 7), but nothing here extends that guard across streams. `LogicPlatformReconciler` should compare the two streams' effective JDBC target + schema before creating the second `LogicDbMigration`, and either serialize them (don't create the second while the first is non-terminal) or reject the configuration with a status condition — not designed further here (see Open Questions).
 
 ### Reconciliation Flow (once Data Index reconciliation exists)
 
@@ -532,7 +566,7 @@ on `logicdbmigration_controller.go` — no `batch`/`jobs` or `pods` RBAC exists 
 reconcileDataIndexMigration — only if DataIndex.Enabled && DataIndex.Persistence.PostgreSQL != nil
                                && DataIndex.Persistence.DBMigrationStrategy == job
   - upserts LogicDbMigration{Name: "<platform.Name>-data-index-migration",
-    Spec: {Component: "data-index", Include: ["data-index"], ...}} — Image left to its default
+    Spec: {Component: "data-index", Include: ["data-index"], ...}} — Image resolved by the caller to Persistence.MigrationImage or the well-known default (see LogicDbMigration CRD)
 applyDataIndexDeployment — gated the same way Step 1 gates applyDeployment, off the LogicDbMigration's status
 updateStatus — includes updateStatusDataIndexMigration (mirrors the child's MigrationComplete condition)
 ```
@@ -603,6 +637,7 @@ Envtest: Platform with Quartz scheduling enabled + `job` strategy sets `LogicDbM
 - **All steps:** `db-migrator` module creation and scaffolding within `logic-apps` (CI wiring for a new per-module image build, container registry/namespace, base image, initial Maven/Quarkus project shape) is a prerequisite this ADR assumes but doesn't perform — not designed here.
 - **All steps:** Versioning/compatibility policy between `db-migrator` releases and the `quarkus-flow-db-migration-runtime`/`-quartz` artifact versions it bundles — e.g. does `db-migrator` pin exact versions, a range, or always-latest, and who's responsible for bumping it when `quarkus-flow` cuts a new script release. Also whether `db-migrator` versions/releases independently within `logic-apps` (like its other per-module images) or piggybacks on a broader `logic-apps` release.
 - **Step 2:** Exact shape and name of the `logic-apps`-published Data Index migration extension (working name `data-index-db-migration` in this doc), and whether `data-index-ingestion-kafka-service` needs its own migration path given it currently has no production Flyway wiring at all — both are `logic-apps`-side work this ADR doesn't design.
+- **Step 2:** How `LogicPlatformReconciler` should detect and handle the runtime-schema and Data Index streams resolving to the same effective JDBC target and schema (see Step 2, "What's different from Step 1") — serialize the two `LogicDbMigration`s or reject the configuration outright; not designed here.
 - **Step 3:** The Quartz scheduler-configuration API itself is undesigned; this step cannot start until that exists.
 - **All steps:** The companion quarkus-flow ADR (`adr/2026-08-25-db-migration-extension-design.md`) still describes two separate migrator apps living inside `quarkus-flow` and, before that, "reuse the existing runner image with a migrate-only property" — both superseded by this document's Migrator Application section. That ADR needs a follow-up update before the two are consistent; not done as part of this change.
 - **All steps:** Job failure retry UX — is deleting the failed Job manually (letting the operator recreate it) sufficient, or does this need a forced-retry annotation? Leaning toward the former (no new API surface).
