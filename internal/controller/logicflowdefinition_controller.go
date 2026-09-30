@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	corev1ac "k8s.io/client-go/applyconfigurations/core/v1"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -64,7 +65,7 @@ func (r *LogicFlowDefinitionReconciler) Reconcile(ctx context.Context, req ctrl.
 	if err != nil {
 		log.Error(err, "failed to parse flow document")
 		logicv1.SetCondition(&def.Status.Conditions, logicv1.ConditionFlowParsed, metav1.ConditionFalse, def.Generation, logicv1.ReasonParseError, err.Error())
-		return ctrl.Result{}, r.Status().Update(ctx, &def)
+		return ctrl.Result{}, r.updateStatusWithConflictRetry(ctx, &def)
 	}
 	logicv1.SetCondition(&def.Status.Conditions, logicv1.ConditionFlowParsed, metav1.ConditionTrue, def.Generation, logicv1.ReasonReady, "")
 
@@ -139,7 +140,19 @@ func (r *LogicFlowDefinitionReconciler) updateStatus(ctx context.Context, def *l
 	def.Status.WorkflowNamespace = def.Namespace
 	def.Status.ConfigMapRef = &corev1.LocalObjectReference{Name: configMapName(def)}
 
-	return r.Status().Update(ctx, def)
+	return r.updateStatusWithConflictRetry(ctx, def)
+}
+
+func (r *LogicFlowDefinitionReconciler) updateStatusWithConflictRetry(ctx context.Context, def *logicv1.LogicFlowDefinition) error {
+	savedStatus := def.Status.DeepCopy()
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		if err := r.Get(ctx, client.ObjectKeyFromObject(def), def); err != nil {
+			return err
+		}
+		// Restore accumulated changes onto freshly fetched object
+		def.Status = *savedStatus
+		return r.Status().Update(ctx, def)
+	})
 }
 
 func (r *LogicFlowDefinitionReconciler) updateFlowIDLabels(ctx context.Context, def *logicv1.LogicFlowDefinition, wf *model.Workflow) (bool, error) {

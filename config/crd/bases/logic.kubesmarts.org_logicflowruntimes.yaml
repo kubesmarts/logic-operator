@@ -27,6 +27,9 @@ spec:
     - jsonPath: .status.readyReplicas
       name: Ready
       type: string
+    - jsonPath: .status.conditions[?(@.type=='Ready')].reason
+      name: Reason
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -1399,6 +1402,34 @@ spec:
                 - Never
                 - IfNotPresent
                 type: string
+              logging:
+                description: |-
+                  StructuredLoggingSpec configures structured JSON logging for workflow events.
+
+                  Structured logging enables Vector and observability platforms to capture workflow
+                  execution data (events, metrics, payloads) for querying and analytics.
+                properties:
+                  enabled:
+                    default: true
+                    description: |-
+                      Enabled enables structured JSON logging for workflow events.
+                      Defaults to true (respects runner image defaults).
+                    type: boolean
+                  includeTaskPayloads:
+                    default: false
+                    description: |-
+                      IncludeTaskPayloads includes task input/output data in structured logs.
+                      Defaults to false (sensitive data protection).
+                    type: boolean
+                  includeWorkflowPayloads:
+                    default: false
+                    description: |-
+                      IncludeWorkflowPayloads includes workflow input/output data in structured logs.
+                      Required for Vector to capture workflow payloads into persistent storage.
+                      Defaults to false (sensitive data protection).
+                      WARNING: Enable only if you can store payloads securely.
+                    type: boolean
+                type: object
               persistence:
                 description: |-
                   Persistence configures database connectivity.
@@ -1443,8 +1474,7 @@ spec:
                           Mutually exclusive to jdbcUrl.
                         properties:
                           databaseName:
-                            description: Name of postgresql database to be used. Defaults
-                              to "logicflow"
+                            description: Name of postgresql database to be used.
                             type: string
                           databaseSchema:
                             description: Schema of postgresql database to be used.
@@ -1452,15 +1482,15 @@ spec:
                               "public").
                             type: string
                           name:
-                            description: Name of the postgresql k8s service.
+                            description: Name of the DB k8s service.
                             type: string
                           namespace:
-                            description: Namespace of the postgresql k8s service.
-                              Defaults to the LogicPlatform's local namespace.
+                            description: Namespace of the DB k8s service. Defaults
+                              to the LogicPlatform's local namespace.
                             type: string
                           port:
-                            description: Port to use when connecting to the postgresql
-                              k8s service. Defaults to 5432.
+                            description: Port to use when connecting to the DB k8s
+                              service.
                             type: integer
                         required:
                         - name

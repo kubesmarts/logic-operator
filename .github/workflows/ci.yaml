@@ -33,13 +33,16 @@ jobs:
         with:
           go-version: '1.26'
 
+      - name: Sync Vector configs from logic-apps
+        run: make sync-configs
+
       - name: Check go fmt
         run: |
           OUTPUT=$(go fmt ./...)
           if [ -n "$OUTPUT" ]; then
             echo "The following files are not formatted:"
             echo "$OUTPUT"
-            echo "Please run 'go fmt ./...' locally and commit the changes"
+            echo "Please run 'make sync-configs' followed by 'go fmt ./...' locally and commit the changes"
             exit 1
           fi
 
@@ -47,7 +50,7 @@ jobs:
         run: |
           make manifests generate
           if ! git diff --quiet; then
-            echo "Generated files are out of date. Please run 'make manifests generate' and commit the changes."
+            echo "Generated files are out of date. Please run 'make sync-configs' followed by 'make manifests generate' and commit the changes."
             git diff --stat
             exit 1
           fi
@@ -81,6 +84,9 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.26'
+
+      - name: Sync Vector configs from logic-apps
+        run: make sync-configs
 
       - name: Set up E2E test infrastructure
         run: make setup-test-e2e

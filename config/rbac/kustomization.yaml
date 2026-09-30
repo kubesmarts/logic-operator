@@ -37,4 +37,5 @@ resources:
 - logicplatform_admin_role.yaml
 - logicplatform_editor_role.yaml
 - logicplatform_viewer_role.yaml
-
+# Vector RBAC
+- vector_cluster_role.yaml

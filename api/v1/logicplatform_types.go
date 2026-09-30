@@ -39,7 +39,6 @@ type LogicPlatformStatusPhase string
 //	metadata:
 //	  name: production-platform
 //	spec:
-//	  version: "2.0.0"
 //	  dataIndex:
 //	    enabled: true
 //	    application:
@@ -225,6 +224,10 @@ type PersistenceConfigStatus struct {
 	// Only populated when using serviceRef instead of JDBC URL.
 	// +optional
 	ServiceExists bool `json:"serviceExists,omitempty"`
+	// DatabaseConnected indicates whether the database is actually reachable.
+	// Checked via DataIndex readiness probe (when pod is ready) or direct connection test (when pod is starting).
+	// +optional
+	DatabaseConnected *bool `json:"databaseConnected,omitempty"`
 	// Error contains any configuration validation error message.
 	// This field is populated when Valid=false.
 	// +optional
@@ -249,6 +252,11 @@ type PersistenceConfigStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName={lp,platform}
 // +kubebuilder:printcolumn:name="Data Index",type=boolean,JSONPath=`.spec.dataIndex.enabled`
+// +kubebuilder:printcolumn:name="DataIndex Ready",type=boolean,JSONPath=`.status.dataIndex.service.ready`
+// +kubebuilder:printcolumn:name="DataIndex Reason",type=string,JSONPath=`.status.conditions[?(@.type=='DataIndexDeploymentAvailable')].reason`
+// +kubebuilder:printcolumn:name="Vector Ready",type=boolean,JSONPath=`.status.dataIndex.vector.ready`
+// +kubebuilder:printcolumn:name="Vector Reason",type=string,JSONPath=`.status.conditions[?(@.type=='VectorReady')].reason`
+// +kubebuilder:printcolumn:name="GraphQL URI",type=string,JSONPath=`.status.dataIndex.service.graphqlEndpoint`
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=='Ready')].status`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 type LogicPlatform struct {
@@ -366,19 +374,28 @@ type DataIndexSpec struct {
 }
 
 type VectorSpec struct {
-	// Container configures the Vector DaemonSet container.
-	// Use this for full control over the Vector configuration.
+	// Enabled flags whether to reconcile this object or not.
+	// If enabled previously, then disabled, this object is removed from the cluster.
+	Enabled bool `json:"enabled,omitempty"`
+	// WatchNamespaces specifies which namespaces Vector should tail logs from.
+	//
+	// Special values:
+	//   - ["*"]: Watch all namespaces
+	//   - ["ns1", "ns2"]: Watch only specified namespaces
+	//
+	// This enables organizational sharding (e.g., team-a, team-b namespaces)
+	// while all events sink to the same Data Index.
+	//
+	// Example:
+	//   watchNamespaces: ["*"]                    # All namespaces
+	//   watchNamespaces: ["workflows", "prod"]    # Specific namespaces
+	//
+	// By default, it will watch the self-namespace.
+	//
 	// +optional
-	Container ContainerSpec `json:"container,omitempty"`
-	// Image specifies the Vector container image.
-	// This is a convenience field - if container.image is set, it takes precedence.
-	// +optional
-	Image           string            `json:"image,omitempty"`
-	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
-	// Resources specifies compute resource requirements for the Vector DaemonSet pods.
-	// This is a convenience field - if container.resources is set, it takes precedence.
-	// +optional
-	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+	WatchNamespaces []string `json:"watchNamespaces,omitempty"`
+	// Application configures the Vector deployment.
+	Application ApplicationSpec `json:"application,omitempty"`
 }
 
 // DataIndexIngressSpec configures external access to the Data Index service.

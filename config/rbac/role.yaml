@@ -20,6 +20,8 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - namespaces
+  - nodes
   - pods
   - secrets
   verbs:
@@ -39,6 +41,7 @@ rules:
 - apiGroups:
   - apps
   resources:
+  - daemonsets
   - deployments
   verbs:
   - create
@@ -121,6 +124,7 @@ rules:
 - apiGroups:
   - rbac.authorization.k8s.io
   resources:
+  - clusterrolebindings
   - rolebindings
   verbs:
   - create

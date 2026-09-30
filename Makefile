@@ -202,8 +202,23 @@ setup-test-e2e: manifests generate fmt vet ## Set up complete E2E test infrastru
 	@echo "E2E test infrastructure is ready!"
 
 .PHONY: test-e2e
-test-e2e: ## Run E2E tests (requires setup-test-e2e to be run first)
+test-e2e: ## Run all E2E tests (requires setup-test-e2e to be run first)
 	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v
+
+test-e2e-platform: ## Run LogicPlatform E2E tests
+	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v -ginkgo.focus="LogicPlatform"
+
+test-e2e-runtime: ## Run LogicFlowRuntime E2E tests
+	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v -ginkgo.focus="LogicFlowRuntime"
+
+test-e2e-service: ## Run LogicFlowService E2E tests
+	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v -ginkgo.focus="LogicFlowService"
+
+test-e2e-webhook: ## Run webhook validation E2E tests
+	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v -ginkgo.focus="webhook"
+
+test-e2e-custom: ## Run custom E2E test. Use TEST=<pattern> (e.g. TEST="DataIndex" or TEST="should capture workflow")
+	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v -ginkgo.focus="$(TEST)"
 
 .PHONY: cleanup-test-e2e
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
@@ -492,3 +507,22 @@ catalog-build: opm ## Build a catalog image.
 .PHONY: catalog-push
 catalog-push: ## Push a catalog image.
 	$(MAKE) docker-push IMG=$(CATALOG_IMG)
+
+# Vector Config Recipes
+.PHONY: sync-configs
+sync-configs: ## Update logic-apps dependency to latest main and sync Vector configs.
+	@echo "Updating logic-apps dependency to latest main..."
+	go get -u github.com/kubesmarts/logic-apps/data-index/collectors@main
+	@echo "Syncing data-index configs from Go module..."
+	@mkdir -p internal/controller/configs
+	@MODPATH=$$(go list -m -f '{{.Dir}}' github.com/kubesmarts/logic-apps/data-index/collectors 2>/dev/null); \
+	if [ -z "$$MODPATH" ]; then \
+		echo "ERROR: Module github.com/kubesmarts/logic-apps/data-index/collectors not found"; \
+		echo "Run: go mod download"; \
+		exit 1; \
+	fi; \
+	rm -rf internal/controller/configs/vector; \
+	cp -r $$MODPATH/vector internal/controller/configs/; \
+	chmod -R u+w internal/controller/configs/vector; \
+	echo "✓ Configs synced from $$MODPATH/vector"
+	go mod tidy

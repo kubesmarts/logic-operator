@@ -103,6 +103,8 @@ type LogicFlowDefinitionStatus struct {
 // +kubebuilder:printcolumn:name="Workflow",type=string,JSONPath=`.status.workflowName`
 // +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.status.workflowVersion`
 // +kubebuilder:printcolumn:name="Runtime",type=string,JSONPath=`.spec.runtimeRef.name`
+// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=='Ready')].status`
+// +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=='Ready')].reason`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 type LogicFlowDefinition struct {
 	metav1.TypeMeta   `json:",inline"`

@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	appsv1ac "k8s.io/client-go/applyconfigurations/apps/v1"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -117,9 +118,10 @@ func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *lo
 	childLabels := ChildLabels(rt)
 	opts := []ContainerOption{
 		DefaultRunnerImage(rt.Spec.Persistence),
-		WithPersistenceEnvVars(rt.Spec.Persistence, rt.Namespace),
+		WithQuarkusPersistenceEnvVars(rt.Spec.Persistence),
 		WithSecurityEnvVars(rt.Spec.Security),
-		DefaultProbes(),
+		WithStructuredLoggingEnvVars(rt.Spec.Logging),
+		DefaultQuarkusProbes(),
 		WithFlowSourcePath(),
 		WithFlowVolumeMounts(configMaps),
 	}
@@ -190,7 +192,7 @@ func (r *LogicFlowRuntimeReconciler) reconcileLeases(ctx context.Context, rt *lo
 	}
 
 	// Always create leases 0 to desired-1 (index-based)
-	for i := int32(0); i < desired; i++ {
+	for i := range desired {
 		name := fmt.Sprintf(LeaseMemberNameFmt, rt.Name, i)
 		if _, ok := existing[name]; ok {
 			continue
@@ -369,7 +371,15 @@ func (r *LogicFlowRuntimeReconciler) updateStatus(ctx context.Context, rt *logic
 
 	rt.Status.Phase = logicv1.DerivePhase(rt.Status.Conditions, rt.Status.ReadyReplicas)
 
-	return r.Status().Update(ctx, rt)
+	savedStatus := rt.Status.DeepCopy()
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		if err := r.Get(ctx, client.ObjectKeyFromObject(rt), rt); err != nil {
+			return err
+		}
+		// Restore accumulated changes onto freshly fetched object
+		rt.Status = *savedStatus
+		return r.Status().Update(ctx, rt)
+	})
 }
 
 func configMapRefs(configMaps []corev1.ConfigMap) []corev1.LocalObjectReference {

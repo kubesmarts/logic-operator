@@ -12,11 +12,8 @@ import (
 )
 
 const (
-	defaultPostgresPort      = 5432
-	defaultDatabaseName      = "logicflow"
-	defaultSecretUserKey     = "POSTGRESQL_USER"
-	defaultSecretPasswordKey = "POSTGRESQL_PASSWORD"
-	defaultPort              = 80
+	defaultDatabaseName = "logicflow"
+	defaultPort         = 80
 )
 
 func runnerImage(variant string) string {
@@ -24,12 +21,20 @@ func runnerImage(variant string) string {
 }
 
 func QuarkusService(owner metav1.Object, ownerKind string) *corev1ac.ServiceApplyConfiguration {
-	svc := corev1ac.Service(owner.GetName(), owner.GetNamespace()).
+	return QuarkusServiceWithSelector(owner, ownerKind, SelectorLabels(owner.GetName()))
+}
+
+func QuarkusServiceWithSelector(owner metav1.Object, ownerKind string, selectorLabels map[string]string) *corev1ac.ServiceApplyConfiguration {
+	return QuarkusServiceWithSelectorAndName(owner, ownerKind, selectorLabels, owner.GetName())
+}
+
+func QuarkusServiceWithSelectorAndName(owner metav1.Object, ownerKind string, selectorLabels map[string]string, serviceName string) *corev1ac.ServiceApplyConfiguration {
+	svc := corev1ac.Service(serviceName, owner.GetNamespace()).
 		WithOwnerReferences(OwnerRef(owner, ownerKind)).
 		WithLabels(ChildLabels(owner)).
 		WithSpec(
 			corev1ac.ServiceSpec().
-				WithSelector(SelectorLabels(owner.GetName())).
+				WithSelector(selectorLabels).
 				WithPorts(
 					corev1ac.ServicePort().
 						WithName("http").
@@ -56,9 +61,9 @@ func DefaultRunnerImage(persistence *logicv1.PersistenceOptionsSpec) ContainerOp
 	}
 }
 
-// DefaultProbes returns a ContainerOption that sets liveness and readiness probes
+// DefaultQuarkusProbes returns a ContainerOption that sets liveness and readiness probes
 // using the Quarkus SmallRye Health endpoints. User-specified probes are preserved.
-func DefaultProbes() ContainerOption {
+func DefaultQuarkusProbes() ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
 		if c.LivenessProbe == nil {
 			c.WithLivenessProbe(corev1ac.Probe().
@@ -101,44 +106,40 @@ func DurableStartupProbe() ContainerOption {
 	}
 }
 
-// WithPersistenceEnvVars returns a ContainerOption that appends Quarkus datasource environment variables.
+// WithQuarkusPersistenceEnvVars returns a ContainerOption that appends Quarkus datasource environment variables.
 // The namespace parameter is the owning CR's namespace, used as fallback when serviceRef.namespace is empty.
-func WithPersistenceEnvVars(p *logicv1.PersistenceOptionsSpec, namespace string) ContainerOption {
+func WithQuarkusPersistenceEnvVars(p *logicv1.PersistenceOptionsSpec) ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
-		envs := persistenceEnvVars(p, namespace)
+		envs := persistenceQuarkusEnvVars(p)
 		if len(envs) > 0 {
 			c.WithEnv(envs...)
 		}
 	}
 }
 
-func persistenceEnvVars(p *logicv1.PersistenceOptionsSpec, namespace string) []*corev1ac.EnvVarApplyConfiguration {
+func persistenceQuarkusEnvVars(p *logicv1.PersistenceOptionsSpec) []*corev1ac.EnvVarApplyConfiguration {
 	if p == nil || p.PostgreSQL == nil {
 		return nil
 	}
 
 	pg := p.PostgreSQL
-	envs := []*corev1ac.EnvVarApplyConfiguration{
-		envLiteral("QUARKUS_DATASOURCE_DB_KIND", "postgresql"),
-	}
+	envs := make([]*corev1ac.EnvVarApplyConfiguration, 0, 4)
+	envs = append(envs, envLiteral("QUARKUS_DATASOURCE_DB_KIND", "postgresql"))
 
 	userKey := pg.SecretRef.UserKey
 	if userKey == "" {
-		userKey = defaultSecretUserKey
+		userKey = logicv1.DefaultPgsqlSecretUserKey
 	}
 	passwordKey := pg.SecretRef.PasswordKey
 	if passwordKey == "" {
-		passwordKey = defaultSecretPasswordKey
+		passwordKey = logicv1.DefaultPgsqlSecretPasswordKey
 	}
 	envs = append(envs,
 		envFromSecret("QUARKUS_DATASOURCE_USERNAME", pg.SecretRef.Name, userKey),
 		envFromSecret("QUARKUS_DATASOURCE_PASSWORD", pg.SecretRef.Name, passwordKey),
 	)
 
-	jdbcURL := pg.JdbcURL
-	if jdbcURL == "" && pg.ServiceRef != nil {
-		jdbcURL = buildJdbcURL(pg.ServiceRef, namespace)
-	}
+	jdbcURL := buildJdbcURL(pg.ServiceRef)
 	if pg.TLS != nil && pg.TLS.Enabled {
 		mode := string(pg.TLS.TLSMode)
 		if mode == "" {
@@ -150,9 +151,7 @@ func persistenceEnvVars(p *logicv1.PersistenceOptionsSpec, namespace string) []*
 			jdbcURL += "?sslmode=" + mode
 		}
 	}
-	if jdbcURL != "" {
-		envs = append(envs, envLiteral("QUARKUS_DATASOURCE_JDBC_URL", jdbcURL))
-	}
+	envs = append(envs, envLiteral("QUARKUS_DATASOURCE_JDBC_URL", jdbcURL))
 
 	return envs
 }
@@ -162,6 +161,38 @@ func WithSecurityEnvVars(sec logicv1.RuntimeSecuritySpec) ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
 		c.WithEnv(securityEnvVars(sec)...)
 	}
+}
+
+// WithStructuredLoggingEnvVars returns a ContainerOption that configures structured logging environment variables.
+func WithStructuredLoggingEnvVars(logging *logicv1.StructuredLoggingSpec) ContainerOption {
+	return func(c *corev1ac.ContainerApplyConfiguration) {
+		envs := structuredLoggingEnvVars(logging)
+		if len(envs) > 0 {
+			c.WithEnv(envs...)
+		}
+	}
+}
+
+func structuredLoggingEnvVars(logging *logicv1.StructuredLoggingSpec) []*corev1ac.EnvVarApplyConfiguration {
+	if logging == nil {
+		return nil
+	}
+
+	var envs []*corev1ac.EnvVarApplyConfiguration
+
+	if logging.Enabled != nil {
+		envs = append(envs, envLiteral("QUARKUS_FLOW_STRUCTURED_LOGGING_ENABLED", fmt.Sprintf("%v", *logging.Enabled)))
+	}
+
+	if logging.IncludeWorkflowPayloads != nil {
+		envs = append(envs, envLiteral("QUARKUS_FLOW_STRUCTURED_LOGGING_INCLUDE_WORKFLOW_PAYLOADS", fmt.Sprintf("%v", *logging.IncludeWorkflowPayloads)))
+	}
+
+	if logging.IncludeTaskPayloads != nil {
+		envs = append(envs, envLiteral("QUARKUS_FLOW_STRUCTURED_LOGGING_INCLUDE_TASK_PAYLOADS", fmt.Sprintf("%v", *logging.IncludeTaskPayloads)))
+	}
+
+	return envs
 }
 
 // WithFlowSourcePath returns a ContainerOption that sets the QUARKUS_FLOW_RUNNER_SOURCE_PATH environment variable.
@@ -307,14 +338,13 @@ func oidcEnvVars(oidc *logicv1.OIDCAuthSpec) []*corev1ac.EnvVarApplyConfiguratio
 	return envs
 }
 
-func buildJdbcURL(ref *logicv1.PostgreSQLServiceOptions, fallbackNamespace string) string {
+func buildJdbcURL(ref *logicv1.PostgreSQLServiceOptions) string {
 	if ref.SQLServiceOptions == nil {
 		return ""
 	}
+	// Use namespace as provided. If empty, treat as external hostname (no fallback).
+	// For K8s services, the caller must explicitly set Namespace. If not set, it's treated as external.
 	ns := ref.Namespace
-	if ns == "" {
-		ns = fallbackNamespace
-	}
 	port := defaultPostgresPort
 	if ref.Port != nil {
 		port = *ref.Port
@@ -323,30 +353,9 @@ func buildJdbcURL(ref *logicv1.PostgreSQLServiceOptions, fallbackNamespace strin
 	if dbName == "" {
 		dbName = defaultDatabaseName
 	}
-	url := fmt.Sprintf("jdbc:postgresql://%s.%s.svc:%d/%s", ref.Name, ns, port, dbName)
+	url := fmt.Sprintf("jdbc:postgresql://%s/%s", BuildPostgresAddress(ref.Name, ns, port), dbName)
 	if ref.DatabaseSchema != "" {
 		url += "?currentSchema=" + ref.DatabaseSchema
 	}
 	return url
-}
-
-func envLiteral(name, value string) *corev1ac.EnvVarApplyConfiguration {
-	return corev1ac.EnvVar().WithName(name).WithValue(value)
-}
-
-func envFieldRef(name, fieldPath string) *corev1ac.EnvVarApplyConfiguration {
-	return corev1ac.EnvVar().
-		WithName(name).
-		WithValueFrom(corev1ac.EnvVarSource().
-			WithFieldRef(corev1ac.ObjectFieldSelector().
-				WithFieldPath(fieldPath)))
-}
-
-func envFromSecret(name, secretName, key string) *corev1ac.EnvVarApplyConfiguration {
-	return corev1ac.EnvVar().
-		WithName(name).
-		WithValueFrom(corev1ac.EnvVarSource().
-			WithSecretKeyRef(corev1ac.SecretKeySelector().
-				WithName(secretName).
-				WithKey(key)))
 }

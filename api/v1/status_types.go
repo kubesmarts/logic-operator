@@ -57,6 +57,7 @@ const (
 	ConditionDataIndexDeploymentAvailable = "DataIndexDeploymentAvailable"
 	ConditionDataIndexServiceReady        = "DataIndexServiceReady"
 	ConditionDataIndexPersistenceReady    = "DataIndexPersistenceReady"
+	ConditionVectorReady                  = "VectorReady"
 )
 
 // LogicPlatform reasons
@@ -64,6 +65,11 @@ const (
 	ReasonDataIndexDeploymentNotFound = "DataIndexDeploymentNotFound"
 	ReasonDataIndexServiceNotFound    = "DataIndexServiceNotFound"
 	ReasonPersistenceConfigInvalid    = "PersistenceConfigInvalid"
+	ReasonDatabaseUnreachable         = "DatabaseUnreachable"
+	ReasonDataIndexUnhealthy          = "DataIndexUnhealthy"
+	ReasonDaemonSetNotFound           = "DaemonSetNotFound"
+	ReasonDaemonSetProgressing        = "DaemonSetProgressing"
+	ReasonDisabled                    = "Disabled"
 )
 
 // SetCondition sets a condition on a Conditions slice, handling insert/update
@@ -76,6 +82,11 @@ func SetCondition(conditions *[]metav1.Condition, conditionType string, status m
 		Reason:             reason,
 		Message:            message,
 	})
+}
+
+// FindCondition finds a condition by type in a conditions slice
+func FindCondition(conditions []metav1.Condition, conditionType string) *metav1.Condition {
+	return meta.FindStatusCondition(conditions, conditionType)
 }
 
 func SetConditionTrue(conditions *[]metav1.Condition, conditionType string, observedGeneration int64, reason string) {

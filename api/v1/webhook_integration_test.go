@@ -285,7 +285,13 @@ func testLFRWebhooks(ctx context.Context, t *testing.T, k8sClient client.Client)
 					Persistence: &PersistenceOptionsSpec{
 						PostgreSQL: &PersistencePostgreSQL{
 							SecretRef: PostgreSQLSecretOptions{Name: testPGSecret},
-							JdbcURL:   "jdbc:postgresql://localhost:5432/test",
+							ServiceRef: &PostgreSQLServiceOptions{
+								SQLServiceOptions: &SQLServiceOptions{
+									Name:         "postgres",
+									DatabaseName: "test",
+								},
+								DatabaseSchema: "public",
+							},
 						},
 					},
 				},
