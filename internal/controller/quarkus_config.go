@@ -139,7 +139,7 @@ func persistenceQuarkusEnvVars(p *logicv1.PersistenceOptionsSpec, namespace stri
 		envFromSecret("QUARKUS_DATASOURCE_PASSWORD", pg.SecretRef.Name, passwordKey),
 	)
 
-	jdbcURL := buildJdbcURL(pg.ServiceRef, namespace)
+	jdbcURL := buildJdbcURL(pg.ServiceRef)
 	if pg.TLS != nil && pg.TLS.Enabled {
 		mode := string(pg.TLS.TLSMode)
 		if mode == "" {
@@ -338,7 +338,7 @@ func oidcEnvVars(oidc *logicv1.OIDCAuthSpec) []*corev1ac.EnvVarApplyConfiguratio
 	return envs
 }
 
-func buildJdbcURL(ref *logicv1.PostgreSQLServiceOptions, _ string) string {
+func buildJdbcURL(ref *logicv1.PostgreSQLServiceOptions) string {
 	if ref.SQLServiceOptions == nil {
 		return ""
 	}
