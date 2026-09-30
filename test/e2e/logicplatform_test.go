@@ -284,20 +284,14 @@ spec:
 
 			By("waiting for workflow to be registered in runtime")
 			waitForWorkflow := func(g Gomega) {
-				runtimePod, err := utils.Run(exec.Command("kubectl", "get", "pods",
-					"-l", fmt.Sprintf("app.kubernetes.io/name=%s", runtimeName),
-					"-n", namespace,
-					"-o", "jsonpath={.items[0].metadata.name}"))
-				g.Expect(err).NotTo(HaveOccurred())
-				runtimePod = strings.TrimSpace(runtimePod)
-
-				c := exec.Command("kubectl", "exec", "-n", namespace, runtimePod, "--",
+				c := exec.Command("kubectl", "exec", "-n", namespace,
+					fmt.Sprintf("deployment/%s", runtimeName), "--",
 					"sh", "-c", "curl -s http://localhost:8080/q/flow/definitions")
 				out, err := utils.Run(c)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(out).To(ContainSubstring("dataindex-test"))
 			}
-			Eventually(waitForWorkflow, 1*time.Minute, 5*time.Second).Should(Succeed())
+			Eventually(waitForWorkflow, 3*time.Minute, 10*time.Second).Should(Succeed())
 
 			By("verifying databaseConnected is true in platform status")
 			cmd = exec.Command("kubectl", "get", "logicplatform", platformName,
@@ -308,62 +302,59 @@ spec:
 			Expect(out).To(Equal("true"))
 
 			By("executing workflow via runtime REST API")
-			runtimePod, err := utils.Run(exec.Command("kubectl", "get", "pods",
-				"-l", fmt.Sprintf("app.kubernetes.io/name=%s", runtimeName),
-				"-n", namespace,
-				"-o", "jsonpath={.items[0].metadata.name}"))
-			Expect(err).NotTo(HaveOccurred())
-			runtimePod = strings.TrimSpace(runtimePod)
+			execWorkflow := func(g Gomega) {
+				execCmd := fmt.Sprintf(`curl -s -X POST -H "Content-Type: application/json" -d '{"name":"test"}' http://localhost:8080/q/flow/exec/%s/dataindex-test/1.0.0`, namespace)
+				cmd := exec.Command("kubectl", "exec", "-n", namespace,
+					fmt.Sprintf("deployment/%s", runtimeName), "--", "sh", "-c", execCmd)
+				workflowResponse, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(workflowResponse).To(ContainSubstring("instanceId"))
+			}
+			Eventually(execWorkflow, 1*time.Minute, 5*time.Second).Should(Succeed())
 
-			execCmd := fmt.Sprintf(`curl -s -X POST -H "Content-Type: application/json" -d '{"name":"test"}' http://localhost:8080/q/flow/exec/%s/dataindex-test/1.0.0`, namespace)
-			cmd = exec.Command("kubectl", "exec", "-n", namespace, runtimePod, "--", "sh", "-c", execCmd)
-			workflowResponse, err := utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(workflowResponse).To(ContainSubstring("instanceId"))
-
-			By("waiting for workflow to complete")
-			time.Sleep(5 * time.Second)
-
-			By("querying DataIndex GraphQL for workflow instances")
+			By("waiting for workflow data to appear in DataIndex")
 			graphqlEndpoint, err := utils.Run(exec.Command("kubectl", "get", "logicplatform", platformName,
 				"-n", namespace,
 				"-o", "jsonpath={.status.dataIndex.service.graphqlEndpoint}"))
 			Expect(err).NotTo(HaveOccurred())
 
 			graphqlQuery := `{"query":"{ getWorkflowInstances { id status outputData } }"}`
-			graphqlCurl := fmt.Sprintf(
-				`curl -s -X POST -H 'Content-Type: application/json' -d '%s' %s`,
-				graphqlQuery, graphqlEndpoint)
 
-			_, err = utils.RunCurlPod("curl-dataindex-integration", namespace, graphqlCurl)
-			Expect(err).NotTo(HaveOccurred())
+			waitForWorkflowData := func(g Gomega) {
+				graphqlCurl := fmt.Sprintf(
+					`curl -s -X POST -H 'Content-Type: application/json' -d '%s' %s`,
+					graphqlQuery, graphqlEndpoint)
 
-			By("waiting for GraphQL query to complete")
-			waitForGraphQL := func(g Gomega) {
-				c := exec.Command("kubectl", "get", "pod", "curl-dataindex-integration",
-					"-n", namespace,
-					"-o", "jsonpath={.status.phase}")
-				out, err := utils.Run(c)
+				podName := fmt.Sprintf("curl-workflow-data-%d", time.Now().UnixNano()%10000)
+				_, err := utils.RunCurlPod(podName, namespace, graphqlCurl)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(out).To(Equal("Succeeded"))
-			}
-			Eventually(waitForGraphQL, 1*time.Minute, 5*time.Second).Should(Succeed())
 
-			By("verifying workflow data in DataIndex response")
-			graphqlResponse, err := utils.Run(
-				exec.Command("kubectl", "logs", "curl-dataindex-integration", "-n", namespace))
-			Expect(err).NotTo(HaveOccurred())
-			Expect(graphqlResponse).To(ContainSubstring("getWorkflowInstances"))
-			Expect(graphqlResponse).To(ContainSubstring("COMPLETED"))
-			Expect(graphqlResponse).NotTo(ContainSubstring("outputData\":null"))
+				waitForPod := func(g Gomega) {
+					c := exec.Command("kubectl", "get", "pod", podName,
+						"-n", namespace,
+						"-o", "jsonpath={.status.phase}")
+					out, err := utils.Run(c)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(out).To(Equal("Succeeded"))
+				}
+				Eventually(waitForPod, 30*time.Second, 5*time.Second).Should(Succeed())
+
+				graphqlResponse, err := utils.Run(
+					exec.Command("kubectl", "logs", podName, "-n", namespace))
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(graphqlResponse).To(ContainSubstring("getWorkflowInstances"))
+				g.Expect(graphqlResponse).To(ContainSubstring("COMPLETED"))
+				g.Expect(graphqlResponse).NotTo(ContainSubstring("outputData\":null"))
+
+				// Cleanup this curl pod
+				cmd := exec.Command("kubectl", "delete", "pod", podName,
+					"-n", namespace, "--ignore-not-found")
+				_, _ = utils.Run(cmd)
+			}
+			Eventually(waitForWorkflowData, 3*time.Minute, 10*time.Second).Should(Succeed())
 
 			By("cleaning up workflow definition")
 			cmd = exec.Command("kubectl", "delete", "logicflowdefinition", "e2e-dataindex-integration-wf",
-				"-n", namespace, "--ignore-not-found")
-			_, _ = utils.Run(cmd)
-
-			By("cleaning up curl pod")
-			cmd = exec.Command("kubectl", "delete", "pod", "curl-dataindex-integration",
 				"-n", namespace, "--ignore-not-found")
 			_, _ = utils.Run(cmd)
 		})

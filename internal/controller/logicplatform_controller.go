@@ -34,6 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	appsv1ac "k8s.io/client-go/applyconfigurations/apps/v1"
 	corev1ac "k8s.io/client-go/applyconfigurations/core/v1"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -347,8 +348,16 @@ func (r *LogicPlatformReconciler) updateStatus(ctx context.Context, plat *logicv
 	phase := logicv1.DerivePhase(plat.Status.Conditions, plat.Status.DataIndex.Service.Replicas.Ready)
 	plat.Status.Phase = logicv1.LogicPlatformStatusPhase(phase)
 
-	// Update status in API server
-	return r.Status().Update(ctx, plat)
+	// Update status in API server with retry on conflict
+	savedStatus := plat.Status.DeepCopy()
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		if err := r.Get(ctx, client.ObjectKeyFromObject(plat), plat); err != nil {
+			return err
+		}
+		// Restore accumulated changes onto freshly fetched object
+		plat.Status = *savedStatus
+		return r.Status().Update(ctx, plat)
+	})
 }
 
 func (r *LogicPlatformReconciler) updateStatusPersistence(ctx context.Context, plat *logicv1.LogicPlatform) error {

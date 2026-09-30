@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	appsv1ac "k8s.io/client-go/applyconfigurations/apps/v1"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -370,7 +371,15 @@ func (r *LogicFlowRuntimeReconciler) updateStatus(ctx context.Context, rt *logic
 
 	rt.Status.Phase = logicv1.DerivePhase(rt.Status.Conditions, rt.Status.ReadyReplicas)
 
-	return r.Status().Update(ctx, rt)
+	savedStatus := rt.Status.DeepCopy()
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		if err := r.Get(ctx, client.ObjectKeyFromObject(rt), rt); err != nil {
+			return err
+		}
+		// Restore accumulated changes onto freshly fetched object
+		rt.Status = *savedStatus
+		return r.Status().Update(ctx, rt)
+	})
 }
 
 func configMapRefs(configMaps []corev1.ConfigMap) []corev1.LocalObjectReference {
