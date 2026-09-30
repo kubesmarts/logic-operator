@@ -518,5 +518,5 @@ sync-configs: ## Update logic-apps dependency to latest main and sync Vector con
 	rm -rf internal/controller/configs/vector; \
 	cp -r $$MODPATH/vector internal/controller/configs/; \
 	chmod -R u+w internal/controller/configs/vector; \
-
 	echo "✓ Configs synced from $$MODPATH/vector"
+	go mod tidy
