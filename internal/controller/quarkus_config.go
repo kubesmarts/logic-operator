@@ -108,16 +108,16 @@ func DurableStartupProbe() ContainerOption {
 
 // WithQuarkusPersistenceEnvVars returns a ContainerOption that appends Quarkus datasource environment variables.
 // The namespace parameter is the owning CR's namespace, used as fallback when serviceRef.namespace is empty.
-func WithQuarkusPersistenceEnvVars(p *logicv1.PersistenceOptionsSpec, namespace string) ContainerOption {
+func WithQuarkusPersistenceEnvVars(p *logicv1.PersistenceOptionsSpec) ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
-		envs := persistenceQuarkusEnvVars(p, namespace)
+		envs := persistenceQuarkusEnvVars(p)
 		if len(envs) > 0 {
 			c.WithEnv(envs...)
 		}
 	}
 }
 
-func persistenceQuarkusEnvVars(p *logicv1.PersistenceOptionsSpec, namespace string) []*corev1ac.EnvVarApplyConfiguration {
+func persistenceQuarkusEnvVars(p *logicv1.PersistenceOptionsSpec) []*corev1ac.EnvVarApplyConfiguration {
 	if p == nil || p.PostgreSQL == nil {
 		return nil
 	}

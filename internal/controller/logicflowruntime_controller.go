@@ -118,7 +118,7 @@ func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *lo
 	childLabels := ChildLabels(rt)
 	opts := []ContainerOption{
 		DefaultRunnerImage(rt.Spec.Persistence),
-		WithQuarkusPersistenceEnvVars(rt.Spec.Persistence, rt.Namespace),
+		WithQuarkusPersistenceEnvVars(rt.Spec.Persistence),
 		WithSecurityEnvVars(rt.Spec.Security),
 		WithStructuredLoggingEnvVars(rt.Spec.Logging),
 		DefaultQuarkusProbes(),

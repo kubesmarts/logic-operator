@@ -114,7 +114,7 @@ func (r *LogicPlatformReconciler) reconcileDataIndex(ctx context.Context, plat *
 func (r *LogicPlatformReconciler) applyDataIndexDeployment(ctx context.Context, plat *logicv1.LogicPlatform) error {
 	childLabels := ChildLabelsInstance(plat, dataIndexName(plat))
 	opts := []ContainerOption{
-		WithQuarkusPersistenceEnvVars(plat.Spec.DataIndex.Persistence, plat.Namespace),
+		WithQuarkusPersistenceEnvVars(plat.Spec.DataIndex.Persistence),
 		WithFlywayPersistenceVars(),
 		WithGraphQLVars(),
 		DefaultQuarkusProbes(),

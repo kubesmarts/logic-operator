@@ -16,8 +16,8 @@ import (
 
 func TestPersistenceEnvVars_NilReturnsNil(t *testing.T) {
 	g := gomega.NewWithT(t)
-	g.Expect(persistenceQuarkusEnvVars(nil, "default")).To(gomega.BeNil())
-	g.Expect(persistenceQuarkusEnvVars(&logicv1.PersistenceOptionsSpec{}, "default")).To(gomega.BeNil())
+	g.Expect(persistenceQuarkusEnvVars(nil)).To(gomega.BeNil())
+	g.Expect(persistenceQuarkusEnvVars(&logicv1.PersistenceOptionsSpec{})).To(gomega.BeNil())
 }
 
 func TestPersistenceEnvVars_CustomSecretKeys(t *testing.T) {
@@ -37,7 +37,7 @@ func TestPersistenceEnvVars_CustomSecretKeys(t *testing.T) {
 		},
 	}
 
-	envs := persistenceQuarkusEnvVars(p, "default")
+	envs := persistenceQuarkusEnvVars(p)
 	g.Expect(*envs[1].ValueFrom.SecretKeyRef.Key).To(gomega.Equal("DB_USER"))
 	g.Expect(*envs[2].ValueFrom.SecretKeyRef.Key).To(gomega.Equal("DB_PASS"))
 }
@@ -59,7 +59,7 @@ func TestPersistenceEnvVars_ServiceRefBuildsJdbcUrl(t *testing.T) {
 		},
 	}
 
-	envs := persistenceQuarkusEnvVars(p, "default")
+	envs := persistenceQuarkusEnvVars(p)
 	jdbcEnv := envs[len(envs)-1]
 	g.Expect(*jdbcEnv.Value).To(gomega.Equal("jdbc:postgresql://postgres.databases.svc.cluster.local:5433/workflows?currentSchema=runtime-schema"))
 }
@@ -78,7 +78,7 @@ func TestPersistenceEnvVars_ExplicitNamespace(t *testing.T) {
 		},
 	}
 
-	envs := persistenceQuarkusEnvVars(p, "default")
+	envs := persistenceQuarkusEnvVars(p)
 	jdbcEnv := envs[len(envs)-1]
 	g.Expect(*jdbcEnv.Value).To(gomega.Equal("jdbc:postgresql://postgres.my-namespace.svc.cluster.local:5432/logicflow"))
 }
@@ -98,7 +98,7 @@ func TestPersistenceEnvVars_TLSAppendsSslMode(t *testing.T) {
 				TLS: &logicv1.TLSConnection{Enabled: true, TLSMode: logicv1.TLSModeVerifyFull},
 			},
 		}
-		envs := persistenceQuarkusEnvVars(p, "default")
+		envs := persistenceQuarkusEnvVars(p)
 		g.Expect(*envs[len(envs)-1].Value).To(gomega.ContainSubstring("?currentSchema=myschema&sslmode=verify-full"))
 	})
 
@@ -117,7 +117,7 @@ func TestPersistenceEnvVars_TLSAppendsSslMode(t *testing.T) {
 				TLS: &logicv1.TLSConnection{Enabled: true, TLSMode: logicv1.TLSModeRequire},
 			},
 		}
-		envs := persistenceQuarkusEnvVars(p, "default")
+		envs := persistenceQuarkusEnvVars(p)
 		g.Expect(*envs[len(envs)-1].Value).To(gomega.Equal("jdbc:postgresql://postgres:5432/mydb?sslmode=require"))
 	})
 
@@ -136,7 +136,7 @@ func TestPersistenceEnvVars_TLSAppendsSslMode(t *testing.T) {
 				TLS: &logicv1.TLSConnection{Enabled: true},
 			},
 		}
-		envs := persistenceQuarkusEnvVars(p, "default")
+		envs := persistenceQuarkusEnvVars(p)
 		g.Expect(*envs[len(envs)-1].Value).To(gomega.Equal("jdbc:postgresql://postgres:5432/mydb?sslmode=prefer"))
 	})
 }
@@ -631,7 +631,7 @@ func TestWithMetricsEnvVars_NotInjectedAfterUpgrade(t *testing.T) {
 	// Mirror the exact option set applyDeployment uses for a non-persistent runtime
 	// (Persistence == nil, so WithDurableEnvVars is not appended).
 	DefaultRunnerImage(nil)(c)
-	WithQuarkusPersistenceEnvVars(nil, "")(c)
+	WithQuarkusPersistenceEnvVars(nil)(c)
 	WithSecurityEnvVars(logicv1.RuntimeSecuritySpec{})(c)
 	DefaultQuarkusProbes()(c)
 	WithFlowSourcePath()(c)
