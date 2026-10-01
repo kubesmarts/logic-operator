@@ -17,10 +17,9 @@ type ApplicationSpec struct {
 	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
 
 	// Replicas is the desired number of pod replicas.
-	// Ignored when HorizontalPodAutoscaler is configured.
+	// When omitted, defaults to 1. Leave unset to allow HorizontalPodAutoscaler to manage scaling.
 	// +optional
 	// +kubebuilder:validation:Minimum=0
-	// +kubebuilder:default=1
 	Replicas *int32 `json:"replicas,omitempty"`
 
 	// Resources specifies compute resource requirements.

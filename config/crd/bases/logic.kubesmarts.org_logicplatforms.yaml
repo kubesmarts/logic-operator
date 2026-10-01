@@ -9500,10 +9500,9 @@ spec:
                             type: array
                         type: object
                       replicas:
-                        default: 1
                         description: |-
                           Replicas is the desired number of pod replicas.
-                          Ignored when HorizontalPodAutoscaler is configured.
+                          When omitted, defaults to 1. Leave unset to allow HorizontalPodAutoscaler to manage scaling.
                         format: int32
                         minimum: 0
                         type: integer
@@ -19276,10 +19275,9 @@ spec:
                                 type: array
                             type: object
                           replicas:
-                            default: 1
                             description: |-
                               Replicas is the desired number of pod replicas.
-                              Ignored when HorizontalPodAutoscaler is configured.
+                              When omitted, defaults to 1. Leave unset to allow HorizontalPodAutoscaler to manage scaling.
                             format: int32
                             minimum: 0
                             type: integer
@@ -28834,10 +28832,9 @@ spec:
                         type: array
                     type: object
                   replicas:
-                    default: 1
                     description: |-
                       Replicas is the desired number of pod replicas.
-                      Ignored when HorizontalPodAutoscaler is configured.
+                      When omitted, defaults to 1. Leave unset to allow HorizontalPodAutoscaler to manage scaling.
                     format: int32
                     minimum: 0
                     type: integer

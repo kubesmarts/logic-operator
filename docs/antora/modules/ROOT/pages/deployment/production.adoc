@@ -90,13 +90,40 @@ spec:
 
 == Horizontal Pod Autoscaling
 
-The operator sets `spec.replicas` on the managed `Deployment`.
-Create an `HorizontalPodAutoscaler` targeting that `Deployment` to scale based on CPU or custom metrics.
+The operator creates a `Deployment` for the runtime and sets `spec.replicas` based on your LogicFlowRuntime spec.
+To enable autoscaling, create a `HorizontalPodAutoscaler` targeting that `Deployment`.
+
+Example HPA for a LogicFlowRuntime named `hello-runtime`:
+
+[source,yaml]
+----
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: hello-runtime-autoscaler
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: hello-runtime  # Must match LogicFlowRuntime name
+  minReplicas: 1
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+----
 
 [NOTE]
 ====
 When PostgreSQL persistence is enabled, scale-up is safe — leases ensure each workflow instance is owned by exactly one pod.
 Without persistence, scale-up creates duplicate in-memory state for in-flight workflows.
+
+The operator manages lease assignment/cleanup automatically when replica count changes.
 ====
 
 == cert-manager
