@@ -90,8 +90,13 @@ spec:
 
 == Horizontal Pod Autoscaling
 
-The operator creates a `Deployment` for the runtime and sets `spec.replicas` based on your LogicFlowRuntime spec.
-To enable autoscaling, create a `HorizontalPodAutoscaler` targeting that `Deployment`.
+The operator exposes the Kubernetes scale subresource on LogicFlowRuntime and does not enforce default replicas on LogicPlatform.DataIndex, enabling HPA management for both.
+
+=== LogicFlowRuntime Autoscaling
+
+Target LogicFlowRuntime directly (not the Deployment).
+HPA updates `spec.replicas` on the CR, which the operator uses to reconcile both the Deployment AND lease pool.
+If you target the Deployment directly, leases won't track replica changes.
 
 Example HPA for a LogicFlowRuntime named `hello-runtime`:
 
@@ -104,9 +109,9 @@ metadata:
   namespace: default
 spec:
   scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: hello-runtime  # Must match LogicFlowRuntime name
+    apiVersion: logic.kubesmarts.org/v1
+    kind: LogicFlowRuntime
+    name: hello-runtime
   minReplicas: 1
   maxReplicas: 10
   metrics:
@@ -124,6 +129,42 @@ When PostgreSQL persistence is enabled, scale-up is safe — leases ensure each 
 Without persistence, scale-up creates duplicate in-memory state for in-flight workflows.
 
 The operator manages lease assignment/cleanup automatically when replica count changes.
+====
+
+=== Data Index Autoscaling
+
+Target the generated Data Index Deployment directly (`flow-platform-data-index` or similar).
+Leave `spec.dataIndex.application.replicas` unset in LogicPlatform so the operator doesn't enforce a value.
+
+Example HPA for Data Index:
+
+[source,yaml]
+----
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: data-index-autoscaler
+  namespace: data-index-system
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: flow-platform-data-index  # Deployment created by operator
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 75
+----
+
+[NOTE]
+====
+Do not set `spec.dataIndex.application.replicas` when using HPA.
+The operator respects the value if set, but will override HPA scaling.
 ====
 
 == cert-manager

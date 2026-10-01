@@ -9476,7 +9476,7 @@ spec:
               replicas:
                 description: |-
                   Replicas is the desired number of pod replicas.
-                  When omitted, defaults to 1. Leave unset to allow HorizontalPodAutoscaler to manage scaling.
+                  Ignored when HorizontalPodAutoscaler is configured.
                 format: int32
                 minimum: 0
                 type: integer

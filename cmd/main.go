@@ -248,6 +248,7 @@ func main() {
 		os.Exit(1)
 	}
 	if err := builder.WebhookManagedBy(mgr, &logicv1.LogicFlowRuntime{}).
+		WithDefaulter(&logicv1.LogicFlowRuntimeDefaulter{}).
 		WithValidator(&logicv1.LogicFlowRuntimeValidator{}).
 		Complete(); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "LogicFlowRuntime")
