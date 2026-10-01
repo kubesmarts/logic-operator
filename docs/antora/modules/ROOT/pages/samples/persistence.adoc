@@ -324,7 +324,7 @@ Look for messages about workflow events being processed.
 [source,bash]
 ----
 kubectl exec -it <postgresql-pod> -- psql -U flowuser logicflow \
-  -c "SELECT COUNT(*) FROM workflow_events_raw;"
+  -c "SELECT COUNT(*) FROM logicflow_dataindex.workflow_events_raw;"
 ----
 
 *Check Data Index pod logs:*
@@ -370,7 +370,7 @@ You can inspect the raw events:
 [source,bash]
 ----
 kubectl exec -it <postgresql-pod> -- psql -U flowuser logicflow \
-  -c "SELECT id, event_type, payload FROM workflow_events_raw LIMIT 5;"
+  -c "SELECT id, event_type, payload FROM logicflow_dataindex.workflow_events_raw LIMIT 5;"
 ----
 
 == Clean Up

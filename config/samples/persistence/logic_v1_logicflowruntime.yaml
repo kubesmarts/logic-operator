@@ -17,3 +17,4 @@ spec:
       serviceRef:
         name: postgresql
         databaseName: logicflow
+        databaseSchema: public

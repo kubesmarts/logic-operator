@@ -110,7 +110,7 @@ type PersistenceOptionsSpec struct {
 //	    databaseSchema: workflows
 //
 // +kubebuilder:validation:MinProperties=2
-// +kubebuilder:validation:MaxProperties=2
+// +kubebuilder:validation:MaxProperties=3
 type PersistencePostgreSQL struct {
 	// Secret reference to the database user credentials
 	SecretRef PostgreSQLSecretOptions `json:"secretRef"`

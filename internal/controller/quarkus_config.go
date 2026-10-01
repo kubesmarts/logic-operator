@@ -123,8 +123,7 @@ func persistenceQuarkusEnvVars(p *logicv1.PersistenceOptionsSpec) []*corev1ac.En
 	}
 
 	pg := p.PostgreSQL
-	envs := make([]*corev1ac.EnvVarApplyConfiguration, 0, 4)
-	envs = append(envs, envLiteral("QUARKUS_DATASOURCE_DB_KIND", "postgresql"))
+	envs := make([]*corev1ac.EnvVarApplyConfiguration, 0, 3)
 
 	userKey := pg.SecretRef.UserKey
 	if userKey == "" {
@@ -152,6 +151,10 @@ func persistenceQuarkusEnvVars(p *logicv1.PersistenceOptionsSpec) []*corev1ac.En
 		}
 	}
 	envs = append(envs, envLiteral("QUARKUS_DATASOURCE_JDBC_URL", jdbcURL))
+
+	if pg.ServiceRef.DatabaseSchema != "" {
+		envs = append(envs, envLiteral("QUARKUS_HIBERNATE_ORM_DATABASE_DEFAULT_SCHEMA", pg.ServiceRef.DatabaseSchema))
+	}
 
 	return envs
 }

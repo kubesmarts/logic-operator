@@ -313,9 +313,9 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
 			envs := mainContainer(&dep).Env
 
-			dbKind := findEnvVar(envs, "QUARKUS_DATASOURCE_DB_KIND")
-			Expect(dbKind).NotTo(BeNil())
-			Expect(dbKind.Value).To(Equal("postgresql"))
+			schema := findEnvVar(envs, "QUARKUS_HIBERNATE_ORM_DATABASE_DEFAULT_SCHEMA")
+			Expect(schema).NotTo(BeNil())
+			Expect(schema.Value).To(Equal("public"))
 
 			user := findEnvVar(envs, "QUARKUS_DATASOURCE_USERNAME")
 			Expect(user).NotTo(BeNil())

@@ -1446,7 +1446,7 @@ spec:
                     type: string
                   postgresql:
                     description: Connect configured services to a postgresql database.
-                    maxProperties: 2
+                    maxProperties: 3
                     minProperties: 2
                     properties:
                       secretRef:

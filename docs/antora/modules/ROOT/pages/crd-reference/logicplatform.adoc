@@ -12,7 +12,7 @@ apiVersion: logic.kubesmarts.org/v1
 kind: LogicPlatform
 metadata:
   name: flow-platform
-  namespace: data-index
+  namespace: data-index-system
 spec:
   dataIndex:
     enabled: true
@@ -23,7 +23,7 @@ spec:
         serviceRef:
           name: postgresql
           databaseName: logicflow
-          databaseSchema: data-index
+          databaseSchema: logicflow_dataindex
     vector:
       enabled: true
       watchNamespaces: ["workflows"]
@@ -36,30 +36,6 @@ spec:
 === dataIndex
 
 Configures the Data Index service (GraphQL API) and supporting infrastructure.
-
-=== runtimeDefaults
-
-[cols="2,3"]
-|===
-|Type |Required
-
-|`RuntimeSpec`
-|No
-|===
-
-Default configuration for all LogicFlowRuntime deployments in this namespace.
-Individual LogicFlowRuntime resources can override these defaults.
-
-This provides centralized governance, ensuring consistent configuration across all workflows while allowing per-workflow customization.
-
-Common use cases:
-
-* Set default runtime image version
-* Configure default resource requests/limits
-* Configure default persistence (database schema for runtimes)
-* Configure default scheduling constraints
-
-See xref:crd-reference/logicflowruntime.adoc[LogicFlowRuntime CRD] for available configuration options.
 
 ==== dataIndex.enabled
 
@@ -118,7 +94,7 @@ serviceRef:
   name: postgresql
   namespace: default  # Optional; defaults to LogicPlatform namespace
   databaseName: logicflow
-  databaseSchema: data-index
+  databaseSchema: logicflow_dataindex
 ----
 
 [cols="1,2,3"]
@@ -149,19 +125,20 @@ serviceRef:
 [TIP]
 ====
 The database must exist in PostgreSQL before LogicPlatform is deployed.
-The operator creates the schema if it does not exist.
+Schemas are created automatically:
+- LogicFlowRuntime uses the `public` schema (always exists in PostgreSQL)
+- Data Index creates `logicflow_dataindex` via Flyway migrations on first deployment
+
 Ensure your PostgreSQL initialization includes the database creation step.
 ====
 
 [TIP]
 ====
-Use a single PostgreSQL instance for both:
-- Durable workflow state (LogicFlowRuntime persistence)
-- Workflow event history (Data Index)
+Use a single PostgreSQL instance for both runtimes and Data Index:
+- LogicFlowRuntime uses the `public` schema (default, no pre-creation needed)
+- Data Index uses `logicflow_dataindex` (created automatically by Flyway migrations)
 
-Use the same database but different schemas to maintain isolation:
-- `logicflow_runtime` for LogicFlowRuntime durable state
-- `logicflow_dataindex` for Data Index (MUST be explicitly set in serviceRef.databaseSchema)
+This maintains logical isolation while avoiding manual schema creation.
 ====
 
 === dataIndex.vector
@@ -255,10 +232,11 @@ Disable after debugging by setting `debugEvents: false`.
 |Type |Required
 
 |`ApplicationSpec`
-|Yes
+|No
 |===
 
 Configures the Vector DaemonSet deployment: image, replicas, resource requests/limits, and pod/container customization.
+When omitted, the admission webhook supplies default Vector image and resources.
 
 Example:
 
@@ -359,7 +337,7 @@ Key status fields:
 |`true` when the Data Index deployment has at least one ready replica
 
 |`dataIndex.service.graphqlEndpoint`
-|Internal cluster URL for GraphQL queries (e.g., `http://flow-platform-data-index.default.svc.cluster.local:8080/graphql`)
+|Internal cluster URL for GraphQL queries (e.g., `http://flow-platform-data-index.default.svc.cluster.local:8080/graphql`). External URL available in `status.dataIndex.service.url` when Ingress is enabled.
 
 |`dataIndex.persistence.databaseConnected`
 |`true` if PostgreSQL connection is healthy
@@ -406,8 +384,9 @@ spec:
         image: timberio/vector:0.54.0-distroless-libc
 ----
 
-This configuration deploys Data Index and Vector in the same namespace, with Vector collecting logs from workflows in that namespace only.
-Vector watches only the LogicPlatform's namespace by default.
+This configuration deploys Data Index and Vector in the same namespace.
+Vector collects logs from workflows in that namespace only (default behavior).
+Data Index stores workflow history in `logicflow_dataindex` schema, while runtimes use the `public` schema.
 
 === Multi-Namespace Setup (Watch All)
 
@@ -417,7 +396,7 @@ apiVersion: logic.kubesmarts.org/v1
 kind: LogicPlatform
 metadata:
   name: flow-platform
-  namespace: data-index
+  namespace: data-index-system
 spec:
   dataIndex:
     enabled: true
