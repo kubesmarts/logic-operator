@@ -19348,6 +19348,14 @@ spec:
                                 type: object
                             type: object
                         type: object
+                      debugEvents:
+                        default: false
+                        description: |-
+                          DebugEvents enables debug logging of all workflow events to Vector's stdout.
+                          At 1000 events/sec, generates ~43 GB/day of logs.
+                          WARNING: Only enable for troubleshooting; disable after debugging.
+                          Defaults to false.
+                        type: boolean
                       enabled:
                         description: |-
                           Enabled flags whether to reconcile this object or not.
@@ -28901,8 +28909,6 @@ spec:
                         type: object
                     type: object
                 type: object
-              version:
-                type: string
             type: object
           status:
             description: LogicPlatformStatus defines the observed state of LogicPlatform.
