@@ -159,7 +159,9 @@ Use a single PostgreSQL instance for both:
 - Durable workflow state (LogicFlowRuntime persistence)
 - Workflow event history (Data Index)
 
-Use the same database but different schemas (`logicflow_runtime` for runtime, `logicflow_dataindex` for Data Index).
+Use the same database but different schemas to maintain isolation:
+- `logicflow_runtime` for LogicFlowRuntime durable state
+- `logicflow_dataindex` for Data Index (MUST be explicitly set in serviceRef.databaseSchema)
 ====
 
 === dataIndex.vector
@@ -202,16 +204,15 @@ Examples:
 
 * `[]` or omitted — Watch only the self-namespace (default)
 * `["*"]` — Watch all namespaces
-* `["workflows", "prod"]` — Only "workflows" and "prod" namespaces
-* `["ns-a", "ns-b", "ns-c"]` — Multiple specific namespaces
+* `["workflows"]` — Only the "workflows" namespace
 
-[NOTE]
+[IMPORTANT]
 ====
-By default, Vector watches only the self-namespace where LogicPlatform is deployed.
-This is useful when workflows are in the same namespace.
+Currently, only the first namespace in the list is monitored (WatchNamespaces[0]).
+Multi-namespace filtering support is not yet implemented.
 
-For multi-namespace deployments (e.g., workflows in team namespaces), set `watchNamespaces: ["*"]` to collect from all namespaces.
-For organizational sharding (e.g., one Vector per team), deploy multiple LogicPlatform resources with different `watchNamespaces`.
+By default, Vector watches only the LogicPlatform's own namespace.
+For multi-namespace deployments, set `watchNamespaces: ["*"]` to collect from all namespaces, or deploy multiple LogicPlatform resources (one per namespace).
 ====
 
 ==== dataIndex.vector.debugEvents
@@ -274,8 +275,8 @@ vector:
         memory: 128Mi
         cpu: 100m
       limits:
-        memory: 512Mi
-        cpu: 1000m
+        memory: 256Mi
+        cpu: 500m
 ----
 
 Default resources:
@@ -286,11 +287,11 @@ Default resources:
 
 |CPU
 |100m
-|1000m
+|500m
 
 |Memory
 |128Mi
-|512Mi
+|256Mi
 |===
 
 Adjust based on log volume:
@@ -398,14 +399,15 @@ spec:
         serviceRef:
           name: postgresql
           databaseName: logicflow
-          databaseSchema: data-index
+          databaseSchema: logicflow_dataindex
     vector:
       enabled: true
       application:
         image: timberio/vector:0.54.0-distroless-libc
 ----
 
-This configuration deploys Data Index and Vector, with Vector collecting logs from the same namespace as LogicPlatform.
+This configuration deploys Data Index and Vector in the same namespace, with Vector collecting logs from workflows in that namespace only.
+Vector watches only the LogicPlatform's namespace by default.
 
 === Multi-Namespace Setup (Watch All)
 
@@ -426,7 +428,7 @@ spec:
         serviceRef:
           name: postgresql
           databaseName: logicflow
-          databaseSchema: data-index
+          databaseSchema: logicflow_dataindex
     vector:
       enabled: true
       watchNamespaces: ["*"]
@@ -434,7 +436,7 @@ spec:
         image: timberio/vector:0.54.0-distroless-libc
 ----
 
-This configuration enables Vector to collect logs from all namespaces.
+This configuration deploys Data Index in a dedicated namespace and configures Vector to collect logs from all namespaces.
 Useful when workflow pods are distributed across multiple namespaces.
 
 === High-Volume Environment
@@ -458,7 +460,7 @@ spec:
         serviceRef:
           name: postgresql
           databaseName: logicflow
-          databaseSchema: data-index
+          databaseSchema: logicflow_dataindex
     vector:
       enabled: true
       watchNamespaces: ["*"]
@@ -488,7 +490,7 @@ Look at `conditions` for which component is not ready:
 - `DataIndexDeploymentAvailable`
 - `DataIndexServiceReady`
 - `DataIndexPersistenceReady`
-- `VectorDaemonSetReady`
+- `VectorReady`
 
 === GraphQL Endpoint Empty
 

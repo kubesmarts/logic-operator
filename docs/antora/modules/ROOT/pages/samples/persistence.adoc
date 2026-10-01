@@ -70,7 +70,7 @@ spec:
         serviceRef:
           name: postgresql
           databaseName: logicflow
-          databaseSchema: logicflow
+          databaseSchema: logicflow_dataindex
     vector:
       enabled: true
 ----
@@ -78,7 +78,8 @@ spec:
 The operator deploys:
 
 * **Data Index Service** — Exposes a GraphQL API to query workflow instances and their execution history
-* **Vector DaemonSet** — Collects structured logs from all workflow pods and forwards them to PostgreSQL
+* **Vector DaemonSet** — Collects structured logs from workflow pods in the same namespace and forwards them to PostgreSQL
+  (Vector watches only the LogicPlatform namespace by default; set `watchNamespaces: ["*"]` to collect from all namespaces)
 
 === Updated LogicFlowRuntime (Durable + Structured Logging)
 
@@ -100,6 +101,7 @@ spec:
       serviceRef:
         name: postgresql
         databaseName: logicflow
+        databaseSchema: logicflow_runtime
 ----
 
 The operator updates the existing `hello-runtime` Deployment to:
