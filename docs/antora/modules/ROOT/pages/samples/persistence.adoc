@@ -212,6 +212,7 @@ The Quarkus Flow Runner uses the following tables in the `logicflow` database:
 |===
 
 == Section B: Workflow Instance History via Data Index
+[#section-b-workflow-history]
 
 === How Data Flows
 
@@ -235,20 +236,18 @@ Structured logging must be enabled on the LogicFlowRuntime (see `logging.enabled
 
 === Query Workflow Instances via GraphQL
 
-First, get the Data Index GraphQL endpoint:
+Port-forward the Data Index Service to your local machine:
 
 [source,bash]
 ----
-GRAPHQL_ENDPOINT=$(kubectl get logicplatform flow-platform \
-  -o jsonpath='{.status.dataIndex.service.graphqlEndpoint}')
-echo "Data Index GraphQL: $GRAPHQL_ENDPOINT"
+kubectl port-forward svc/flow-platform-data-index 8080:80 &
 ----
 
 Then query workflow instances and their execution data:
 
 [source,bash]
 ----
-curl -X POST "$GRAPHQL_ENDPOINT" \
+curl -X POST "http://localhost:8080/graphql" \
   -H "Content-Type: application/json" \
   -d '{
     "query": "{ getWorkflowInstances { id status outputData completedAt } }"
@@ -285,6 +284,7 @@ The sample enables structured logging on the runtime:
 logging:
   enabled: true
   includeWorkflowPayloads: true
+  includeTaskPayloads: false
 ----
 
 This configures the Quarkus Flow Runner to emit:
@@ -294,14 +294,18 @@ This configures the Quarkus Flow Runner to emit:
 * `workflow_faulted` — When a workflow encounters an error
 * `task_started` — When a task begins
 * `task_completed` — When a task finishes
-* Workflow and task payloads (inputs, outputs) if `includeWorkflowPayloads: true`
+* Workflow payloads (inputs, outputs) if `includeWorkflowPayloads: true`
+* Task payloads (inputs, outputs) if `includeTaskPayloads: true` (controlled independently)
 
 Each event is emitted as JSON to stdout, collected by Vector, and forwarded to PostgreSQL.
 
 [CAUTION]
 ====
-If `includeWorkflowPayloads: true` and workflows have large input/output data, logging volume can be high.
-Start with `false` and enable only if you need payload data in Data Index.
+Enabling payload fields increases logging volume significantly:
+- `includeWorkflowPayloads: true` — Includes workflow input/output
+- `includeTaskPayloads: true` — Includes task input/output (independent control)
+
+Start with `false` for both and enable only if you need specific payload data in Data Index.
 ====
 
 === Troubleshoot Data Index Integration
@@ -332,14 +336,18 @@ kubectl logs -l app.kubernetes.io/name=flow-platform-data-index -f
 
 *Verify GraphQL connectivity:*
 
+From inside a pod or via port-forward:
+
 [source,bash]
 ----
-curl -X POST http://flow-platform-data-index:8080/graphql \
+curl -X POST http://localhost:8080/graphql \
   -H "Content-Type: application/json" \
   -d '{"query":"{ __schema { queryType { name } } }"}'
 ----
 
 If this returns `Query`, the GraphQL endpoint is working.
+
+(Use `kubectl port-forward svc/flow-platform-data-index 8080:80` from your workstation to reach the service.)
 
 === Data Index PostgreSQL Schema
 
@@ -377,6 +385,7 @@ kubectl delete -k config/samples/persistence/ --ignore-not-found=true
 * **PostgreSQL is required** for both durable workflows and Data Index integration
 * **Durable workflows** use leases and database state to survive pod restarts
 * **Data Index integration** requires structured logging enabled on the runtime
-* **Vector** automatically collects logs from all namespaces when enabled
+* **Vector** is deployed in the LogicPlatform namespace and watches only that namespace by default (set `watchNamespaces: ["*"]` for all namespaces)
+* **Structured logging** must be explicitly enabled; control workflow and task payloads separately (`includeWorkflowPayloads` and `includeTaskPayloads`)
 * **GraphQL queries** can retrieve workflow instance history, status, and payload data
-* **Both features use the same PostgreSQL instance**, simplifying infrastructure
+* **Both features use the same PostgreSQL instance** with isolated schemas (`logicflow_runtime` and `logicflow_dataindex`)
