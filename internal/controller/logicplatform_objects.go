@@ -109,6 +109,9 @@ func WithVectorEnvVars(plat *logicv1.LogicPlatform) ContainerOption {
 		if len(plat.Spec.DataIndex.Vector.WatchNamespaces) > 0 {
 			envs = append(envs, envLiteral("WORKFLOW_NAMESPACE", plat.Spec.DataIndex.Vector.WatchNamespaces[0]))
 		}
+		if plat.Spec.DataIndex.Vector.DebugEvents {
+			envs = append(envs, envLiteral("DEBUG_EVENTS", "true"))
+		}
 		if plat.Spec.DataIndex.Persistence != nil && plat.Spec.DataIndex.Persistence.PostgreSQL != nil {
 			port := defaultPostgresPort
 			if plat.Spec.DataIndex.Persistence.PostgreSQL.ServiceRef.Port != nil {

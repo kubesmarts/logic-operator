@@ -23,10 +23,12 @@ spec:
         serviceRef:
           name: postgresql
           databaseName: logicflow
-          databaseSchema: logicflow
+          databaseSchema: data-index
     vector:
       enabled: true
-      watchNamespaces: ["*"]
+      watchNamespaces: ["workflows"]
+      application:
+        image: timberio/vector:0.54.0-distroless-libc
 ----
 
 == Spec Fields
@@ -34,6 +36,30 @@ spec:
 === dataIndex
 
 Configures the Data Index service (GraphQL API) and supporting infrastructure.
+
+=== runtimeDefaults
+
+[cols="2,3"]
+|===
+|Type |Required
+
+|`RuntimeSpec`
+|No
+|===
+
+Default configuration for all LogicFlowRuntime deployments in this namespace.
+Individual LogicFlowRuntime resources can override these defaults.
+
+This provides centralized governance, ensuring consistent configuration across all workflows while allowing per-workflow customization.
+
+Common use cases:
+
+* Set default runtime image version
+* Configure default resource requests/limits
+* Configure default persistence (database schema for runtimes)
+* Configure default scheduling constraints
+
+See xref:crd-reference/logicflowruntime.adoc[LogicFlowRuntime CRD] for available configuration options.
 
 ==== dataIndex.enabled
 
@@ -82,7 +108,9 @@ The Secret must contain:
 
 ====== persistence.postgresql.serviceRef
 
-Reference to the PostgreSQL service (host and port).
+Reference to the PostgreSQL Kubernetes Service.
+When provided, the operator constructs the JDBC URL dynamically based on the service endpoint.
+Mutually exclusive with `jdbcUrl`.
 
 [source,yaml]
 ----
@@ -90,29 +118,39 @@ serviceRef:
   name: postgresql
   namespace: default  # Optional; defaults to LogicPlatform namespace
   databaseName: logicflow
-  databaseSchema: logicflow
+  databaseSchema: data-index
 ----
 
-[cols="1,2,2"]
+[cols="1,2,3"]
 |===
-|Field |Type |Description
+|Field |Type |Required?
 
 |`name`
 |`string`
-|Name of the PostgreSQL Kubernetes Service
+|Yes
 
 |`namespace`
 |`string`
-|Namespace of the PostgreSQL Service (optional; defaults to platform namespace)
+|No (defaults to LogicPlatform namespace)
 
 |`databaseName`
 |`string`
-|PostgreSQL database name (created if not exists)
+|Yes (database must exist before Data Index starts)
 
 |`databaseSchema`
 |`string`
-|PostgreSQL schema for Data Index tables (created if not exists)
+|Yes (schema created by Data Index migrations)
+
+|`port`
+|`int`
+|No (defaults to 5432)
 |===
+
+[TIP]
+====
+Database and schema should exist before LogicPlatform is deployed, or use a PostgreSQL initialization script.
+The operator does not create the database itself — it only creates the schema if it doesn't exist.
+====
 
 [TIP]
 ====
@@ -153,67 +191,93 @@ Without Vector, no structured logging events reach PostgreSQL.
 |Type |Default
 
 |`[]string`
-|`["*"]`
+|Self-namespace (when empty)
 |===
 
 Namespaces from which Vector collects workflow logs.
+When empty or omitted, defaults to watching only the LogicPlatform's own namespace.
 
 Examples:
 
-* `["*"]` — All namespaces (default)
+* `[]` or omitted — Watch only the self-namespace (default)
+* `["*"]` — Watch all namespaces
 * `["workflows", "prod"]` — Only "workflows" and "prod" namespaces
 * `["ns-a", "ns-b", "ns-c"]` — Multiple specific namespaces
 
 [NOTE]
 ====
-Vector watches ALL namespaces by default.
-This is useful when workflow pods are distributed across multiple namespaces.
+By default, Vector watches only the self-namespace where LogicPlatform is deployed.
+This is useful when workflows are in the same namespace.
 
-For sharding (e.g., one Vector per team), deploy multiple LogicPlatform resources with different `watchNamespaces`.
+For multi-namespace deployments (e.g., workflows in team namespaces), set `watchNamespaces: ["*"]` to collect from all namespaces.
+For organizational sharding (e.g., one Vector per team), deploy multiple LogicPlatform resources with different `watchNamespaces`.
 ====
 
-==== dataIndex.vector.image
+==== dataIndex.vector.debugEvents
 
 [cols="2,3"]
 |===
 |Type |Default
 
-|`string`
-|`timberio/vector:0.54.0-distroless-libc`
+|`boolean`
+|`false`
 |===
 
-Vector container image.
+Enable debug logging of all workflow events to Vector's stdout.
+This injects the `DEBUG_EVENTS=true` environment variable into the Vector container.
 
-==== dataIndex.vector.imagePullPolicy
+[CAUTION]
+====
+At 1000 events/sec, generates ~43 GB/day of logs.
 
-[cols="2,3"]
-|===
-|Type |Default
+**Only enable for troubleshooting.**
+====
 
-|`string`
-|`IfNotPresent`
-|===
-
-Image pull policy (IfNotPresent, Always, Never).
-
-==== dataIndex.vector.resources
-
-Kubernetes resource requests/limits for Vector DaemonSet pods.
+Example:
 
 [source,yaml]
 ----
 vector:
   enabled: true
-  resources:
-    requests:
-      memory: 128Mi
-      cpu: 100m
-    limits:
-      memory: 512Mi
-      cpu: 1000m
+  debugEvents: true
+  application:
+    image: timberio/vector:0.54.0
 ----
 
-Default values:
+Disable after debugging by setting `debugEvents: false`.
+
+==== dataIndex.vector.application
+
+[cols="2,3"]
+|===
+|Type |Required
+
+|`ApplicationSpec`
+|Yes
+|===
+
+Configures the Vector DaemonSet deployment: image, replicas, resource requests/limits, and pod/container customization.
+
+Example:
+
+[source,yaml]
+----
+vector:
+  enabled: true
+  watchNamespaces: ["*"]
+  application:
+    image: timberio/vector:0.54.0-distroless-libc
+    replicas: 1
+    resources:
+      requests:
+        memory: 128Mi
+        cpu: 100m
+      limits:
+        memory: 512Mi
+        cpu: 1000m
+----
+
+Default resources:
 
 [cols="1,2,2"]
 |===
@@ -229,34 +293,8 @@ Default values:
 |===
 
 Adjust based on log volume:
-- Low volume (< 100 event/sec): Keep defaults
-- High volume (> 1000 event/sec): Increase to 512Mi/2000m CPU
-
-==== dataIndex.vector.debugEvents
-
-[cols="2,3"]
-|===
-|Type |Default
-
-|`boolean`
-|`false`
-|===
-
-Enable debug logging of all workflow events to Vector's stdout.
-
-[CAUTION]
-====
-At 1000 events/sec, generates ~43 GB/day of logs.
-
-**Only enable for troubleshooting.**
-====
-
-Disable after debugging:
-[source,yaml]
-----
-vector:
-  debugEvents: false
-----
+- Low volume (< 100 events/sec): Keep defaults
+- High volume (> 1000 events/sec): Increase to 512Mi/2000m CPU
 
 == Status Fields
 
@@ -269,18 +307,29 @@ status:
   observedGeneration: 1
   dataIndex:
     service:
+      ready: true
       deploymentRef:
         name: flow-platform-data-index
       serviceRef:
         name: flow-platform-data-index
-      graphqlEndpoint: http://flow-platform-data-index:8080/graphql
+      graphqlEndpoint: http://flow-platform-data-index.default.svc.cluster.local:8080/graphql
       replicas:
         desired: 1
         current: 1
         ready: 1
     persistence:
+      valid: true
+      secretExists: true
+      serviceExists: true
       databaseConnected: true
+    vector:
+      ready: true
+      daemonSetRef:
+        name: flow-platform-vector
   conditions:
+    - type: Ready
+      status: "True"
+      reason: Available
     - type: DataIndexDeploymentAvailable
       status: "True"
       reason: Available
@@ -290,7 +339,7 @@ status:
     - type: DataIndexPersistenceReady
       status: "True"
       reason: Ready
-    - type: VectorDaemonSetReady
+    - type: VectorReady
       status: "True"
       reason: Ready
 ----
@@ -304,19 +353,60 @@ Key status fields:
 |`phase`
 |"Ready" when Data Index and Vector are operational
 
+|`dataIndex.service.ready`
+|`true` when the Data Index deployment has at least one ready replica
+
 |`dataIndex.service.graphqlEndpoint`
-|GraphQL query URL (use this for queries)
+|Internal cluster URL for GraphQL queries (e.g., `http://flow-platform-data-index.default.svc.cluster.local:8080/graphql`)
 
 |`dataIndex.persistence.databaseConnected`
 |`true` if PostgreSQL connection is healthy
+
+|`dataIndex.vector.ready`
+|`true` when the Vector DaemonSet is deployed and operational
 
 |`conditions`
 |Detailed status of each component (Deployment, Service, Database, Vector)
 |===
 
+[NOTE]
+====
+The `graphqlEndpoint` is an internal cluster address (using Kubernetes DNS names).
+To access Data Index from outside the cluster, use the external URL provided in `status.dataIndex.service.url` (when Ingress is enabled),
+or port-forward to the service: `kubectl port-forward svc/flow-platform-data-index 8080:8080`
+====
+
 == Examples
 
-=== Basic Setup (All Namespaces)
+=== Basic Setup (Watch Only Self-Namespace)
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicPlatform
+metadata:
+  name: flow-platform
+  namespace: workflows
+spec:
+  dataIndex:
+    enabled: true
+    persistence:
+      postgresql:
+        secretRef:
+          name: postgresql-secret
+        serviceRef:
+          name: postgresql
+          databaseName: logicflow
+          databaseSchema: data-index
+    vector:
+      enabled: true
+      application:
+        image: timberio/vector:0.54.0-distroless-libc
+----
+
+This configuration deploys Data Index and Vector, with Vector collecting logs from the same namespace as LogicPlatform.
+
+=== Multi-Namespace Setup (Watch All)
 
 [source,yaml]
 ----
@@ -335,15 +425,20 @@ spec:
         serviceRef:
           name: postgresql
           databaseName: logicflow
-          databaseSchema: logicflow
+          databaseSchema: data-index
     vector:
       enabled: true
       watchNamespaces: ["*"]
+      application:
+        image: timberio/vector:0.54.0-distroless-libc
 ----
 
-=== Custom Vector Resources
+This configuration enables Vector to collect logs from all namespaces.
+Useful when workflow pods are distributed across multiple namespaces.
 
-For high-volume environments:
+=== High-Volume Environment
+
+For high-volume log ingestion (> 1000 events/sec), increase Vector resources:
 
 [source,yaml]
 ----
@@ -351,6 +446,7 @@ apiVersion: logic.kubesmarts.org/v1
 kind: LogicPlatform
 metadata:
   name: flow-platform
+  namespace: workflows
 spec:
   dataIndex:
     enabled: true
@@ -361,17 +457,19 @@ spec:
         serviceRef:
           name: postgresql
           databaseName: logicflow
-          databaseSchema: logicflow
+          databaseSchema: data-index
     vector:
       enabled: true
       watchNamespaces: ["*"]
-      resources:
-        requests:
-          memory: 512Mi
-          cpu: 500m
-        limits:
-          memory: 2Gi
-          cpu: 2000m
+      application:
+        image: timberio/vector:0.54.0-distroless-libc
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 500m
+          limits:
+            memory: 2Gi
+            cpu: 2000m
 ----
 
 == Troubleshooting
