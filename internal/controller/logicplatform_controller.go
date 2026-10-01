@@ -393,30 +393,28 @@ func (r *LogicPlatformReconciler) updateStatusPersistence(ctx context.Context, p
 		status.SecretExists = true
 	}
 
-	// Check if service exists (if using serviceRef)
-	if pg.ServiceRef != nil {
-		var svc corev1.Service
-		svcNamespace := pg.ServiceRef.Namespace
-		if svcNamespace == "" {
-			svcNamespace = plat.Namespace
+	// Check if service exists
+	var svc corev1.Service
+	svcNamespace := pg.ServiceRef.Namespace
+	if svcNamespace == "" {
+		svcNamespace = plat.Namespace
+	}
+	svcKey := client.ObjectKey{
+		Name:      pg.ServiceRef.Name,
+		Namespace: svcNamespace,
+	}
+	err = r.Get(ctx, svcKey, &svc)
+	if apierrors.IsNotFound(err) {
+		status.Valid = false
+		status.ServiceExists = false
+		if status.Error != "" {
+			status.Error += "; "
 		}
-		svcKey := client.ObjectKey{
-			Name:      pg.ServiceRef.Name,
-			Namespace: svcNamespace,
-		}
-		err := r.Get(ctx, svcKey, &svc)
-		if apierrors.IsNotFound(err) {
-			status.Valid = false
-			status.ServiceExists = false
-			if status.Error != "" {
-				status.Error += "; "
-			}
-			status.Error += fmt.Sprintf("service %s not found", pg.ServiceRef.Name)
-		} else if err != nil {
-			return err
-		} else {
-			status.ServiceExists = true
-		}
+		status.Error += fmt.Sprintf("service %s not found", pg.ServiceRef.Name)
+	} else if err != nil {
+		return err
+	} else {
+		status.ServiceExists = true
 	}
 
 	plat.Status.DataIndex.Persistence = status
@@ -728,7 +726,7 @@ func (r *LogicPlatformReconciler) checkPostgresDatabaseHealth(ctx context.Contex
 	log := logf.FromContext(ctx)
 
 	pg := plat.Spec.DataIndex.Persistence.PostgreSQL
-	if pg == nil || pg.ServiceRef == nil {
+	if pg == nil {
 		return false, logicv1.ReasonDatabaseUnreachable, "PostgreSQL not configured"
 	}
 

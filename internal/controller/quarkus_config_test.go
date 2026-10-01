@@ -29,7 +29,7 @@ func TestPersistenceEnvVars_CustomSecretKeys(t *testing.T) {
 				UserKey:     "DB_USER",
 				PasswordKey: "DB_PASS",
 			},
-			ServiceRef: &logicv1.PostgreSQLServiceOptions{
+			ServiceRef: logicv1.PostgreSQLServiceOptions{
 				SQLServiceOptions: &logicv1.SQLServiceOptions{
 					Name: testPostgresName,
 				},
@@ -47,7 +47,7 @@ func TestPersistenceEnvVars_ServiceRefBuildsJdbcUrl(t *testing.T) {
 	p := &logicv1.PersistenceOptionsSpec{
 		PostgreSQL: &logicv1.PersistencePostgreSQL{
 			SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
-			ServiceRef: &logicv1.PostgreSQLServiceOptions{
+			ServiceRef: logicv1.PostgreSQLServiceOptions{
 				SQLServiceOptions: &logicv1.SQLServiceOptions{
 					Name:         testPostgresName,
 					Namespace:    "databases",
@@ -69,7 +69,7 @@ func TestPersistenceEnvVars_ExplicitNamespace(t *testing.T) {
 	p := &logicv1.PersistenceOptionsSpec{
 		PostgreSQL: &logicv1.PersistencePostgreSQL{
 			SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
-			ServiceRef: &logicv1.PostgreSQLServiceOptions{
+			ServiceRef: logicv1.PostgreSQLServiceOptions{
 				SQLServiceOptions: &logicv1.SQLServiceOptions{
 					Name:      testPostgresName,
 					Namespace: "my-namespace",
@@ -91,7 +91,7 @@ func TestPersistenceEnvVars_TLSAppendsSslMode(t *testing.T) {
 		p := &logicv1.PersistenceOptionsSpec{
 			PostgreSQL: &logicv1.PersistencePostgreSQL{
 				SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
-				ServiceRef: &logicv1.PostgreSQLServiceOptions{
+				ServiceRef: logicv1.PostgreSQLServiceOptions{
 					SQLServiceOptions: &logicv1.SQLServiceOptions{Name: testPostgresName},
 					DatabaseSchema:    "myschema",
 				},
@@ -107,7 +107,7 @@ func TestPersistenceEnvVars_TLSAppendsSslMode(t *testing.T) {
 		p := &logicv1.PersistenceOptionsSpec{
 			PostgreSQL: &logicv1.PersistencePostgreSQL{
 				SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
-				ServiceRef: &logicv1.PostgreSQLServiceOptions{
+				ServiceRef: logicv1.PostgreSQLServiceOptions{
 					SQLServiceOptions: &logicv1.SQLServiceOptions{
 						Name:         "postgres",
 						Port:         ptr.To(5432),
@@ -126,7 +126,7 @@ func TestPersistenceEnvVars_TLSAppendsSslMode(t *testing.T) {
 		p := &logicv1.PersistenceOptionsSpec{
 			PostgreSQL: &logicv1.PersistencePostgreSQL{
 				SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
-				ServiceRef: &logicv1.PostgreSQLServiceOptions{
+				ServiceRef: logicv1.PostgreSQLServiceOptions{
 					SQLServiceOptions: &logicv1.SQLServiceOptions{
 						Name:         "postgres",
 						Port:         ptr.To(5432),

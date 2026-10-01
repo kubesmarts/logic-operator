@@ -46,7 +46,7 @@ func withDataIndexPersistence() func(*LogicPlatform) {
 		plat.Spec.DataIndex.Persistence = &PersistenceOptionsSpec{
 			PostgreSQL: &PersistencePostgreSQL{
 				SecretRef: PostgreSQLSecretOptions{Name: "postgres-secret"},
-				ServiceRef: &PostgreSQLServiceOptions{
+				ServiceRef: PostgreSQLServiceOptions{
 					SQLServiceOptions: &SQLServiceOptions{
 						Name:         "postgres",
 						DatabaseName: "dataindex",
@@ -206,7 +206,7 @@ func TestLogicPlatformValidator_ValidateCreate(t *testing.T) {
 					plat.Spec.DataIndex.Persistence = &PersistenceOptionsSpec{
 						PostgreSQL: &PersistencePostgreSQL{
 							SecretRef: PostgreSQLSecretOptions{},
-							ServiceRef: &PostgreSQLServiceOptions{
+							ServiceRef: PostgreSQLServiceOptions{
 								SQLServiceOptions: &SQLServiceOptions{
 									Name: "postgres",
 								},
@@ -227,7 +227,7 @@ func TestLogicPlatformValidator_ValidateCreate(t *testing.T) {
 					plat.Spec.DataIndex.Persistence = &PersistenceOptionsSpec{
 						PostgreSQL: &PersistencePostgreSQL{
 							SecretRef: PostgreSQLSecretOptions{Name: "postgres-secret"},
-							ServiceRef: &PostgreSQLServiceOptions{
+							ServiceRef: PostgreSQLServiceOptions{
 								SQLServiceOptions: &SQLServiceOptions{},
 								DatabaseSchema:    "data-index",
 							},
@@ -246,7 +246,7 @@ func TestLogicPlatformValidator_ValidateCreate(t *testing.T) {
 					plat.Spec.DataIndex.Persistence = &PersistenceOptionsSpec{
 						PostgreSQL: &PersistencePostgreSQL{
 							SecretRef: PostgreSQLSecretOptions{Name: "postgres-secret"},
-							ServiceRef: &PostgreSQLServiceOptions{
+							ServiceRef: PostgreSQLServiceOptions{
 								SQLServiceOptions: &SQLServiceOptions{
 									Name: "postgres",
 								},

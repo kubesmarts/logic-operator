@@ -285,7 +285,7 @@ func testLFRWebhooks(ctx context.Context, t *testing.T, k8sClient client.Client)
 					Persistence: &PersistenceOptionsSpec{
 						PostgreSQL: &PersistencePostgreSQL{
 							SecretRef: PostgreSQLSecretOptions{Name: testPGSecret},
-							ServiceRef: &PostgreSQLServiceOptions{
+							ServiceRef: PostgreSQLServiceOptions{
 								SQLServiceOptions: &SQLServiceOptions{
 									Name:         "postgres",
 									DatabaseName: "test",

@@ -120,7 +120,7 @@ func platformSpec() logicv1.LogicPlatformSpec {
 			Persistence: &logicv1.PersistenceOptionsSpec{
 				PostgreSQL: &logicv1.PersistencePostgreSQL{
 					SecretRef: logicv1.PostgreSQLSecretOptions{Name: "postgres-secret"},
-					ServiceRef: &logicv1.PostgreSQLServiceOptions{
+					ServiceRef: logicv1.PostgreSQLServiceOptions{
 						SQLServiceOptions: &logicv1.SQLServiceOptions{
 							Name: "postgres",
 						},

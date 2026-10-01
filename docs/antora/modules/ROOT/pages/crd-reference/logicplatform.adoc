@@ -109,8 +109,8 @@ The Secret must contain:
 ====== persistence.postgresql.serviceRef
 
 Reference to the PostgreSQL Kubernetes Service.
-When provided, the operator constructs the JDBC URL dynamically based on the service endpoint.
-Mutually exclusive with `jdbcUrl`.
+The operator constructs the JDBC URL dynamically from the service endpoint.
+This field is required and cannot be omitted.
 
 [source,yaml]
 ----
@@ -127,7 +127,7 @@ serviceRef:
 
 |`name`
 |`string`
-|Yes
+|Yes (Kubernetes Service name)
 
 |`namespace`
 |`string`
@@ -135,11 +135,11 @@ serviceRef:
 
 |`databaseName`
 |`string`
-|Yes (database must exist before Data Index starts)
+|Yes (must exist before Data Index starts)
 
 |`databaseSchema`
 |`string`
-|Yes (schema created by Data Index migrations)
+|Yes (created by Data Index schema migrations)
 
 |`port`
 |`int`
@@ -148,8 +148,9 @@ serviceRef:
 
 [TIP]
 ====
-Database and schema should exist before LogicPlatform is deployed, or use a PostgreSQL initialization script.
-The operator does not create the database itself — it only creates the schema if it doesn't exist.
+The database must exist in PostgreSQL before LogicPlatform is deployed.
+The operator creates the schema if it does not exist.
+Ensure your PostgreSQL initialization includes the database creation step.
 ====
 
 [TIP]

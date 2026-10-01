@@ -91,16 +91,11 @@ type PersistenceOptionsSpec struct {
 	DBMigrationStrategy DBMigrationStrategyType `json:"dbMigrationStrategy,omitempty"`
 }
 
-// PersistencePostgreSQL configures a PostgreSQL database connection.
+// PersistencePostgreSQL configures a PostgreSQL database connection via Kubernetes Service reference.
 //
-// There are two ways to configure the connection (mutually exclusive):
-//  1. Application Reference (serviceRef): Points to a Kubernetes Application for PostgreSQL
-//  2. JDBC URL (jdbcUrl): Direct connection string
+// The operator constructs the JDBC URL dynamically from the service endpoint.
 //
-// The serviceRef approach is recommended as it allows the operator to construct
-// the JDBC URL dynamically based on the service endpoint.
-//
-// Example (using service reference):
+// Example:
 //
 //	postgresql:
 //	  secretRef:
@@ -114,25 +109,13 @@ type PersistenceOptionsSpec struct {
 //	    databaseName: logicflow
 //	    databaseSchema: workflows
 //
-// Example (using JDBC URL):
-//
-//	postgresql:
-//	  secretRef:
-//	    name: postgres-credentials
-//	  jdbcUrl: "jdbc:postgresql://postgres.databases.svc:5432/logicflow?currentSchema=workflows"
-//
 // +kubebuilder:validation:MinProperties=2
 // +kubebuilder:validation:MaxProperties=2
 type PersistencePostgreSQL struct {
 	// Secret reference to the database user credentials
 	SecretRef PostgreSQLSecretOptions `json:"secretRef"`
-	// Application reference to postgresql datasource. Mutually exclusive to jdbcUrl.
-	// +optional
-	ServiceRef *PostgreSQLServiceOptions `json:"serviceRef,omitempty"`
-	// PostgreSql JDBC URL. Mutually exclusive to serviceRef.
-	// e.g. "jdbc:postgresql://host:port/database?currentSchema=workflows"
-	// +optional
-	JdbcURL string `json:"jdbcUrl,omitempty"`
+	// Service reference to PostgreSQL. Required for operator to construct JDBC URL.
+	ServiceRef PostgreSQLServiceOptions `json:"serviceRef"`
 	// TLS configuration for PostgreSQL connections.
 	// When enabled, the operator will append SSL parameters to the JDBC URL.
 	// +optional

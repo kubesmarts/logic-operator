@@ -132,7 +132,7 @@ func persistenceSpec() logicv1.LogicFlowRuntimeSpec {
 			Persistence: &logicv1.PersistenceOptionsSpec{
 				PostgreSQL: &logicv1.PersistencePostgreSQL{
 					SecretRef: logicv1.PostgreSQLSecretOptions{Name: "pg-creds"},
-					ServiceRef: &logicv1.PostgreSQLServiceOptions{
+					ServiceRef: logicv1.PostgreSQLServiceOptions{
 						SQLServiceOptions: &logicv1.SQLServiceOptions{
 							Name:         "pg",
 							DatabaseName: "logicflow",
@@ -279,7 +279,7 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 					Persistence: &logicv1.PersistenceOptionsSpec{
 						PostgreSQL: &logicv1.PersistencePostgreSQL{
 							SecretRef: logicv1.PostgreSQLSecretOptions{Name: "pg-creds"},
-							ServiceRef: &logicv1.PostgreSQLServiceOptions{
+							ServiceRef: logicv1.PostgreSQLServiceOptions{
 								SQLServiceOptions: &logicv1.SQLServiceOptions{
 									Name:         "pg",
 									DatabaseName: "logicflow",
