@@ -81,6 +81,7 @@ func TestWebhookIntegration(t *testing.T) {
 		t.Fatalf("register LFD webhook: %v", err)
 	}
 	if err := builder.WebhookManagedBy(mgr, &LogicFlowRuntime{}).
+		WithDefaulter(&LogicFlowRuntimeDefaulter{}).
 		WithValidator(&LogicFlowRuntimeValidator{}).
 		Complete(); err != nil {
 		t.Fatalf("register LFR webhook: %v", err)

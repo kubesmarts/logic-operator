@@ -9474,7 +9474,6 @@ spec:
                     type: array
                 type: object
               replicas:
-                default: 1
                 description: |-
                   Replicas is the desired number of pod replicas.
                   Ignored when HorizontalPodAutoscaler is configured.

@@ -20,7 +20,6 @@ type ApplicationSpec struct {
 	// Ignored when HorizontalPodAutoscaler is configured.
 	// +optional
 	// +kubebuilder:validation:Minimum=0
-	// +kubebuilder:default=1
 	Replicas *int32 `json:"replicas,omitempty"`
 
 	// Resources specifies compute resource requirements.
