@@ -98,7 +98,6 @@ type LogicPlatformSpec struct {
 	//           databaseSchema: workflows
 	// +optional
 	RuntimeDefaults RuntimeSpec `json:"runtimeDefaults,omitempty"`
-	Version         string      `json:"version,omitempty"`
 }
 
 // LogicPlatformStatus defines the observed state of LogicPlatform.
@@ -394,6 +393,13 @@ type VectorSpec struct {
 	//
 	// +optional
 	WatchNamespaces []string `json:"watchNamespaces,omitempty"`
+	// DebugEvents enables debug logging of all workflow events to Vector's stdout.
+	// At 1000 events/sec, generates ~43 GB/day of logs.
+	// WARNING: Only enable for troubleshooting; disable after debugging.
+	// Defaults to false.
+	// +optional
+	// +kubebuilder:default=false
+	DebugEvents bool `json:"debugEvents,omitempty"`
 	// Application configures the Vector deployment.
 	Application ApplicationSpec `json:"application,omitempty"`
 }

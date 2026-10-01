@@ -9702,14 +9702,9 @@ spec:
                         type: string
                       postgresql:
                         description: Connect configured services to a postgresql database.
-                        maxProperties: 2
+                        maxProperties: 3
                         minProperties: 2
                         properties:
-                          jdbcUrl:
-                            description: |-
-                              PostgreSql JDBC URL. Mutually exclusive to serviceRef.
-                              e.g. "jdbc:postgresql://host:port/database?currentSchema=workflows"
-                            type: string
                           secretRef:
                             description: Secret reference to the database user credentials
                             properties:
@@ -9726,8 +9721,8 @@ spec:
                             - name
                             type: object
                           serviceRef:
-                            description: Application reference to postgresql datasource.
-                              Mutually exclusive to jdbcUrl.
+                            description: Service reference to PostgreSQL. Required
+                              for operator to construct JDBC URL.
                             properties:
                               databaseName:
                                 description: Name of postgresql database to be used.
@@ -9780,6 +9775,7 @@ spec:
                             type: object
                         required:
                         - secretRef
+                        - serviceRef
                         type: object
                     type: object
                   vector:
@@ -19348,6 +19344,14 @@ spec:
                                 type: object
                             type: object
                         type: object
+                      debugEvents:
+                        default: false
+                        description: |-
+                          DebugEvents enables debug logging of all workflow events to Vector's stdout.
+                          At 1000 events/sec, generates ~43 GB/day of logs.
+                          WARNING: Only enable for troubleshooting; disable after debugging.
+                          Defaults to false.
+                        type: boolean
                       enabled:
                         description: |-
                           Enabled flags whether to reconcile this object or not.
@@ -20771,14 +20775,9 @@ spec:
                         type: string
                       postgresql:
                         description: Connect configured services to a postgresql database.
-                        maxProperties: 2
+                        maxProperties: 3
                         minProperties: 2
                         properties:
-                          jdbcUrl:
-                            description: |-
-                              PostgreSql JDBC URL. Mutually exclusive to serviceRef.
-                              e.g. "jdbc:postgresql://host:port/database?currentSchema=workflows"
-                            type: string
                           secretRef:
                             description: Secret reference to the database user credentials
                             properties:
@@ -20795,8 +20794,8 @@ spec:
                             - name
                             type: object
                           serviceRef:
-                            description: Application reference to postgresql datasource.
-                              Mutually exclusive to jdbcUrl.
+                            description: Service reference to PostgreSQL. Required
+                              for operator to construct JDBC URL.
                             properties:
                               databaseName:
                                 description: Name of postgresql database to be used.
@@ -20849,6 +20848,7 @@ spec:
                             type: object
                         required:
                         - secretRef
+                        - serviceRef
                         type: object
                     type: object
                   podTemplate:
@@ -28901,8 +28901,6 @@ spec:
                         type: object
                     type: object
                 type: object
-              version:
-                type: string
             type: object
           status:
             description: LogicPlatformStatus defines the observed state of LogicPlatform.

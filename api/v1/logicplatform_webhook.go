@@ -236,26 +236,16 @@ func (v *LogicPlatformValidator) validatePostgreSQLPersistence(dataIndex *DataIn
 		return fmt.Errorf("spec.dataIndex.persistence.postgresql.secretRef.name is required")
 	}
 
-	if dataIndex.Vector != nil && dataIndex.Vector.Enabled && pg.ServiceRef == nil {
-		// Ensure serviceRef is provided
-		return fmt.Errorf("spec.dataIndex.persistence.postgresql.serviceRef is required when Vector is enabled")
+	// ServiceRef is always required (non-optional field)
+	// Validate service ref fields
+	if pg.ServiceRef.Name == "" {
+		return fmt.Errorf("spec.dataIndex.persistence.postgresql.serviceRef.name is required")
 	}
-
-	if pg.ServiceRef == nil {
-		return fmt.Errorf("spec.dataIndex.persistence.postgresql.serviceRef is required")
+	if pg.ServiceRef.DatabaseSchema == "" {
+		return fmt.Errorf("spec.dataIndex.persistence.postgresql.serviceRef.databaseSchema is required")
 	}
-
-	if pg.ServiceRef != nil {
-		// Validate service ref fields
-		if pg.ServiceRef.Name == "" {
-			return fmt.Errorf("spec.dataIndex.persistence.postgresql.serviceRef.name is required")
-		}
-		if pg.ServiceRef.DatabaseSchema == "" {
-			return fmt.Errorf("spec.dataIndex.persistence.postgresql.serviceRef.databaseSchema is required")
-		}
-		if pg.ServiceRef.DatabaseName == "" {
-			return fmt.Errorf("spec.dataIndex.persistence.postgresql.serviceRef.databaseName is required")
-		}
+	if pg.ServiceRef.DatabaseName == "" {
+		return fmt.Errorf("spec.dataIndex.persistence.postgresql.serviceRef.databaseName is required")
 	}
 
 	return nil

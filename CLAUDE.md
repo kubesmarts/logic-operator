@@ -84,6 +84,22 @@ type RuntimeSecuritySpec struct {
 - ❌ Change repository settings (GitHub Pages, branch protection, secrets, webhooks) without explicit user approval
 - ❌ Make API calls that mutate remote state (`gh api ... --method POST/PUT/DELETE/PATCH`) without explicit user approval
 
+**MANDATORY APPROVAL KEYWORD**
+
+**You may ONLY commit if you see the exact phrase:**
+```
+APPROVED: commit
+```
+
+**This is non-negotiable. No exceptions. No rationalizing.**
+
+- ❌ "go ahead and commit" — NOT ENOUGH
+- ❌ "please commit this" — NOT ENOUGH
+- ❌ "commit that" — NOT ENOUGH
+- ✅ "APPROVED: commit" — ONLY THIS PHRASE WORKS
+
+If you don't see `APPROVED: commit`, you MUST STOP immediately and ask first.
+
 **What you CAN do:**
 
 - ✅ Stage files with `git add`
@@ -101,16 +117,12 @@ When you complete work:
 1. Stage the changes with `git add`
 2. Show `git status` and `git diff --staged`
 3. **Suggest** a commit message
-4. **STOP and wait** for user to review and commit
+4. **STOP and wait** for user to respond
 
-The user will review changes and handle all git commits and pushes manually.
+The user will respond with `APPROVED: commit` when ready, and only then may you proceed.
 
 ## Exception
 
-Only create commits/PRs when the user **explicitly says**:
-- "go ahead and commit"
-- "please commit this"
-- "create a PR"
-- or similar explicit approval
+None. There are no exceptions to the mandatory approval keyword rule.
 
-If in doubt, DO NOT commit. Ask first.
+If you're uncertain whether you should commit, ask first.

@@ -1,0 +1,502 @@
+= LogicPlatform CRD Reference
+:description: LogicPlatform resource for deploying Data Index and Vector infrastructure.
+
+The LogicPlatform CRD manages deployment of the data integration platform:
+Data Index (GraphQL query service) and Vector (log collection DaemonSet).
+
+== Overview
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicPlatform
+metadata:
+  name: flow-platform
+  namespace: data-index-system
+spec:
+  dataIndex:
+    enabled: true
+    persistence:
+      postgresql:
+        secretRef:
+          name: postgresql-secret
+        serviceRef:
+          name: postgresql
+          databaseName: logicflow
+          databaseSchema: logicflow_dataindex
+    vector:
+      enabled: true
+      watchNamespaces: ["workflows"]
+      application:
+        image: timberio/vector:0.54.0-distroless-libc
+----
+
+== Spec Fields
+
+=== dataIndex
+
+Configures the Data Index service (GraphQL API) and supporting infrastructure.
+
+==== dataIndex.enabled
+
+[cols="2,3"]
+|===
+|Type |Default
+
+|`boolean`
+|`true`
+|===
+
+Enable or disable the Data Index Deployment and service.
+When disabled, no data collection occurs.
+
+==== dataIndex.persistence
+
+Specifies where Data Index stores workflow instance history.
+
+===== persistence.postgresql
+
+Required when Data Index is enabled.
+Provides PostgreSQL connection details for storing workflow events.
+
+====== persistence.postgresql.secretRef
+
+Reference to a Kubernetes Secret containing PostgreSQL credentials.
+
+[source,yaml]
+----
+secretRef:
+  name: postgresql-secret
+----
+
+The Secret must contain:
+
+[cols="1,2"]
+|===
+|Key |Value
+
+|`POSTGRESQL_USER`
+|PostgreSQL username
+
+|`POSTGRESQL_PASSWORD`
+|PostgreSQL password
+|===
+
+====== persistence.postgresql.serviceRef
+
+Reference to the PostgreSQL Kubernetes Service.
+The operator constructs the JDBC URL dynamically from the service endpoint.
+This field is required and cannot be omitted.
+
+[source,yaml]
+----
+serviceRef:
+  name: postgresql
+  namespace: default  # Optional; defaults to LogicPlatform namespace
+  databaseName: logicflow
+  databaseSchema: logicflow_dataindex
+----
+
+[cols="1,2,3"]
+|===
+|Field |Type |Required?
+
+|`name`
+|`string`
+|Yes (Kubernetes Service name)
+
+|`namespace`
+|`string`
+|No (defaults to LogicPlatform namespace)
+
+|`databaseName`
+|`string`
+|Yes (must exist before Data Index starts)
+
+|`databaseSchema`
+|`string`
+|Yes (created by Data Index schema migrations)
+
+|`port`
+|`int`
+|No (defaults to 5432)
+|===
+
+[TIP]
+====
+The database must exist in PostgreSQL before LogicPlatform is deployed.
+Schemas are created automatically:
+- LogicFlowRuntime uses the `public` schema (always exists in PostgreSQL)
+- Data Index creates `logicflow_dataindex` via Flyway migrations on first deployment
+
+Ensure your PostgreSQL initialization includes the database creation step.
+====
+
+[TIP]
+====
+Use a single PostgreSQL instance for both runtimes and Data Index:
+- LogicFlowRuntime uses the `public` schema (default, no pre-creation needed)
+- Data Index uses `logicflow_dataindex` (created automatically by Flyway migrations)
+
+This maintains logical isolation while avoiding manual schema creation.
+====
+
+=== dataIndex.vector
+
+Configures the Vector DaemonSet for collecting and forwarding workflow logs.
+
+==== dataIndex.vector.enabled
+
+[cols="2,3"]
+|===
+|Type |Default
+
+|`boolean`
+|`false`
+|===
+
+Enable or disable Vector log collection.
+Requires `dataIndex.enabled: true`.
+
+[WARNING]
+====
+Vector is **required** to collect workflow events for Data Index.
+Without Vector, no structured logging events reach PostgreSQL.
+====
+
+==== dataIndex.vector.watchNamespaces
+
+[cols="2,3"]
+|===
+|Type |Default
+
+|`[]string`
+|Self-namespace (when empty)
+|===
+
+Namespaces from which Vector collects workflow logs.
+When empty or omitted, defaults to watching only the LogicPlatform's own namespace.
+
+Examples:
+
+* `[]` or omitted — Watch only the self-namespace (default)
+* `["*"]` — Watch all namespaces
+* `["workflows"]` — Only the "workflows" namespace
+
+[IMPORTANT]
+====
+Currently, only the first namespace in the list is monitored (WatchNamespaces[0]).
+Multi-namespace filtering support is not yet implemented.
+
+By default, Vector watches only the LogicPlatform's own namespace.
+For multi-namespace deployments, set `watchNamespaces: ["*"]` to collect from all namespaces, or deploy multiple LogicPlatform resources (one per namespace).
+====
+
+==== dataIndex.vector.debugEvents
+
+[cols="2,3"]
+|===
+|Type |Default
+
+|`boolean`
+|`false`
+|===
+
+Enable debug logging of all workflow events to Vector's stdout.
+This injects the `DEBUG_EVENTS=true` environment variable into the Vector container.
+
+[CAUTION]
+====
+At 1000 events/sec, generates ~43 GB/day of logs.
+
+**Only enable for troubleshooting.**
+====
+
+Example:
+
+[source,yaml]
+----
+vector:
+  enabled: true
+  debugEvents: true
+  application:
+    image: timberio/vector:0.54.0
+----
+
+Disable after debugging by setting `debugEvents: false`.
+
+==== dataIndex.vector.application
+
+[cols="2,3"]
+|===
+|Type |Required
+
+|`ApplicationSpec`
+|No
+|===
+
+Configures the Vector DaemonSet deployment: image, replicas, resource requests/limits, and pod/container customization.
+When omitted, the admission webhook supplies default Vector image and resources.
+
+Example:
+
+[source,yaml]
+----
+vector:
+  enabled: true
+  watchNamespaces: ["*"]
+  application:
+    image: timberio/vector:0.54.0-distroless-libc
+    replicas: 1
+    resources:
+      requests:
+        memory: 128Mi
+        cpu: 100m
+      limits:
+        memory: 256Mi
+        cpu: 500m
+----
+
+Default resources:
+
+[cols="1,2,2"]
+|===
+|Resource |Request |Limit
+
+|CPU
+|100m
+|500m
+
+|Memory
+|128Mi
+|256Mi
+|===
+
+Adjust based on log volume:
+- Low volume (< 100 events/sec): Keep defaults
+- High volume (> 1000 events/sec): Increase to 512Mi/2000m CPU
+
+== Status Fields
+
+Once deployed, the LogicPlatform status reflects the state of Data Index and Vector:
+
+[source,yaml]
+----
+status:
+  phase: Ready
+  observedGeneration: 1
+  dataIndex:
+    service:
+      ready: true
+      deploymentRef:
+        name: flow-platform-data-index
+      serviceRef:
+        name: flow-platform-data-index
+      graphqlEndpoint: http://flow-platform-data-index.default.svc.cluster.local:8080/graphql
+      replicas:
+        desired: 1
+        current: 1
+        ready: 1
+    persistence:
+      valid: true
+      secretExists: true
+      serviceExists: true
+      databaseConnected: true
+    vector:
+      ready: true
+      daemonSetRef:
+        name: flow-platform-vector
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Available
+    - type: DataIndexDeploymentAvailable
+      status: "True"
+      reason: Available
+    - type: DataIndexServiceReady
+      status: "True"
+      reason: Ready
+    - type: DataIndexPersistenceReady
+      status: "True"
+      reason: Ready
+    - type: VectorReady
+      status: "True"
+      reason: Ready
+----
+
+Key status fields:
+
+[cols="2,2"]
+|===
+|Field |Meaning
+
+|`phase`
+|"Ready" when Data Index and Vector are operational
+
+|`dataIndex.service.ready`
+|`true` when the Data Index deployment has at least one ready replica
+
+|`dataIndex.service.graphqlEndpoint`
+|GraphQL API URL. It uses the resolved external URL when Ingress is enabled; otherwise it uses the internal Service URL (for example, `http://flow-platform-data-index.default.svc.cluster.local:80/graphql`).
+
+|`dataIndex.persistence.databaseConnected`
+|`true` if PostgreSQL connection is healthy
+
+|`dataIndex.vector.ready`
+|`true` when the Vector DaemonSet is deployed and operational
+
+|`conditions`
+|Detailed status of each component (Deployment, Service, Database, Vector)
+|===
+
+[NOTE]
+====
+The `graphqlEndpoint` is an internal cluster address (using Kubernetes DNS names).
+To access Data Index from outside the cluster, use the external URL provided in `status.dataIndex.service.url` (when Ingress is enabled),
+or port-forward to the service: `kubectl port-forward svc/flow-platform-data-index 8080:8080`
+====
+
+== Examples
+
+=== Basic Setup (Watch Only Self-Namespace)
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicPlatform
+metadata:
+  name: flow-platform
+  namespace: workflows
+spec:
+  dataIndex:
+    enabled: true
+    persistence:
+      postgresql:
+        secretRef:
+          name: postgresql-secret
+        serviceRef:
+          name: postgresql
+          databaseName: logicflow
+          databaseSchema: logicflow_dataindex
+    vector:
+      enabled: true
+      application:
+        image: timberio/vector:0.54.0-distroless-libc
+----
+
+This configuration deploys Data Index and Vector in the same namespace.
+Vector collects logs from workflows in that namespace only (default behavior).
+Data Index stores workflow history in `logicflow_dataindex` schema, while runtimes use the `public` schema.
+
+=== Multi-Namespace Setup (Watch All)
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicPlatform
+metadata:
+  name: flow-platform
+  namespace: data-index-system
+spec:
+  dataIndex:
+    enabled: true
+    persistence:
+      postgresql:
+        secretRef:
+          name: postgresql-secret
+        serviceRef:
+          name: postgresql
+          databaseName: logicflow
+          databaseSchema: logicflow_dataindex
+    vector:
+      enabled: true
+      watchNamespaces: ["*"]
+      application:
+        image: timberio/vector:0.54.0-distroless-libc
+----
+
+This configuration deploys Data Index in a dedicated namespace and configures Vector to collect logs from all namespaces.
+Useful when workflow pods are distributed across multiple namespaces.
+
+=== High-Volume Environment
+
+For high-volume log ingestion (> 1000 events/sec), increase Vector resources:
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicPlatform
+metadata:
+  name: flow-platform
+  namespace: workflows
+spec:
+  dataIndex:
+    enabled: true
+    persistence:
+      postgresql:
+        secretRef:
+          name: postgresql-secret
+        serviceRef:
+          name: postgresql
+          databaseName: logicflow
+          databaseSchema: logicflow_dataindex
+    vector:
+      enabled: true
+      watchNamespaces: ["*"]
+      application:
+        image: timberio/vector:0.54.0-distroless-libc
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 500m
+          limits:
+            memory: 2Gi
+            cpu: 2000m
+----
+
+== Troubleshooting
+
+=== Phase is "Pending"
+
+Check component status:
+
+[source,bash]
+----
+kubectl describe logicplatform flow-platform
+----
+
+Look at `conditions` for which component is not ready:
+- `DataIndexDeploymentAvailable`
+- `DataIndexServiceReady`
+- `DataIndexPersistenceReady`
+- `VectorReady`
+
+=== GraphQL Endpoint Empty
+
+[source,bash]
+----
+kubectl get svc flow-platform-data-index -o wide
+----
+
+Data Index Service may not be created yet. Wait for `DataIndexServiceReady: True` condition.
+
+=== Vector Not Collecting Logs
+
+[source,bash]
+----
+kubectl logs -l app.kubernetes.io/name=flow-platform-vector
+----
+
+Common issues:
+
+- `watchNamespaces` filter doesn't match workflow namespace
+- Vector pod pending (node tolerations issue)
+- PostgreSQL unreachable from Vector pod
+
+See <<concepts/workflow-instance-history.adoc#troubleshooting,Workflow Instance History Troubleshooting>> for detailed diagnostics.
+
+== See Also
+
+- xref:concepts/workflow-instance-history.adoc[Workflow Instance History (Concepts)]
+- xref:samples/persistence.adoc[Persistence & Data Index Sample]
+- xref:crd-reference/logicflowruntime.adoc[LogicFlowRuntime CRD]

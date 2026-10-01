@@ -13,8 +13,7 @@ spec:
           name: postgresql-secret
         serviceRef:
           name: postgresql
-          # use the same runtime database, so we simplify the example
           databaseName: logicflow
-          databaseSchema: logicflow
+          databaseSchema: logicflow_dataindex
     vector:
       enabled: true

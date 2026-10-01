@@ -29,7 +29,7 @@ func TestPersistenceEnvVars_CustomSecretKeys(t *testing.T) {
 				UserKey:     "DB_USER",
 				PasswordKey: "DB_PASS",
 			},
-			ServiceRef: &logicv1.PostgreSQLServiceOptions{
+			ServiceRef: logicv1.PostgreSQLServiceOptions{
 				SQLServiceOptions: &logicv1.SQLServiceOptions{
 					Name: testPostgresName,
 				},
@@ -38,8 +38,8 @@ func TestPersistenceEnvVars_CustomSecretKeys(t *testing.T) {
 	}
 
 	envs := persistenceQuarkusEnvVars(p)
-	g.Expect(*envs[1].ValueFrom.SecretKeyRef.Key).To(gomega.Equal("DB_USER"))
-	g.Expect(*envs[2].ValueFrom.SecretKeyRef.Key).To(gomega.Equal("DB_PASS"))
+	g.Expect(*envs[0].ValueFrom.SecretKeyRef.Key).To(gomega.Equal("DB_USER"))
+	g.Expect(*envs[1].ValueFrom.SecretKeyRef.Key).To(gomega.Equal("DB_PASS"))
 }
 
 func TestPersistenceEnvVars_ServiceRefBuildsJdbcUrl(t *testing.T) {
@@ -47,7 +47,7 @@ func TestPersistenceEnvVars_ServiceRefBuildsJdbcUrl(t *testing.T) {
 	p := &logicv1.PersistenceOptionsSpec{
 		PostgreSQL: &logicv1.PersistencePostgreSQL{
 			SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
-			ServiceRef: &logicv1.PostgreSQLServiceOptions{
+			ServiceRef: logicv1.PostgreSQLServiceOptions{
 				SQLServiceOptions: &logicv1.SQLServiceOptions{
 					Name:         testPostgresName,
 					Namespace:    "databases",
@@ -60,8 +60,8 @@ func TestPersistenceEnvVars_ServiceRefBuildsJdbcUrl(t *testing.T) {
 	}
 
 	envs := persistenceQuarkusEnvVars(p)
-	jdbcEnv := envs[len(envs)-1]
-	g.Expect(*jdbcEnv.Value).To(gomega.Equal("jdbc:postgresql://postgres.databases.svc.cluster.local:5433/workflows?currentSchema=runtime-schema"))
+	g.Expect(envs).To(gomega.HaveLen(4)) // username, password, jdbc url, schema
+	g.Expect(*envs[2].Value).To(gomega.Equal("jdbc:postgresql://postgres.databases.svc.cluster.local:5433/workflows?currentSchema=runtime-schema"))
 }
 
 func TestPersistenceEnvVars_ExplicitNamespace(t *testing.T) {
@@ -69,7 +69,7 @@ func TestPersistenceEnvVars_ExplicitNamespace(t *testing.T) {
 	p := &logicv1.PersistenceOptionsSpec{
 		PostgreSQL: &logicv1.PersistencePostgreSQL{
 			SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
-			ServiceRef: &logicv1.PostgreSQLServiceOptions{
+			ServiceRef: logicv1.PostgreSQLServiceOptions{
 				SQLServiceOptions: &logicv1.SQLServiceOptions{
 					Name:      testPostgresName,
 					Namespace: "my-namespace",
@@ -79,8 +79,7 @@ func TestPersistenceEnvVars_ExplicitNamespace(t *testing.T) {
 	}
 
 	envs := persistenceQuarkusEnvVars(p)
-	jdbcEnv := envs[len(envs)-1]
-	g.Expect(*jdbcEnv.Value).To(gomega.Equal("jdbc:postgresql://postgres.my-namespace.svc.cluster.local:5432/logicflow"))
+	g.Expect(*envs[2].Value).To(gomega.Equal("jdbc:postgresql://postgres.my-namespace.svc.cluster.local:5432/logicflow"))
 }
 
 func TestPersistenceEnvVars_TLSAppendsSslMode(t *testing.T) {
@@ -91,7 +90,7 @@ func TestPersistenceEnvVars_TLSAppendsSslMode(t *testing.T) {
 		p := &logicv1.PersistenceOptionsSpec{
 			PostgreSQL: &logicv1.PersistencePostgreSQL{
 				SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
-				ServiceRef: &logicv1.PostgreSQLServiceOptions{
+				ServiceRef: logicv1.PostgreSQLServiceOptions{
 					SQLServiceOptions: &logicv1.SQLServiceOptions{Name: testPostgresName},
 					DatabaseSchema:    "myschema",
 				},
@@ -99,7 +98,8 @@ func TestPersistenceEnvVars_TLSAppendsSslMode(t *testing.T) {
 			},
 		}
 		envs := persistenceQuarkusEnvVars(p)
-		g.Expect(*envs[len(envs)-1].Value).To(gomega.ContainSubstring("?currentSchema=myschema&sslmode=verify-full"))
+		// JDBC URL is always at index 2 (username, password, jdbc, then optional schema)
+		g.Expect(*envs[2].Value).To(gomega.ContainSubstring("?currentSchema=myschema&sslmode=verify-full"))
 	})
 
 	t.Run("without query params uses question mark", func(t *testing.T) {
@@ -107,7 +107,7 @@ func TestPersistenceEnvVars_TLSAppendsSslMode(t *testing.T) {
 		p := &logicv1.PersistenceOptionsSpec{
 			PostgreSQL: &logicv1.PersistencePostgreSQL{
 				SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
-				ServiceRef: &logicv1.PostgreSQLServiceOptions{
+				ServiceRef: logicv1.PostgreSQLServiceOptions{
 					SQLServiceOptions: &logicv1.SQLServiceOptions{
 						Name:         "postgres",
 						Port:         ptr.To(5432),
@@ -118,7 +118,7 @@ func TestPersistenceEnvVars_TLSAppendsSslMode(t *testing.T) {
 			},
 		}
 		envs := persistenceQuarkusEnvVars(p)
-		g.Expect(*envs[len(envs)-1].Value).To(gomega.Equal("jdbc:postgresql://postgres:5432/mydb?sslmode=require"))
+		g.Expect(*envs[2].Value).To(gomega.Equal("jdbc:postgresql://postgres:5432/mydb?sslmode=require"))
 	})
 
 	t.Run("defaults to prefer when mode empty", func(t *testing.T) {
@@ -126,7 +126,7 @@ func TestPersistenceEnvVars_TLSAppendsSslMode(t *testing.T) {
 		p := &logicv1.PersistenceOptionsSpec{
 			PostgreSQL: &logicv1.PersistencePostgreSQL{
 				SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
-				ServiceRef: &logicv1.PostgreSQLServiceOptions{
+				ServiceRef: logicv1.PostgreSQLServiceOptions{
 					SQLServiceOptions: &logicv1.SQLServiceOptions{
 						Name:         "postgres",
 						Port:         ptr.To(5432),
@@ -137,7 +137,7 @@ func TestPersistenceEnvVars_TLSAppendsSslMode(t *testing.T) {
 			},
 		}
 		envs := persistenceQuarkusEnvVars(p)
-		g.Expect(*envs[len(envs)-1].Value).To(gomega.Equal("jdbc:postgresql://postgres:5432/mydb?sslmode=prefer"))
+		g.Expect(*envs[2].Value).To(gomega.Equal("jdbc:postgresql://postgres:5432/mydb?sslmode=prefer"))
 	})
 }
 

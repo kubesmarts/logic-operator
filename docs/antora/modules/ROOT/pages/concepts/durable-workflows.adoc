@@ -32,8 +32,7 @@ spec:
 <1> Use the `standard` image — the `minimal` image does not include the PostgreSQL driver.
 <2> A Secret containing `POSTGRESQL_USER` and `POSTGRESQL_PASSWORD` keys (the operator defaults).
     Override with `secretRef.userKey` / `secretRef.passwordKey` if your Secret uses different key names.
-<3> The operator builds the JDBC URL from `serviceRef`. Alternatively supply an explicit
-    `jdbcUrl` instead of `serviceRef`.
+<3> The operator builds the JDBC URL from `serviceRef`.
 
 [NOTE]
 ====
@@ -137,12 +136,9 @@ critical: if a replacement pod starts before the old pod terminates, two pods co
 same lease, causing split-brain database access.
 ====
 
-== PostgreSQL Connection: serviceRef vs jdbcUrl
+== PostgreSQL Connection: serviceRef
 
-The operator supports two ways to specify the database connection:
-
-*Option 1 — serviceRef (recommended):* The operator constructs the JDBC URL from the service
-name, port, and database name.
+The operator constructs the JDBC URL from the Kubernetes Service name, port, and database name.
 
 [source,yaml]
 ----
@@ -157,17 +153,7 @@ persistence:
 # Produces: jdbc:postgresql://postgresql:5432/workflows
 ----
 
-*Option 2 — explicit jdbcUrl:* Provide the full JDBC URL directly. Use this when the database is
-not exposed as a Kubernetes Service, or when you need non-standard connection parameters.
-
-[source,yaml]
-----
-persistence:
-  postgresql:
-    secretRef:
-      name: order-processing-db-secret
-    jdbcUrl: "jdbc:postgresql://db.example.com:5432/workflows?sslmode=require"
-----
+The `serviceRef` is required. The operator will automatically resolve the service DNS within the cluster.
 
 == Scaling a Durable Runtime
 
@@ -183,3 +169,46 @@ Scaling a durable runtime causes a rolling restart due to the `maxSurge: 0` cons
 scaling operations during a maintenance window if your workflows are sensitive to brief
 unavailability.
 ====
+
+== Complementary: Querying Durable Workflow History with Data Index
+
+Durable mode persists workflow instance state in PostgreSQL so that pods can recover in-flight instances.
+
+For visibility into completed workflow executions and their outcomes, enable xref:concepts/workflow-instance-history.adoc[workflow instance history] via LogicPlatform:
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowRuntime
+metadata:
+  name: order-processing
+spec:
+  persistence:
+    postgresql: ...
+  logging:
+    enabled: true
+    includeWorkflowPayloads: true
+----
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicPlatform
+metadata:
+  name: order-platform
+spec:
+  dataIndex:
+    enabled: true
+    persistence:
+      postgresql:
+        secretRef:
+          name: postgresql-secret
+        serviceRef:
+          name: postgresql
+    vector:
+      enabled: true
+----
+
+This enables GraphQL queries over the workflow execution history while maintaining durability for in-flight instances.
+
+See xref:samples/persistence.adoc[Persistence & Data Index sample] for a complete example.

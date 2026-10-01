@@ -119,7 +119,7 @@ spec:
 
 Type: `PersistenceOptionsSpec` — Optional
 
-Database connectivity for the runtime.
+Database connectivity for durable workflow state.
 
 [source,yaml]
 ----
@@ -132,6 +132,71 @@ spec:
         name: postgres
         databaseSchema: workflows
 ----
+
+Without persistence, workflows are stateless and cannot survive pod restarts.
+
+=== logging
+
+Type: `StructuredLoggingSpec` — Optional
+
+Configures structured logging to emit workflow events as JSON.
+Required for Vector to capture workflow execution data into Data Index.
+
+[source,yaml]
+----
+spec:
+  logging:
+    enabled: true
+    includeWorkflowPayloads: true
+    includeTaskPayloads: false
+----
+
+When enabled, the runtime emits JSON events to stdout for each workflow:
+
+- `workflow_started` — Workflow begins
+- `workflow_completed` — Workflow finishes successfully
+- `workflow_faulted` — Workflow encounters an error
+- `task_started` — A task begins
+- `task_completed` — A task finishes
+
+These events are collected by Vector (in LogicPlatform) and forwarded to PostgreSQL for querying via Data Index GraphQL.
+
+==== logging.enabled
+
+Type: `boolean` — Optional — Default: `true` (respects runner image defaults)
+
+Enable or disable structured logging for workflow events.
+When enabled, the runtime emits JSON-formatted logs for every workflow event.
+
+==== logging.includeWorkflowPayloads
+
+Type: `boolean` — Optional — Default: `false`
+
+Include workflow input and output data in structured logs.
+Required for Vector to capture workflow payloads into persistent storage.
+
+[CAUTION]
+====
+WARNING: Enable only if you can store payloads securely.
+Workflow payloads may contain sensitive data.
+Ensure persistent storage (PostgreSQL) is encrypted and access-controlled.
+
+Increases log volume significantly.
+At 100 events/sec with large payloads, generates ~500+ MB/day of logs.
+====
+
+==== logging.includeTaskPayloads
+
+Type: `boolean` — Optional — Default: `false`
+
+Include task input and output data in structured logs.
+Useful for debugging task execution and understanding data flow through workflow tasks.
+
+[CAUTION]
+====
+Task payloads may contain sensitive data.
+Enable only when necessary and ensure secure storage.
+====
 
 === security
 

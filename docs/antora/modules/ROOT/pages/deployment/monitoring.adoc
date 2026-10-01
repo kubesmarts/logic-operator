@@ -1,8 +1,13 @@
-= Monitoring
-:description: Deploy Prometheus and Grafana to observe Logic Operator workflow metrics.
+= Monitoring & Observability
+:description: Deploy Prometheus and Grafana for metrics, and use Data Index for workflow data querying.
 
-Logic Operator exposes Quarkus Flow Runner metrics at `/q/metrics` on port 8080 of every runner pod.
-The monitoring sample deploys Prometheus (scraping those pods) and Grafana (with a pre-built dashboard).
+Logic Operator provides two complementary observability patterns:
+
+* **Prometheus + Grafana** — Real-time metrics (throughput, task duration, instance counts)
+* **Data Index + GraphQL** — Workflow instance history, status, and execution data
+
+This page covers Prometheus/Grafana.
+For Data Index, see xref:crd-reference/logicplatform.adoc[LogicPlatform CRD] and xref:samples/persistence.adoc#section-b-workflow-data-integration-via-dataindex[Persistence & Data Index sample].
 
 == Deploy the Monitoring Stack
 

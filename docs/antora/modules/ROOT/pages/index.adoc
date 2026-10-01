@@ -6,11 +6,14 @@ It lets you manage workflow runtimes, definitions, and traffic routing as native
 
 == What it does
 
-Logic Operator introduces three custom resources:
+Logic Operator introduces four custom resources:
 
 [cols="1,3",options="header"]
 |===
 |CRD |Purpose
+
+|xref:crd-reference/logicplatform.adoc[LogicPlatform]
+|Manages Data Index (GraphQL query service) and Vector (log collection) for workflow data integration.
 
 |xref:crd-reference/logicflowruntime.adoc[LogicFlowRuntime]
 |Manages a Quarkus Flow Runner deployment — pods, service, ConfigMap, leases, HPA, and RBAC.
@@ -27,6 +30,7 @@ Logic Operator introduces three custom resources:
 
 * *Hot-reload* — workflow definition updates propagate automatically via ConfigMap directory mounts; no pod restarts needed.
 * *Durable workflows* — Kubernetes Leases provide stable pod identity across restarts and scaling events.
+* *Workflow data integration* — Vector collects structured logs; Data Index provides GraphQL API to query workflow instance history.
 * *Autoscaling* — HPA support out of the box.
 * *Observability* — Micrometer metrics exposed at `/q/metrics`; sample Prometheus + Grafana dashboards included.
 * *Security* — `NONE`, `API_KEY`, and `OIDC` authentication modes.

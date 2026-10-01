@@ -18,6 +18,9 @@ Four CRDs are installed cluster-wide:
 |===
 |CRD |Purpose
 
+|`LogicPlatform`
+|Manages Data Index (GraphQL service) and Vector (log collection DaemonSet)
+
 |`LogicFlowRuntime`
 |Manages the Quarkus Flow Runner pod(s) and their configuration
 
@@ -43,7 +46,8 @@ The diagram below shows how the components relate at runtime.
 ----
   kubectl / CI                   Operator Pod (logic-operator-system)
        |                               |
-       | apply LogicFlowRuntime        | watches CRDs
+       | apply LogicPlatform           | watches CRDs
+       | apply LogicFlowRuntime        |
        |-----> kube-apiserver <--------|
                |       |              |
                |       | webhook TLS  |   cert-manager
@@ -51,19 +55,32 @@ The diagram below shows how the components relate at runtime.
                |
                | reconcile
                v
-         Deployment (hello-runtime)
-               |
-         Pod: quarkus-flow-runner
-               |  /q/metrics  /q/health
-               |  /q/flow/exec/<ns>/<workflow>/<version>
-               v
-         Service --> Ingress --> hello.lvh.me
+         LogicPlatform:
+         ├─ Data Index Deployment
+         ├─ Vector DaemonSet
+         └─ Ingress/Route
+
+         LogicFlowRuntime:
+         ├─ Deployment (hello-runtime)
+         │  └─ Pod: quarkus-flow-runner
+         │     ├─ /q/metrics  /q/health
+         │     ├─ /q/flow/exec/<ns>/<workflow>/<version>
+         │     └─ JSON logs (structured logging)
+         │
+         ├─ Service
+         └─ Ingress --> hello.lvh.me
+
+         Data Flow:
+         quarkus-flow-runner (JSON logs)
+           → Vector DaemonSet
+           → PostgreSQL
+           → Data Index (GraphQL)
 ----
 
 The runner image tag controls capabilities:
 
-* `quay.io/quarkiverse/quarkus-flow-runner:1.0.0-minimal` — stateless, no persistence
-* `quay.io/quarkiverse/quarkus-flow-runner:1.0.0-standard` — PostgreSQL persistence, lease-based sharding
+* `quay.io/quarkiverse/quarkus-flow-runner:1.0.0-minimal` — stateless, no persistence, no structured logging
+* `quay.io/quarkiverse/quarkus-flow-runner:1.0.0-standard` — PostgreSQL persistence, lease-based sharding, structured logging
 
 == Prerequisites
 

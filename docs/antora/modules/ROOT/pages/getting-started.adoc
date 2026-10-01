@@ -113,9 +113,23 @@ The runner exposes Micrometer metrics automatically at `/q/metrics`:
 curl http://runtime.lvh.me/q/metrics | grep quarkus_flow_workflow
 ----
 
-== Next steps
+== Next Steps
 
-* xref:samples/persistence.adoc[Add durable workflows with PostgreSQL]
-* xref:samples/monitoring.adoc[Set up Prometheus and Grafana dashboards]
-* xref:concepts/runtime-model.adoc[Understand the runtime model]
-* xref:crd-reference/logicflowruntime.adoc[LogicFlowRuntime CRD reference]
+Now that you have the operator running, explore these topics:
+
+**Data & Persistence:**
+
+* xref:samples/persistence.adoc[Persistence & Data Index Sample] — Enable durable workflows (survive pod restarts), structured logging, and GraphQL querying
+* xref:concepts/durable-workflows.adoc[Durable Workflows] — How in-flight instances survive pod restarts
+* xref:concepts/workflow-instance-history.adoc[Workflow Instance History] — Query completed workflow execution history via Data Index GraphQL
+
+**Observability:**
+
+* xref:samples/monitoring.adoc[Monitoring Sample] — Set up Prometheus and Grafana dashboards for real-time metrics
+* xref:deployment/monitoring.adoc[Monitoring & Observability] — Metrics vs. Data Index querying (complementary approaches)
+
+**Reference:**
+
+* xref:crd-reference/logicplatform.adoc[LogicPlatform CRD] — Data Index, Vector, and data integration configuration
+* xref:crd-reference/logicflowruntime.adoc[LogicFlowRuntime CRD] — Runtime configuration and structured logging
+* xref:concepts/runtime-model.adoc[Runtime Model] — How the operator manages runtimes

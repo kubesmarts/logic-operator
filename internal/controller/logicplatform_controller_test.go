@@ -120,11 +120,11 @@ func platformSpec() logicv1.LogicPlatformSpec {
 			Persistence: &logicv1.PersistenceOptionsSpec{
 				PostgreSQL: &logicv1.PersistencePostgreSQL{
 					SecretRef: logicv1.PostgreSQLSecretOptions{Name: "postgres-secret"},
-					ServiceRef: &logicv1.PostgreSQLServiceOptions{
+					ServiceRef: logicv1.PostgreSQLServiceOptions{
 						SQLServiceOptions: &logicv1.SQLServiceOptions{
 							Name: "postgres",
 						},
-						DatabaseSchema: "data-index",
+						DatabaseSchema: "logicflow_dataindex",
 					},
 				},
 			},
@@ -184,9 +184,9 @@ var _ = Describe("LogicPlatform Controller", func() {
 			Expect(graphqlUI.Value).To(Equal("true"))
 
 			// Check persistence environment variables
-			dbKind := findEnvVar(c.Env, "QUARKUS_DATASOURCE_DB_KIND")
-			Expect(dbKind).NotTo(BeNil())
-			Expect(dbKind.Value).To(Equal("postgresql"))
+			schema := findEnvVar(c.Env, "QUARKUS_HIBERNATE_ORM_DATABASE_DEFAULT_SCHEMA")
+			Expect(schema).NotTo(BeNil())
+			Expect(schema.Value).To(Equal("logicflow_dataindex"))
 		})
 
 		It("should create a Deployment with default probes", func() {
