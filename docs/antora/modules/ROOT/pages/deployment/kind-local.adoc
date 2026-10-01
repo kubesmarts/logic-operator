@@ -138,6 +138,36 @@ kubectl port-forward svc/hello-runtime 8080:80
 curl http://localhost:8080/q/health
 ----
 
+== Next Steps: Persistence & Data Index
+
+To test durable workflows and Data Index integration:
+
+[source,bash]
+----
+# Apply PostgreSQL and LogicPlatform
+kubectl apply -k config/samples/persistence/
+
+# Wait for everything
+kubectl wait --for=condition=available deployment/postgresql deployment/hello-runtime deployment/flow-platform-data-index --timeout=120s
+
+# Test a durable workflow
+curl -X POST http://hello.lvh.me/q/flow/exec/examples/sleepy-workflow/1.0.0 \
+  -H "Content-Type: application/json" \
+  -d '{"name": "local-test"}'
+
+# Query Data Index GraphQL
+GRAPHQL_ENDPOINT=$(kubectl get logicplatform flow-platform \
+  -o jsonpath='{.status.dataIndex.service.graphqlEndpoint}')
+
+curl -X POST "$GRAPHQL_ENDPOINT" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "{ getWorkflowInstances { id status outputData } }"
+  }'
+----
+
+See xref:samples/persistence.adoc[Persistence & Data Index sample] for detailed documentation.
+
 == Tear Down
 
 Remove sample CRs without deleting the cluster:
@@ -145,6 +175,7 @@ Remove sample CRs without deleting the cluster:
 [source,bash]
 ----
 make kind-undemo
+kubectl delete -k config/samples/persistence/ --ignore-not-found=true
 ----
 
 Delete the entire cluster:

@@ -119,7 +119,7 @@ spec:
 
 Type: `PersistenceOptionsSpec` — Optional
 
-Database connectivity for the runtime.
+Database connectivity for durable workflow state.
 
 [source,yaml]
 ----
@@ -132,6 +132,50 @@ spec:
         name: postgres
         databaseSchema: workflows
 ----
+
+Without persistence, workflows are stateless and cannot survive pod restarts.
+
+=== logging
+
+Type: `StructuredLoggingSpec` — Optional
+
+Configures structured logging to emit workflow events as JSON.
+
+[source,yaml]
+----
+spec:
+  logging:
+    enabled: true
+    includeWorkflowPayloads: true
+----
+
+When enabled, the runtime emits JSON events to stdout for each workflow:
+
+- `workflow_started` — Workflow begins
+- `workflow_completed` — Workflow finishes successfully
+- `workflow_faulted` — Workflow encounters an error
+- `task_started` — A task begins
+- `task_completed` — A task finishes
+
+These events are collected by Vector (in LogicPlatform) and forwarded to PostgreSQL for querying via Data Index GraphQL.
+
+==== logging.enabled
+
+Type: `boolean` — Optional — Default: `false`
+
+Enable or disable structured logging.
+
+==== logging.includeWorkflowPayloads
+
+Type: `boolean` — Optional — Default: `false`
+
+Include full input/output data in logged events.
+
+[CAUTION]
+====
+Increases log volume significantly. Enable only if you need payload data in Data Index.
+At 100 events/sec with large payloads, generates ~500+ MB/day of logs.
+====
 
 === security
 

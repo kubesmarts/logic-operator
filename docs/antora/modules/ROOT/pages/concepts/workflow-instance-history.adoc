@@ -1,0 +1,232 @@
+= Workflow Instance History
+:description: Query workflow execution history via Data Index using structured event logging through Vector and PostgreSQL.
+
+Workflow instance history enables you to query the history and current state of completed and in-flight workflow executions via a GraphQL API.
+This is complementary to <<concepts/durable-workflows.adoc#,durable workflow state>> (which keeps instances running across pod restarts).
+
+== Data Flow
+
+Workflow instance history is built on a simple pipeline:
+
+1. **Runtime** emits structured logs to stdout when `logging.enabled: true`
+2. **Vector DaemonSet** collects these logs and forwards them to PostgreSQL
+3. **Data Index** processes the stored events and exposes them via GraphQL
+4. **Clients** query the GraphQL endpoint to retrieve workflow execution history
+
+The operator manages steps 1-3. Data Index internals (how it normalizes, stores, or indexes data) are Data Index concerns.
+
+== Key Components
+
+=== Structured Logging (Runtime)
+
+The LogicFlowRuntime emits workflow events as JSON to stdout when `logging.enabled: true`:
+
+* `workflow_started` — Workflow execution begins
+* `workflow_completed` — Workflow finishes successfully
+* `workflow_faulted` — Workflow encounters an error
+* `task_started` — A task begins execution
+* `task_completed` — A task finishes
+* Optional payloads (inputs/outputs) if `includeWorkflowPayloads: true`
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowRuntime
+metadata:
+  name: hello-runtime
+spec:
+  logging:
+    enabled: true
+    includeWorkflowPayloads: true  # Include input/output data
+----
+
+=== Vector (Log Collection)
+
+Vector runs as a DaemonSet (one pod per node) to:
+
+1. Tail container logs from `/var/log/containers/*.log`
+2. Filter logs by namespace (configurable via `watchNamespaces`)
+3. Parse JSON events
+4. Forward to PostgreSQL
+
+Vector is deployed and configured automatically by the LogicPlatform controller:
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicPlatform
+metadata:
+  name: flow-platform
+spec:
+  dataIndex:
+    vector:
+      enabled: true
+      watchNamespaces: ["*"]  # All namespaces
+----
+
+=== PostgreSQL (Event Storage)
+
+PostgreSQL stores the workflow events forwarded by Vector.
+Data Index then processes and indexes these events for querying.
+
+[NOTE]
+====
+The same PostgreSQL instance can be used for both:
+- Durable workflow state (for pod restart recovery)
+- Workflow event history (for Data Index queries)
+
+Use separate database schemas to isolate data: one for runtime state, one for Data Index.
+====
+
+For details on how Data Index stores and normalizes events, see the https://kubesmarts.org/logic-apps/data-index/[Data Index documentation].
+
+=== Data Index (Query Interface)
+
+Data Index exposes a GraphQL API to query workflow instances and their execution history:
+
+[source,bash]
+----
+query {
+  getWorkflowInstances {
+    id
+    status
+    startedAt
+    completedAt
+    inputData
+    outputData
+  }
+}
+----
+
+Data Index is deployed by the LogicPlatform controller as a Deployment.
+
+== Requirements
+
+PostgreSQL:: **Required.** Events are stored in PostgreSQL.
+
+Structured Logging:: **Required.** Set `logging.enabled: true` on the LogicFlowRuntime to emit workflow events.
+
+Vector:: **Required.** Enable via `dataIndex.vector.enabled: true` on LogicPlatform to collect and forward events.
+
+Data Index Service:: **Required.** Enable via `dataIndex.enabled: true` on LogicPlatform to provide the GraphQL query endpoint.
+
+== Latency
+
+End-to-end latency varies based on event volume and resource availability. In typical environments, events appear in Data Index within 10-30 seconds. In resource-constrained environments, expect 30-60+ seconds.
+
+== Payload Configuration
+
+=== Without Payloads (Default)
+
+[source,yaml]
+----
+logging:
+  enabled: true
+  includeWorkflowPayloads: false  # Only metadata
+----
+
+Events include:
+* Workflow/task IDs
+* Status (started, completed, faulted)
+* Timestamps
+* Execution duration
+
+Example event:
+[source,json]
+----
+{
+  "workflowId": "sleepy-workflow:user-123:001",
+  "status": "COMPLETED",
+  "startedAt": "2026-09-30T14:00:00Z",
+  "completedAt": "2026-09-30T14:00:35Z"
+}
+----
+
+Use this for production when workflows have large or sensitive payloads.
+
+=== With Payloads
+
+[source,yaml]
+----
+logging:
+  enabled: true
+  includeWorkflowPayloads: true
+----
+
+Events include full input/output data.
+
+Example event:
+[source,json]
+----
+{
+  "workflowId": "sleepy-workflow:user-123:001",
+  "status": "COMPLETED",
+  "startedAt": "2026-09-30T14:00:00Z",
+  "completedAt": "2026-09-30T14:00:35Z",
+  "inputData": {
+    "name": "user-123"
+  },
+  "outputData": {
+    "message": "Done! user-123 woke up after sleeping."
+  }
+}
+----
+
+[CAUTION]
+====
+Payload data increases log volume significantly:
+- 100 event/sec with small payloads: ~50 MB/day
+- 100 event/sec with large payloads: ~500+ MB/day
+
+Start without payloads. Enable only if you need input/output history in Data Index.
+====
+
+== Troubleshooting
+
+=== "No workflow instances in Data Index"
+
+1. Verify `logging.enabled: true` on LogicFlowRuntime:
++
+[source,bash]
+----
+kubectl get logicflowruntime -o yaml | grep -A 3 logging
+----
+
+2. Check Vector is collecting logs:
++
+[source,bash]
+----
+kubectl logs -l app.kubernetes.io/name=flow-platform-vector | tail -20
+----
++
+Look for messages indicating events are being processed and forwarded.
+
+3. Check Data Index pod logs:
++
+[source,bash]
+----
+kubectl logs -l app.kubernetes.io/name=flow-platform-data-index | tail -20
+----
++
+Data Index logs will show if it's receiving and processing events from PostgreSQL.
+
+=== "Vector pod stuck in pending"
+
+Vector requires node logs access (`/var/log/containers`).
+Ensure Vector DaemonSet has appropriate tolerations for control-plane nodes (configured by default).
+
+=== "PostgreSQL connection errors"
+
+Verify:
+
+- Secret `postgresql-secret` exists and has correct credentials
+- Service `postgresql` is reachable from Vector pod's namespace
+- Database `logicflow` exists
+
+For more detailed troubleshooting related to Data Index event processing, see the https://kubesmarts.org/logic-apps/data-index/[Data Index documentation].
+
+== Next Steps
+
+- Deploy the <<samples/persistence.adoc#section-b-workflow-data-integration-via-dataindex,Persistence & Data Index sample>>
+- Query workflow instances via the GraphQL endpoint
+- See the https://kubesmarts.org/logic-apps/[Data Index documentation] for advanced features and event schema details

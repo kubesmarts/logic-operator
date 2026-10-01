@@ -6,8 +6,10 @@
 ** xref:concepts/workflow-definitions.adoc[Workflow Definitions]
 ** xref:concepts/durable-workflows.adoc[Durable Workflows]
 ** xref:concepts/configmap-propagation.adoc[ConfigMap Hot-Reload]
+** xref:concepts/workflow-instance-history.adoc[Workflow Instance History]
 
 * CRD Reference
+** xref:crd-reference/logicplatform.adoc[LogicPlatform]
 ** xref:crd-reference/logicflowruntime.adoc[LogicFlowRuntime]
 ** xref:crd-reference/logicflowdefinition.adoc[LogicFlowDefinition]
 ** xref:crd-reference/logicflowservice.adoc[LogicFlowService]

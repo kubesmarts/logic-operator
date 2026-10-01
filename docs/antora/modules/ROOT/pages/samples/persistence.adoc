@@ -1,8 +1,12 @@
-= Persistence Sample
-:description: Run durable workflows with PostgreSQL and lease-based coordination.
+= Persistence & Data Index Sample
+:description: Run durable workflows with PostgreSQL, collect workflow data via Vector, and query via Data Index GraphQL.
 
-The persistence sample demonstrates durable workflow execution.
-Workflows survive pod restarts because state is stored in PostgreSQL, and Kubernetes leases ensure each in-flight instance is owned by exactly one replica.
+The persistence sample demonstrates two complementary capabilities:
+
+1. **Durable Workflow Execution** — Workflows survive pod restarts because state is stored in PostgreSQL
+2. **Workflow Data Integration** — Structured logs are collected by Vector and persisted in PostgreSQL, queryable via Data Index GraphQL
+
+Kubernetes leases ensure each in-flight instance is owned by exactly one replica in a multi-replica setup.
 
 == Prerequisites
 
@@ -20,15 +24,17 @@ make kind-demo
 kubectl apply -k config/samples/persistence/
 ----
 
-This applies three files:
+This applies the following resources:
 
-* `postgresql.yaml` — a PostgreSQL 16 pod, PVC, and Service
-* `logic_v1_logicflowruntime.yaml` — upgrades `hello-runtime` to 3 replicas with PostgreSQL persistence
-* `logic_v1_logicflowdefinition_sleepy.yaml` — a 30-second wait workflow for testing durable coordination
+* `postgresql.yaml` — PostgreSQL 16 pod, PVC, and Service (shared by both features)
+* `logic_v1_logicplatform.yaml` — Deploys Data Index service and Vector DaemonSet
+* `logic_v1_logicflowruntime.yaml` — Upgrades `hello-runtime` to 3 replicas with PostgreSQL persistence and structured logging
+* `logic_v1_logicflowdefinition_sleepy.yaml` — A 30-second wait workflow for testing durable coordination
+* `logic_v1_logicflowservice_sleepy.yaml` — Service exposing the sleepy workflow
 
 == What Gets Created
 
-=== PostgreSQL
+=== PostgreSQL (Shared Infrastructure)
 
 [source,yaml]
 ----
@@ -43,9 +49,38 @@ stringData:
 
 A `postgres:16-alpine` pod connects to a 1 Gi PVC.
 The database is named `logicflow`.
-The secret provides credentials; the operator reads them and injects them as environment variables into the runner pods.
+The secret provides credentials used by both the runtime (for durable state) and Data Index (for workflow instance history).
 
-=== Updated LogicFlowRuntime
+IMPORTANT: Both durable workflows and Data Index integration require PostgreSQL. Without it, neither feature will work.
+
+=== LogicPlatform (Data Index & Vector)
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicPlatform
+metadata:
+  name: flow-platform
+spec:
+  dataIndex:
+    persistence:
+      postgresql:
+        secretRef:
+          name: postgresql-secret
+        serviceRef:
+          name: postgresql
+          databaseName: logicflow
+          databaseSchema: logicflow
+    vector:
+      enabled: true
+----
+
+The operator deploys:
+
+* **Data Index Service** — Exposes a GraphQL API to query workflow instances and their execution history
+* **Vector DaemonSet** — Collects structured logs from all workflow pods and forwards them to PostgreSQL
+
+=== Updated LogicFlowRuntime (Durable + Structured Logging)
 
 [source,yaml]
 ----
@@ -55,6 +90,9 @@ metadata:
   name: hello-runtime
 spec:
   replicas: 3
+  logging:
+    enabled: true
+    includeWorkflowPayloads: true
   persistence:
     postgresql:
       secretRef:
@@ -67,8 +105,9 @@ spec:
 The operator updates the existing `hello-runtime` Deployment to:
 
 * Scale to 3 replicas
-* Switch to the `1.0.0-standard` runner image (which includes the Quarkus datasource extension)
-* Inject `QUARKUS_DATASOURCE_*` environment variables from `postgresql-secret`
+* Switch to the `1.0.0-standard` runner image (includes Quarkus datasource extension)
+* Inject `QUARKUS_DATASOURCE_*` environment variables for persistence
+* Configure structured logging to emit workflow events (start, end, task completion) as JSON to stdout
 
 === Sleepy Workflow Definition
 
@@ -108,9 +147,12 @@ During that window the instance is in a `waiting` state, persisted in PostgreSQL
 ----
 kubectl wait --for=condition=available deployment/postgresql --timeout=120s
 kubectl wait --for=condition=available deployment/hello-runtime --timeout=120s
+kubectl wait --for=condition=available deployment/flow-platform-data-index --timeout=120s
 ----
 
-== Invoke the Sleepy Workflow
+== Section A: Durable Workflow Execution
+
+=== Invoke the Sleepy Workflow
 
 [source,bash]
 ----
@@ -128,7 +170,7 @@ While the workflow is waiting, `quarkus_flow_instance_waiting` increases by 1.
 After 30 seconds, `quarkus_flow_workflow_completed_total` increments.
 ====
 
-== Test Durable Recovery
+=== Test Durable Recovery
 
 The key value proposition of persistence is that workflows survive pod restarts.
 While a workflow is in the `waiting` state, kill all runner pods:
@@ -141,7 +183,7 @@ kubectl delete pod -l app.kubernetes.io/name=hello-runtime --wait=false
 New pods start, re-connect to PostgreSQL, and resume the workflow automatically when the timer fires.
 No workflow instances are lost.
 
-== How Lease Coordination Works
+=== How Lease Coordination Works
 
 With 3 replicas, each workflow instance is assigned an owner pod via a Kubernetes `Lease` object.
 The owning pod is responsible for running that instance and resuming it after waits.
@@ -149,7 +191,7 @@ If the owner pod dies, the lease expires and another pod claims ownership.
 
 This means scale-out is safe: you can increase `spec.replicas` while workflows are in-flight without creating duplicate executions.
 
-== PostgreSQL Tables
+=== Durable Workflow PostgreSQL Schema
 
 The Quarkus Flow Runner uses the following tables in the `logicflow` database:
 
@@ -167,11 +209,159 @@ The Quarkus Flow Runner uses the following tables in the `logicflow` database:
 |Tracks which pod owns which workflow instance
 |===
 
-[NOTE]
+== Section B: Workflow Instance History via Data Index
+
+=== How Data Flows
+
+[source]
+----
+Workflow Pods (running sleepy-workflow)
+  ↓ (JSON structured logs to stdout)
+Kubernetes Container Logs (/var/log/containers/*.log)
+  ↓ (Vector DaemonSet tails logs)
+Vector (parses, filters, forwards)
+  ↓ (HTTP to PostgreSQL)
+PostgreSQL (workflow_events_raw, task_events_raw tables)
+  ↓ (Triggers normalize events)
+Data Index Service (GraphQL endpoint)
+  ↓ (User queries)
+Workflow Instance History
+----
+
+Vector is deployed as a DaemonSet (one pod per node) and automatically collects logs from all workflow pods.
+Structured logging must be enabled on the LogicFlowRuntime (see `logging.enabled: true` in the sample).
+
+=== Query Workflow Instances via GraphQL
+
+First, get the Data Index GraphQL endpoint:
+
+[source,bash]
+----
+GRAPHQL_ENDPOINT=$(kubectl get logicplatform flow-platform \
+  -o jsonpath='{.status.dataIndex.service.graphqlEndpoint}')
+echo "Data Index GraphQL: $GRAPHQL_ENDPOINT"
+----
+
+Then query workflow instances and their execution data:
+
+[source,bash]
+----
+curl -X POST "$GRAPHQL_ENDPOINT" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "{ getWorkflowInstances { id status outputData completedAt } }"
+  }'
+----
+
+Example response:
+
+[source,json]
+----
+{
+  "data": {
+    "getWorkflowInstances": [
+      {
+        "id": "sleepy-workflow:durable-test:001",
+        "status": "COMPLETED",
+        "outputData": {
+          "name": "durable-test",
+          "message": "Done! durable-test woke up after sleeping."
+        },
+        "completedAt": "2026-09-30T14:35:22Z"
+      }
+    ]
+  }
+}
+----
+
+=== Structured Logging Configuration
+
+The sample enables structured logging on the runtime:
+
+[source,yaml]
+----
+logging:
+  enabled: true
+  includeWorkflowPayloads: true
+----
+
+This configures the Quarkus Flow Runner to emit:
+
+* `workflow_started` — When a workflow begins execution
+* `workflow_completed` — When a workflow finishes successfully
+* `workflow_faulted` — When a workflow encounters an error
+* `task_started` — When a task begins
+* `task_completed` — When a task finishes
+* Workflow and task payloads (inputs, outputs) if `includeWorkflowPayloads: true`
+
+Each event is emitted as JSON to stdout, collected by Vector, and forwarded to PostgreSQL.
+
+[CAUTION]
 ====
-Table names may vary by Quarkus Flow Runner version.
-Inspect the actual schema with `kubectl exec -it <postgresql-pod> -- psql -U flowuser logicflow -c "\dt"`.
+If `includeWorkflowPayloads: true` and workflows have large input/output data, logging volume can be high.
+Start with `false` and enable only if you need payload data in Data Index.
 ====
+
+=== Troubleshoot Data Index Integration
+
+*Check if Vector is collecting logs:*
+
+[source,bash]
+----
+kubectl logs -l app.kubernetes.io/name=flow-platform-vector -f
+----
+
+Look for messages about workflow events being processed.
+
+*Check if PostgreSQL is receiving data:*
+
+[source,bash]
+----
+kubectl exec -it <postgresql-pod> -- psql -U flowuser logicflow \
+  -c "SELECT COUNT(*) FROM workflow_events_raw;"
+----
+
+*Check Data Index pod logs:*
+
+[source,bash]
+----
+kubectl logs -l app.kubernetes.io/name=flow-platform-data-index -f
+----
+
+*Verify GraphQL connectivity:*
+
+[source,bash]
+----
+curl -X POST http://flow-platform-data-index:8080/graphql \
+  -H "Content-Type: application/json" \
+  -d '{"query":"{ __schema { queryType { name } } }"}'
+----
+
+If this returns `Query`, the GraphQL endpoint is working.
+
+=== Data Index PostgreSQL Schema
+
+Vector creates and populates two raw event tables:
+
+[cols="1,2"]
+|===
+|Table |Purpose
+
+|`workflow_events_raw`
+|Raw workflow start/complete/fault events with JSON payloads
+
+|`task_events_raw`
+|Raw task start/complete events with JSON payloads
+|===
+
+Triggers (created by Data Index during initialization) normalize these into queryable tables.
+You can inspect the raw events:
+
+[source,bash]
+----
+kubectl exec -it <postgresql-pod> -- psql -U flowuser logicflow \
+  -c "SELECT id, event_type, payload FROM workflow_events_raw LIMIT 5;"
+----
 
 == Clean Up
 
@@ -179,3 +369,12 @@ Inspect the actual schema with `kubectl exec -it <postgresql-pod> -- psql -U flo
 ----
 kubectl delete -k config/samples/persistence/ --ignore-not-found=true
 ----
+
+== Key Takeaways
+
+* **PostgreSQL is required** for both durable workflows and Data Index integration
+* **Durable workflows** use leases and database state to survive pod restarts
+* **Data Index integration** requires structured logging enabled on the runtime
+* **Vector** automatically collects logs from all namespaces when enabled
+* **GraphQL queries** can retrieve workflow instance history, status, and payload data
+* **Both features use the same PostgreSQL instance**, simplifying infrastructure

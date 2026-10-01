@@ -31,9 +31,38 @@ For workflows that use `wait`, timers, or multi-step coordination, use the `1.0.
 Checklist:
 
 * Deploy a production-grade PostgreSQL instance (managed service recommended)
+  ** Can be a single instance shared by both runtimes and Data Index
+  ** Use separate schemas (`logicflow_runtime` for runtime, `logicflow_dataindex` for Data Index)
 * Create a `Secret` with `POSTGRESQL_USER` and `POSTGRESQL_PASSWORD` keys
 * Set `spec.persistence.postgresql.secretRef` and `spec.persistence.postgresql.serviceRef` in `LogicFlowRuntime`
 * Set `spec.replicas` to 3 or more — the operator uses Kubernetes leases for sharded coordination
+
+== Workflow Data Integration (Data Index & Vector)
+
+For visibility into completed workflow executions and their history, deploy LogicPlatform to enable:
+
+* **Vector DaemonSet** — Collects structured logs from workflow pods
+* **Data Index Service** — Exposes GraphQL API for workflow instance queries
+
+Checklist:
+
+* Deploy `LogicPlatform` in a central namespace (e.g., `data-index`)
+* Set `dataIndex.enabled: true` and `dataIndex.vector.enabled: true`
+* Configure `dataIndex.persistence.postgresql` to point to the same PostgreSQL instance as your runtimes
+  ** Data Index creates its own schema (`logicflow` by default)
+* Set `vector.watchNamespaces` appropriately:
+  ** `["*"]` for all namespaces (default)
+  ** `["workflows-prod", "workflows-batch"]` for specific namespaces
+* Allocate sufficient Vector DaemonSet resources (default: 100m CPU, 128Mi memory)
+  ** Monitor actual usage; increase for high-volume environments (> 1000 events/sec)
+* Enable structured logging on runtimes: `spec.logging.enabled: true`
+  ** Start with `includeWorkflowPayloads: false` to reduce log volume
+  ** Enable only if you need input/output data in Data Index
+
+[WARNING]
+====
+Data Index and Vector require PostgreSQL. Workflows will execute normally without them, but no history or querying capability is available.
+====
 
 == Resource Limits
 
