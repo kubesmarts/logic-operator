@@ -337,7 +337,7 @@ Key status fields:
 |`true` when the Data Index deployment has at least one ready replica
 
 |`dataIndex.service.graphqlEndpoint`
-|Internal cluster URL for GraphQL queries (e.g., `http://flow-platform-data-index.default.svc.cluster.local:8080/graphql`). External URL available in `status.dataIndex.service.url` when Ingress is enabled.
+|GraphQL API URL. It uses the resolved external URL when Ingress is enabled; otherwise it uses the internal Service URL (for example, `http://flow-platform-data-index.default.svc.cluster.local:80/graphql`).
 
 |`dataIndex.persistence.databaseConnected`
 |`true` if PostgreSQL connection is healthy

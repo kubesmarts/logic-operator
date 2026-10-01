@@ -388,4 +388,4 @@ kubectl delete -k config/samples/persistence/ --ignore-not-found=true
 * **Vector** is deployed in the LogicPlatform namespace and watches only that namespace by default (set `watchNamespaces: ["*"]` for all namespaces)
 * **Structured logging** must be explicitly enabled; control workflow and task payloads separately (`includeWorkflowPayloads` and `includeTaskPayloads`)
 * **GraphQL queries** can retrieve workflow instance history, status, and payload data
-* **Both features use the same PostgreSQL instance** with isolated schemas (`logicflow_runtime` and `logicflow_dataindex`)
+* **Both features use the same PostgreSQL instance** with separate schemas (`public` and `logicflow_dataindex`)

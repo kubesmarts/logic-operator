@@ -53,7 +53,7 @@ Checklist:
   ** Set `serviceRef.databaseSchema: logicflow_dataindex` (required; the operator does not create a default schema)
 * Set `vector.watchNamespaces` appropriately (Vector watches only the LogicPlatform namespace by default):
   ** `["*"]` to collect logs from all namespaces
-  ** `["workflows-prod", "workflows-batch"]` for specific namespaces
+  ** `["workflows-prod"]` to collect logs from one specific namespace (only the first list entry is currently honored)
   ** Omit for single-namespace deployments (defaults to LogicPlatform namespace)
 * Allocate sufficient Vector DaemonSet resources (default: 100m CPU, 128Mi memory)
   ** Monitor actual usage; increase for high-volume environments (> 1000 events/sec)
