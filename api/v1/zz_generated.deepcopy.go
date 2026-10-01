@@ -886,11 +886,7 @@ func (in *PersistenceOptionsSpec) DeepCopy() *PersistenceOptionsSpec {
 func (in *PersistencePostgreSQL) DeepCopyInto(out *PersistencePostgreSQL) {
 	*out = *in
 	out.SecretRef = in.SecretRef
-	if in.ServiceRef != nil {
-		in, out := &in.ServiceRef, &out.ServiceRef
-		*out = new(PostgreSQLServiceOptions)
-		(*in).DeepCopyInto(*out)
-	}
+	in.ServiceRef.DeepCopyInto(&out.ServiceRef)
 	if in.TLS != nil {
 		in, out := &in.TLS, &out.TLS
 		*out = new(TLSConnection)
