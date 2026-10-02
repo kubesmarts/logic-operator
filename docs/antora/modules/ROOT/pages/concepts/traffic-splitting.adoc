@@ -109,7 +109,7 @@ Adjust the canary weight gradually (e.g. 20 → 50 → 80) by re-applying the se
 
 * Traffic weights must sum to 100.
 * All split targets must share the same workflow `name` and `runtimeRef`.
-* `ingress.gatewayRef` is immutable after creation.
+* `ingress.gatewayRef` cannot be added or removed after creation; its name and namespace may still be updated.
 * nginx mode is limited to 2 traffic entries; use Gateway API for more.
 
 [NOTE]
