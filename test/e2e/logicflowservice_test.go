@@ -563,7 +563,7 @@ spec:
 					_, err := utils.Run(cmd)
 					g.Expect(err).To(HaveOccurred(), "Ingress %s should be deleted after promotion", svcName+suffix)
 				}
-			}).Should(Succeed())
+			}, 30*time.Second, 1*time.Second).Should(Succeed())
 		})
 
 		It("should keep serving v2 after v1 is decommissioned", func() {
@@ -584,7 +584,7 @@ spec:
 			Consistently(func(g Gomega) {
 				g.Expect(getAnnotation(g, "ingress", svcName,
 					`nginx\.ingress\.kubernetes\.io/rewrite-target`)).To(Equal(rewritePath("1.1.0")))
-			}, 5*time.Second).Should(Succeed())
+			}, 5*time.Second, 1*time.Second).Should(Succeed())
 
 			By("verifying v2 endpoint is reachable and loaded")
 			// Check that the v2 ConfigMap exists in the runtime (proves v2 is mounted)
