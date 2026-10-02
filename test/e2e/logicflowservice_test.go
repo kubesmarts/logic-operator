@@ -585,6 +585,23 @@ spec:
 				g.Expect(getAnnotation(g, "ingress", svcName,
 					`nginx\.ingress\.kubernetes\.io/rewrite-target`)).To(Equal(rewritePath("1.1.0")))
 			}, 5*time.Second).Should(Succeed())
+
+			By("verifying v2 endpoint is reachable and loaded")
+			// Check that the v2 ConfigMap exists in the runtime (proves v2 is mounted)
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "configmap", "lfd-"+mvDefV2Name, "-n", namespace)
+				_, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred(), "v2 ConfigMap should exist after v1 decommission")
+			}).Should(Succeed())
+
+			By("verifying runtime still has v2 definition loaded")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "logicflowruntime", mvRuntimeName, "-n", namespace,
+					"-o", "jsonpath={.status.definitions[?(@.version=='1.1.0')].name}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("payment"), "runtime should have v1.1.0 definition loaded")
+			}).Should(Succeed())
 		})
 	})
 }
