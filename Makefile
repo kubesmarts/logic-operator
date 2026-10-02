@@ -214,6 +214,9 @@ test-e2e-runtime: ## Run LogicFlowRuntime E2E tests
 test-e2e-service: ## Run LogicFlowService E2E tests
 	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v -ginkgo.focus="LogicFlowService"
 
+test-e2e-traffic: ## Run LogicFlowService multi-version traffic splitting E2E tests
+	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v -ginkgo.focus="multi-version traffic splitting"
+
 test-e2e-webhook: ## Run webhook validation E2E tests
 	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v -ginkgo.focus="webhook"
 

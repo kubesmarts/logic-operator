@@ -589,3 +589,119 @@ func TestQuarkusFlowPath_WithoutVersion(t *testing.T) {
 		t.Errorf("expected %q, got %q", expected, path)
 	}
 }
+
+// --- traffic target selection tests ---
+
+// defWithVersion builds a LogicFlowDefinition carrying the workflow-version label,
+// which is what splitTrafficTargets/buildTrafficTargets read.
+func defWithVersion(name, version string) logicv1.LogicFlowDefinition {
+	return logicv1.LogicFlowDefinition{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: testNamespace,
+			Labels:    map[string]string{logicv1.LabelWorkflowVersion: version},
+		},
+	}
+}
+
+func serviceWithTraffic(weights ...int32) *logicv1.LogicFlowService {
+	svc := newTestService(func(s *logicv1.LogicFlowService) {
+		s.Spec.DefaultDefinition = nil
+		s.Spec.Traffic = make([]logicv1.TrafficSpec, len(weights))
+		for i, w := range weights {
+			s.Spec.Traffic[i] = logicv1.TrafficSpec{
+				DefinitionRef: corev1.LocalObjectReference{Name: fmt.Sprintf("def-%d", i)},
+				Weight:        w,
+			}
+		}
+	})
+	return svc
+}
+
+func TestSplitTrafficTargets_HigherWeightIsPrimary(t *testing.T) {
+	svc := serviceWithTraffic(80, 20)
+	defs := []logicv1.LogicFlowDefinition{
+		defWithVersion("def-0", "1.0.0"),
+		defWithVersion("def-1", "1.1.0"),
+	}
+
+	primary, canary := splitTrafficTargets(svc, defs)
+
+	if primary.version != "1.0.0" || primary.weight != 80 {
+		t.Errorf("expected primary 1.0.0@80, got %s@%d", primary.version, primary.weight)
+	}
+	if canary.version != "1.1.0" || canary.weight != 20 {
+		t.Errorf("expected canary 1.1.0@20, got %s@%d", canary.version, canary.weight)
+	}
+}
+
+func TestSplitTrafficTargets_HigherWeightSecondIsPrimary(t *testing.T) {
+	svc := serviceWithTraffic(30, 70)
+	defs := []logicv1.LogicFlowDefinition{
+		defWithVersion("def-0", "1.0.0"),
+		defWithVersion("def-1", "1.1.0"),
+	}
+
+	primary, canary := splitTrafficTargets(svc, defs)
+
+	if primary.version != "1.1.0" || primary.weight != 70 {
+		t.Errorf("expected primary 1.1.0@70, got %s@%d", primary.version, primary.weight)
+	}
+	if canary.version != "1.0.0" || canary.weight != 30 {
+		t.Errorf("expected canary 1.0.0@30, got %s@%d", canary.version, canary.weight)
+	}
+}
+
+// At equal weights, the first traffic entry must deterministically win the primary
+// slot so reconciliation does not flap between the two Ingresses.
+func TestSplitTrafficTargets_EqualWeightsDeterministic(t *testing.T) {
+	svc := serviceWithTraffic(50, 50)
+	defs := []logicv1.LogicFlowDefinition{
+		defWithVersion("def-0", "1.0.0"),
+		defWithVersion("def-1", "1.1.0"),
+	}
+
+	for i := 0; i < 5; i++ {
+		primary, canary := splitTrafficTargets(svc, defs)
+		if primary.version != "1.0.0" {
+			t.Errorf("iteration %d: expected deterministic primary 1.0.0, got %s", i, primary.version)
+		}
+		if canary.version != "1.1.0" {
+			t.Errorf("iteration %d: expected canary 1.1.0, got %s", i, canary.version)
+		}
+	}
+}
+
+func TestBuildTrafficTargets_DefaultDefinition(t *testing.T) {
+	svc := newTestService() // DefaultDefinition set, no Traffic
+	defs := []logicv1.LogicFlowDefinition{defWithVersion("def-v1", "1.0.0")}
+
+	targets := buildTrafficTargets(svc, defs)
+
+	if len(targets) != 1 {
+		t.Fatalf("expected 1 target, got %d", len(targets))
+	}
+	if targets[0].version != "1.0.0" || targets[0].weight != 100 {
+		t.Errorf("expected 1.0.0@100, got %s@%d", targets[0].version, targets[0].weight)
+	}
+}
+
+func TestBuildTrafficTargets_PreservesOrderAndWeights(t *testing.T) {
+	svc := serviceWithTraffic(80, 20)
+	defs := []logicv1.LogicFlowDefinition{
+		defWithVersion("def-0", "1.0.0"),
+		defWithVersion("def-1", "1.1.0"),
+	}
+
+	targets := buildTrafficTargets(svc, defs)
+
+	if len(targets) != 2 {
+		t.Fatalf("expected 2 targets, got %d", len(targets))
+	}
+	if targets[0].version != "1.0.0" || targets[0].weight != 80 {
+		t.Errorf("expected targets[0] 1.0.0@80, got %s@%d", targets[0].version, targets[0].weight)
+	}
+	if targets[1].version != "1.1.0" || targets[1].weight != 20 {
+		t.Errorf("expected targets[1] 1.1.0@20, got %s@%d", targets[1].version, targets[1].weight)
+	}
+}

@@ -1,0 +1,119 @@
+= Traffic Splitting & Canary Rollouts
+:description: Run multiple workflow versions side by side and shift traffic between them with LogicFlowService.
+
+`LogicFlowService` routes external HTTP traffic across multiple versions of the same workflow, enabling canary deployments and gradual rollouts. See xref:crd-reference/logicflowservice.adoc[the CRD reference] for the full field list.
+
+== Version Model
+
+Each workflow version is a separate `LogicFlowDefinition` that shares the same workflow `name` and `runtimeRef`, differing only by the `version` in its flow document.
+
+[source,yaml]
+----
+# v1
+spec:
+  flow:
+    document: { name: payment, version: "1.0.0" }
+---
+# v2
+spec:
+  flow:
+    document: { name: payment, version: "1.1.0" }
+----
+
+Each definition is published as its own ConfigMap and mounted into the runtime under a distinct directory, so versions never collide. All versions of a workflow run inside the *same* runtime pod pool.
+
+A `LogicFlowService` references these definitions and programs the ingress layer to rewrite each request to the version-specific path `/q/flow/exec/<namespace>/<name>/<version>`.
+
+== Routing Modes
+
+[cols="1,2,1", options="header"]
+|===
+| Mode | Trigger | Version support
+
+| nginx Ingress
+| `ingress.host` set, no `gatewayRef`
+| Up to 2 versions (canary)
+
+| Gateway API HTTPRoute
+| `ingress.gatewayRef` set
+| N versions (weighted)
+
+| OpenShift Route
+| OpenShift cluster, no `gatewayRef`
+| Single version only
+|===
+
+[NOTE]
+====
+Traffic splitting across 3 or more versions requires Gateway API (`gatewayRef`).
+On OpenShift, any traffic split requires `gatewayRef`; the native Route supports a single version.
+====
+
+=== Direct Version Access
+
+When traffic is split, the operator also exposes each version directly at `/v/<version>`, bypassing the weighted split. Use this for targeted testing of a specific version before shifting production traffic to it.
+
+== Canary Rollout Runbook
+
+The following sequence rolls `payment` from `1.0.0` to `1.1.0` using nginx.
+
+. *Serve v1.* Point the service at the current version with `defaultDefinition` (100% traffic, no canary).
++
+[source,yaml]
+----
+spec:
+  defaultDefinition:
+    name: payment-v1
+  ingress:
+    host: payments.example.com
+----
+
+. *Introduce the canary.* Switch to `traffic[]` and send a small slice to v2. The operator creates a canary Ingress (`<service>-canary`) and a direct-access Ingress (`<service>-direct`).
++
+[source,yaml]
+----
+spec:
+  traffic:
+  - definitionRef: { name: payment-v1 }
+    weight: 80
+  - definitionRef: { name: payment-v2 }
+    weight: 20
+  ingress:
+    host: payments.example.com
+----
+
+. *Promote.* Once v2 is validated, make it the default. The operator removes the canary and direct Ingresses automatically.
++
+[source,yaml]
+----
+spec:
+  defaultDefinition:
+    name: payment-v2
+  ingress:
+    host: payments.example.com
+----
+
+. *Decommission.* Delete the v1 `LogicFlowDefinition`. Its ConfigMap is garbage-collected and the runtime drops the version on its next reconcile.
++
+[source,bash]
+----
+kubectl delete logicflowdefinition payment-v1
+----
+
+[TIP]
+====
+Adjust the canary weight gradually (e.g. 20 → 50 → 80) by re-applying the service with new weights before promoting. Each change is a single `kubectl apply`.
+====
+
+== Constraints
+
+* Traffic weights must sum to 100.
+* All split targets must share the same workflow `name` and `runtimeRef`.
+* `ingress.gatewayRef` cannot be added or removed after creation; its name and namespace may still be updated.
+* nginx mode is limited to 2 traffic entries; use Gateway API for more.
+
+[NOTE]
+====
+The operator configures the routing objects (Ingress/Route/HTTPRoute) and their weights.
+The actual request distribution is enforced by the ingress controller, not the operator.
+====

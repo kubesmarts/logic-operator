@@ -339,3 +339,269 @@ spec:
 		})
 	})
 }
+
+// Multi-version rollout fixtures: two definitions of the same workflow ("payment")
+// sharing one runtime, differing only by version. This mirrors a real canary rollout.
+const (
+	mvRuntimeName = "e2e-mv-rt"
+	mvDefV1Name   = "e2e-mv-def-v1"
+	mvDefV2Name   = "e2e-mv-def-v2"
+)
+
+const mvRuntimeYAML = `apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowRuntime
+metadata:
+  name: e2e-mv-rt
+  namespace: %s
+spec: {}
+`
+
+// mvDefinitionYAML is parameterized by: name, namespace, version.
+const mvDefinitionYAML = `apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowDefinition
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  runtimeRef:
+    name: e2e-mv-rt
+  flow:
+    document:
+      dsl: "1.0.0"
+      namespace: payments
+      name: payment
+      version: "%s"
+    do:
+      - step1:
+          set:
+            result: ok
+`
+
+func logicFlowServiceMultiVersionTests() {
+	Context("LogicFlowService multi-version traffic splitting", Ordered, func() {
+		const svcName = "e2e-mv-svc"
+		const host = "payments-mv.example.com"
+
+		// rewritePath builds the expected rewrite-target for a given workflow version.
+		rewritePath := func(version string) string {
+			return "/q/flow/exec/" + namespace + "/payment/" + version
+		}
+
+		getAnnotation := func(g Gomega, kind, name, annotation string) string {
+			cmd := exec.Command("kubectl", "get", kind, name, "-n", namespace,
+				"-o", "jsonpath={.metadata.annotations."+annotation+"}")
+			output, err := utils.Run(cmd)
+			g.Expect(err).NotTo(HaveOccurred())
+			return output
+		}
+
+		BeforeAll(func() {
+			By("creating the shared LogicFlowRuntime")
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(fmt.Sprintf(mvRuntimeYAML, namespace))
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create LogicFlowRuntime")
+
+			By("waiting for the runtime to be ready")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "logicflowruntime",
+					mvRuntimeName, "-n", namespace, "-o", "jsonpath={.status.phase}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("Ready"))
+			}, 3*time.Minute).Should(Succeed())
+
+			By("creating the v1.0.0 definition")
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(fmt.Sprintf(mvDefinitionYAML, mvDefV1Name, namespace, "1.0.0"))
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create v1 LogicFlowDefinition")
+
+			By("creating the v1.1.0 definition")
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(fmt.Sprintf(mvDefinitionYAML, mvDefV2Name, namespace, "1.1.0"))
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create v2 LogicFlowDefinition")
+		})
+
+		AfterAll(func() {
+			for _, name := range []string{svcName} {
+				cmd := exec.Command("kubectl", "delete", "logicflowservice",
+					name, "-n", namespace, "--ignore-not-found")
+				_, _ = utils.Run(cmd)
+			}
+			for _, name := range []string{mvDefV1Name, mvDefV2Name} {
+				cmd := exec.Command("kubectl", "delete", "logicflowdefinition",
+					name, "-n", namespace, "--ignore-not-found")
+				_, _ = utils.Run(cmd)
+			}
+			cmd := exec.Command("kubectl", "delete", "logicflowruntime",
+				mvRuntimeName, "-n", namespace, "--ignore-not-found")
+			_, _ = utils.Run(cmd)
+		})
+
+		It("should serve v1 only when configured as the default definition", func() {
+			svcYAML := `apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowService
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  defaultDefinition:
+    name: %s
+  ingress:
+    host: %s`
+
+			By("creating the service pointing at v1")
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(fmt.Sprintf(svcYAML, svcName, namespace, mvDefV1Name, host))
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create LogicFlowService")
+
+			By("verifying the primary Ingress rewrites to v1.0.0")
+			Eventually(func(g Gomega) {
+				g.Expect(getAnnotation(g, "ingress", svcName,
+					`nginx\.ingress\.kubernetes\.io/rewrite-target`)).To(Equal(rewritePath("1.0.0")))
+			}).Should(Succeed())
+
+			By("verifying no canary Ingress exists")
+			Consistently(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "ingress", svcName+"-canary", "-n", namespace)
+				_, err := utils.Run(cmd)
+				g.Expect(err).To(HaveOccurred(), "canary Ingress should not exist for a default definition")
+			}, 5*time.Second).Should(Succeed())
+		})
+
+		It("should create a canary Ingress when v2 is introduced at 20%", func() {
+			svcYAML := `apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowService
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  traffic:
+    - definitionRef:
+        name: %s
+      weight: 80
+    - definitionRef:
+        name: %s
+      weight: 20
+  ingress:
+    host: %s`
+
+			By("updating the service to split traffic 80/20 (v1/v2)")
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(fmt.Sprintf(svcYAML, svcName, namespace, mvDefV1Name, mvDefV2Name, host))
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to update LogicFlowService for canary")
+
+			By("verifying the primary Ingress still rewrites to v1.0.0 (higher weight)")
+			Eventually(func(g Gomega) {
+				g.Expect(getAnnotation(g, "ingress", svcName,
+					`nginx\.ingress\.kubernetes\.io/rewrite-target`)).To(Equal(rewritePath("1.0.0")))
+			}).Should(Succeed())
+
+			By("verifying the canary Ingress rewrites to v1.1.0 with 20% weight")
+			Eventually(func(g Gomega) {
+				g.Expect(getAnnotation(g, "ingress", svcName+"-canary",
+					`nginx\.ingress\.kubernetes\.io/canary`)).To(Equal("true"))
+				g.Expect(getAnnotation(g, "ingress", svcName+"-canary",
+					`nginx\.ingress\.kubernetes\.io/canary-weight`)).To(Equal("20"))
+				g.Expect(getAnnotation(g, "ingress", svcName+"-canary",
+					`nginx\.ingress\.kubernetes\.io/rewrite-target`)).To(Equal(rewritePath("1.1.0")))
+			}).Should(Succeed())
+
+			By("verifying the direct-version Ingress uses a regex path")
+			Eventually(func(g Gomega) {
+				g.Expect(getAnnotation(g, "ingress", svcName+"-direct",
+					`nginx\.ingress\.kubernetes\.io/use-regex`)).To(Equal("true"))
+				cmd := exec.Command("kubectl", "get", "ingress", svcName+"-direct", "-n", namespace,
+					"-o", "jsonpath={.spec.rules[0].http.paths[0].path}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("/v/(.+)"))
+			}).Should(Succeed())
+
+			By("verifying status reflects the 80/20 split")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "logicflowservice", svcName, "-n", namespace,
+					"-o", "jsonpath={.status.traffic[*].weight}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("80 20"))
+			}).Should(Succeed())
+		})
+
+		It("should remove canary Ingresses when v2 is promoted to default", func() {
+			svcYAML := `apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowService
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  defaultDefinition:
+    name: %s
+  ingress:
+    host: %s`
+
+			By("promoting v2 to the default definition")
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(fmt.Sprintf(svcYAML, svcName, namespace, mvDefV2Name, host))
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to promote v2")
+
+			By("verifying the primary Ingress now rewrites to v1.1.0")
+			Eventually(func(g Gomega) {
+				g.Expect(getAnnotation(g, "ingress", svcName,
+					`nginx\.ingress\.kubernetes\.io/rewrite-target`)).To(Equal(rewritePath("1.1.0")))
+			}).Should(Succeed())
+
+			By("verifying the canary and direct Ingresses are cleaned up")
+			Eventually(func(g Gomega) {
+				for _, suffix := range []string{"-canary", "-direct"} {
+					cmd := exec.Command("kubectl", "get", "ingress", svcName+suffix, "-n", namespace)
+					_, err := utils.Run(cmd)
+					g.Expect(err).To(HaveOccurred(), "Ingress %s should be deleted after promotion", svcName+suffix)
+				}
+			}, 30*time.Second, 1*time.Second).Should(Succeed())
+		})
+
+		It("should keep serving v2 after v1 is decommissioned", func() {
+			By("deleting the v1 definition")
+			cmd := exec.Command("kubectl", "delete", "logicflowdefinition",
+				mvDefV1Name, "-n", namespace, "--wait=true", "--timeout=60s")
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying the v1 ConfigMap is garbage collected")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "configmap", "lfd-"+mvDefV1Name, "-n", namespace)
+				_, err := utils.Run(cmd)
+				g.Expect(err).To(HaveOccurred(), "v1 ConfigMap should be garbage collected")
+			}).Should(Succeed())
+
+			By("verifying the service still rewrites to v1.1.0")
+			Consistently(func(g Gomega) {
+				g.Expect(getAnnotation(g, "ingress", svcName,
+					`nginx\.ingress\.kubernetes\.io/rewrite-target`)).To(Equal(rewritePath("1.1.0")))
+			}, 5*time.Second, 1*time.Second).Should(Succeed())
+
+			By("verifying v2 endpoint is reachable and loaded")
+			// Check that the v2 ConfigMap exists in the runtime (proves v2 is mounted)
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "configmap", "lfd-"+mvDefV2Name, "-n", namespace)
+				_, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred(), "v2 ConfigMap should exist after v1 decommission")
+			}).Should(Succeed())
+
+			By("verifying runtime still has v2 definition loaded")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "logicflowruntime", mvRuntimeName, "-n", namespace,
+					"-o", "jsonpath={.status.definitions[?(@.version=='1.1.0')].name}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("payment"), "runtime should have v1.1.0 definition loaded")
+			}).Should(Succeed())
+		})
+	})
+}
