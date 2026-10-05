@@ -1,0 +1,9 @@
+.git
+.gitignore
+.idea
+.DS_Store
+vendor
+bin
+dist
+*.test
+go.sum.bak

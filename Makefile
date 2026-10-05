@@ -35,6 +35,10 @@ IMAGE_TAG_BASE ?= kubesmarts.org/logic-operator
 # You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)
 BUNDLE_IMG ?= $(IMAGE_TAG_BASE)-bundle:v$(VERSION)
 
+# Workflow Gateway image configuration
+GATEWAY_IMAGE_TAG_BASE ?= kubesmarts.org/workflow-gateway
+GATEWAY_IMG ?= $(GATEWAY_IMAGE_TAG_BASE):v$(VERSION)
+
 # BUNDLE_GEN_FLAGS are the flags passed to the operator-sdk generate bundle command
 BUNDLE_GEN_FLAGS ?= -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 
@@ -308,6 +312,11 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 build: manifests generate fmt vet ## Build manager binary.
 	go build -o bin/manager cmd/main.go
 
+.PHONY: build-gateway
+build-gateway: ## Build workflow gateway binary.
+	mkdir -p bin
+	cd workflow-gateway && CGO_ENABLED=0 go build -a -o ../bin/workflow-gateway cmd/main.go
+
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./cmd/main.go
@@ -322,6 +331,14 @@ docker-build: ## Build docker image with the manager.
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
 	$(CONTAINER_TOOL) push ${IMG}
+
+.PHONY: docker-build-gateway
+docker-build-gateway: ## Build docker image with the workflow gateway.
+	cd workflow-gateway && $(CONTAINER_TOOL) build -t ${GATEWAY_IMG} .
+
+.PHONY: docker-push-gateway
+docker-push-gateway: ## Push docker image with the workflow gateway.
+	$(CONTAINER_TOOL) push ${GATEWAY_IMG}
 
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
