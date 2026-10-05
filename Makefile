@@ -35,6 +35,10 @@ IMAGE_TAG_BASE ?= kubesmarts.org/logic-operator
 # You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)
 BUNDLE_IMG ?= $(IMAGE_TAG_BASE)-bundle:v$(VERSION)
 
+# Workflow Gateway image configuration
+GATEWAY_IMAGE_TAG_BASE ?= kubesmarts.org/workflow-gateway
+GATEWAY_IMG ?= $(GATEWAY_IMAGE_TAG_BASE):v$(VERSION)
+
 # BUNDLE_GEN_FLAGS are the flags passed to the operator-sdk generate bundle command
 BUNDLE_GEN_FLAGS ?= -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 
@@ -103,14 +107,17 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 .PHONY: fmt
 fmt: ## Run go fmt against code.
 	go fmt ./...
+	cd workflow-gateway && go fmt ./...
 
 .PHONY: vet
 vet: ## Run go vet against code.
 	go vet ./...
+	cd workflow-gateway && go vet ./...
 
 .PHONY: test
 test: manifests generate fmt vet setup-envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+	cd workflow-gateway && go test -v ./... -coverprofile ../cover-gateway.out
 
 ##@ E2E Tests
 #
@@ -293,20 +300,28 @@ kind-delete: ## Delete the KIND development cluster.
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
 	$(GOLANGCI_LINT) run
+	cd workflow-gateway && $(GOLANGCI_LINT) run
 
 .PHONY: lint-fix
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 	$(GOLANGCI_LINT) run --fix
+	cd workflow-gateway && $(GOLANGCI_LINT) run --fix
 
 .PHONY: lint-config
 lint-config: golangci-lint ## Verify golangci-lint linter configuration
 	$(GOLANGCI_LINT) config verify
+	cd workflow-gateway && $(GOLANGCI_LINT) config verify
 
 ##@ Build
 
 .PHONY: build
 build: manifests generate fmt vet ## Build manager binary.
 	go build -o bin/manager cmd/main.go
+
+.PHONY: build-gateway
+build-gateway: ## Build workflow gateway binary.
+	mkdir -p bin
+	cd workflow-gateway && CGO_ENABLED=0 go build -a -o ../bin/workflow-gateway cmd/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
@@ -322,6 +337,14 @@ docker-build: ## Build docker image with the manager.
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
 	$(CONTAINER_TOOL) push ${IMG}
+
+.PHONY: docker-build-gateway
+docker-build-gateway: ## Build docker image with the workflow gateway.
+	$(CONTAINER_TOOL) build -t ${GATEWAY_IMG} -f workflow-gateway/Dockerfile workflow-gateway
+
+.PHONY: docker-push-gateway
+docker-push-gateway: ## Push docker image with the workflow gateway.
+	$(CONTAINER_TOOL) push ${GATEWAY_IMG}
 
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
@@ -339,6 +362,16 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
 	- $(CONTAINER_TOOL) buildx rm logic-operator-builder
 	rm Dockerfile.cross
+
+.PHONY: docker-buildx-gateway
+docker-buildx-gateway: ## Build and push docker image for the workflow gateway for cross-platform support
+	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
+	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' workflow-gateway/Dockerfile > workflow-gateway/Dockerfile.cross
+	- $(CONTAINER_TOOL) buildx create --name logic-operator-gateway-builder
+	$(CONTAINER_TOOL) buildx use logic-operator-gateway-builder
+	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${GATEWAY_IMG} -f workflow-gateway/Dockerfile.cross workflow-gateway
+	- $(CONTAINER_TOOL) buildx rm logic-operator-gateway-builder
+	rm workflow-gateway/Dockerfile.cross
 
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.

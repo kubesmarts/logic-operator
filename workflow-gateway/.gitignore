@@ -1,0 +1,25 @@
+# Binaries
+main
+gateway
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Build directories
+bin/
+dist/
+
+# Test coverage
+*.out
+*.test
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+.env.local
