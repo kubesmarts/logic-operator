@@ -363,6 +363,16 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 	- $(CONTAINER_TOOL) buildx rm logic-operator-builder
 	rm Dockerfile.cross
 
+.PHONY: docker-buildx-gateway
+docker-buildx-gateway: ## Build and push docker image for the workflow gateway for cross-platform support
+	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
+	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' workflow-gateway/Dockerfile > workflow-gateway/Dockerfile.cross
+	- $(CONTAINER_TOOL) buildx create --name logic-operator-gateway-builder
+	$(CONTAINER_TOOL) buildx use logic-operator-gateway-builder
+	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${GATEWAY_IMG} -f workflow-gateway/Dockerfile.cross workflow-gateway
+	- $(CONTAINER_TOOL) buildx rm logic-operator-gateway-builder
+	rm workflow-gateway/Dockerfile.cross
+
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist

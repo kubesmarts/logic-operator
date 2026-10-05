@@ -2,13 +2,13 @@ package server
 
 import "net/http"
 
-func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) healthHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
-func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) readyHandler(w http.ResponseWriter, _ *http.Request) {
 	if !s.IsReady() {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
