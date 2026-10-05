@@ -29,16 +29,17 @@ curl http://localhost:8080/ready     # Readiness probe
 
 ## Configuration
 
-The gateway accepts configuration via `ServerConfig`. Currently supported configuration:
+The gateway accepts configuration via `server.Config`. Currently supported configuration:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
+| Field | Default | Description |
+|-------|---------|-------------|
 | Addr | `:8080` | HTTP server bind address |
 | ReadTimeout | `15s` | HTTP request read timeout |
 | WriteTimeout | `15s` | HTTP response write timeout |
 | IdleTimeout | `60s` | HTTP connection idle timeout |
+| ShutdownTimeout | `30s` | Graceful shutdown timeout |
 
-Configuration can be overridden in `cmd/main.go` by modifying the `ServerConfig` struct.
+Configuration can be overridden in `cmd/main.go` by modifying the `server.Config` struct.
 
 ## Testing
 
@@ -117,7 +118,7 @@ curl http://localhost:8080/ready
 
 See [ADR-0002: Workflow Gateway Architecture](https://github.com/kubesmarts/logic-apps/blob/main/adrs/0002-workflow-gateway-architecture.md) for the complete architecture and routing strategy.
 
-This phase (Phase 1) establishes the HTTP server scaffold. Future phases will add:
+This phase (Phase 2 of ADR-0002) establishes the HTTP server scaffold. Future phases will add:
 - Workflow instance routing (two-level routing strategy)
 - CRD watching for LogicFlowRuntime discovery
 - Data-Index integration for instance status queries

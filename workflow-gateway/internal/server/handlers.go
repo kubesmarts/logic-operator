@@ -9,7 +9,7 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
-	if !s.ready {
+	if !s.IsReady() {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = w.Write([]byte(`{"status":"not ready"}`))

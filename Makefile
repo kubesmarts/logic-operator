@@ -107,14 +107,17 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 .PHONY: fmt
 fmt: ## Run go fmt against code.
 	go fmt ./...
+	cd workflow-gateway && go fmt ./...
 
 .PHONY: vet
 vet: ## Run go vet against code.
 	go vet ./...
+	cd workflow-gateway && go vet ./...
 
 .PHONY: test
 test: manifests generate fmt vet setup-envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+	cd workflow-gateway && go test -v ./... -coverprofile ../cover-gateway.out
 
 ##@ E2E Tests
 #
@@ -297,14 +300,17 @@ kind-delete: ## Delete the KIND development cluster.
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
 	$(GOLANGCI_LINT) run
+	cd workflow-gateway && $(GOLANGCI_LINT) run
 
 .PHONY: lint-fix
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 	$(GOLANGCI_LINT) run --fix
+	cd workflow-gateway && $(GOLANGCI_LINT) run --fix
 
 .PHONY: lint-config
 lint-config: golangci-lint ## Verify golangci-lint linter configuration
 	$(GOLANGCI_LINT) config verify
+	cd workflow-gateway && $(GOLANGCI_LINT) config verify
 
 ##@ Build
 
@@ -334,7 +340,7 @@ docker-push: ## Push docker image with the manager.
 
 .PHONY: docker-build-gateway
 docker-build-gateway: ## Build docker image with the workflow gateway.
-	cd workflow-gateway && $(CONTAINER_TOOL) build -t ${GATEWAY_IMG} .
+	$(CONTAINER_TOOL) build -t ${GATEWAY_IMG} -f workflow-gateway/Dockerfile workflow-gateway
 
 .PHONY: docker-push-gateway
 docker-push-gateway: ## Push docker image with the workflow gateway.
