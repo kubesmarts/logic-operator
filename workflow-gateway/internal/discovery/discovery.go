@@ -25,6 +25,7 @@ type Discovery struct {
 	synced        bool
 	debounceTimer *time.Timer
 	debounceMu    sync.Mutex
+	recomputeMu   sync.Mutex // Serializes recomputes to prevent stale results from overwriting newer ones
 	ctx           context.Context
 }
 
@@ -141,7 +142,12 @@ func (d *Discovery) scheduleRecompute() {
 
 // doRecompute rebuilds the routing table from cache state. Services drive the
 // join; each referenced Definition is resolved from the (spec-stripped) cache.
+// Serialized by recomputeMu to prevent overlapping debounce callbacks from
+// overwriting newer routes with stale results.
 func (d *Discovery) doRecompute(ctx context.Context) {
+	d.recomputeMu.Lock()
+	defer d.recomputeMu.Unlock()
+
 	if d.cache == nil {
 		return
 	}
