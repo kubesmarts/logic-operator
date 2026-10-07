@@ -95,16 +95,18 @@ func main() {
 		}
 	}()
 
-	// Wait for discovery cache sync before marking ready
+	// Wait for discovery cache sync before marking ready. Startup fails if sync
+	// does not complete, ensuring the routing table is populated before the
+	// gateway advertises readiness.
 	discCtx, discCancel := context.WithTimeout(ctx, 30*time.Second)
-	ready := disc.WaitForCacheSync(discCtx)
+	if !disc.WaitForCacheSync(discCtx) {
+		discCancel()
+		setupLog.Error(nil, "cache sync timeout: gateway requires a synced routing table to serve requests")
+		os.Exit(1)
+	}
 	discCancel()
 
-	if ready {
-		setupLog.Info("workflow gateway ready")
-	} else {
-		setupLog.Info("cache sync timed out; serving with the routes discovered so far")
-	}
+	setupLog.Info("workflow gateway ready; cache synchronized")
 	srv.SetReady(true)
 
 	// Wait for shutdown signal

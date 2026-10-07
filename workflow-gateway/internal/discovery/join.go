@@ -53,6 +53,17 @@ func buildRoutes(
 				continue
 			}
 
+			// Reject ambiguous routes: if two Services reference the same Definition,
+			// the route is non-deterministic (which Service URL wins depends on cache
+			// list ordering, which is not guaranteed stable).
+			if existing, isDuplicate := routes[key]; isDuplicate && existing != svc.Status.URL {
+				errs = append(errs, fmt.Errorf(
+					"duplicate workflow key %v: service %s/%s would overwrite existing route to %s with %s",
+					key, svc.Namespace, svc.Name, existing, svc.Status.URL,
+				))
+				continue
+			}
+
 			routes[key] = svc.Status.URL
 		}
 	}

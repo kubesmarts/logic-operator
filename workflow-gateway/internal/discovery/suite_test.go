@@ -140,8 +140,7 @@ func TestEnvtestJoinBuildsRoute(t *testing.T) {
 	if testCfg == nil {
 		t.Skip("envtest unavailable; run 'make test-gateway'")
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	c := newTestClient(t)
 	require.NoError(t, c.Create(ctx, newDefinition("default", "def-a", "acme", "workflow1", "v1")))
@@ -164,8 +163,7 @@ func TestEnvtestReactsToCreateAndDelete(t *testing.T) {
 	if testCfg == nil {
 		t.Skip("envtest unavailable; run 'make test-gateway'")
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	c := newTestClient(t)
 	_, store := startDiscovery(ctx, t)
@@ -195,8 +193,7 @@ func TestEnvtestCacheStripsDefinitionSpec(t *testing.T) {
 	if testCfg == nil {
 		t.Skip("envtest unavailable; run 'make test-gateway'")
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	c := newTestClient(t)
 	require.NoError(t, c.Create(ctx, newDefinition("default", "def-c", "acme", "billing", "v1")))

@@ -51,3 +51,16 @@ func TestValidateExternalURLRejectsSingleLabelHost(t *testing.T) {
 		assert.Error(t, err, "should reject in-cluster short form %s", raw)
 	}
 }
+
+func TestValidateExternalURLRejectsServiceDNSWithTrailingDot(t *testing.T) {
+	// FQDNs may end with a root dot. Ensure we still reject cluster-internal
+	// hostnames even with a trailing dot.
+	tests := []string{
+		"http://hello.default.svc.cluster.local.",
+		"https://hello.default.svc.",
+	}
+	for _, raw := range tests {
+		err := ValidateExternalURL(raw)
+		assert.Error(t, err, "should reject cluster-internal DNS even with trailing dot: %s", raw)
+	}
+}

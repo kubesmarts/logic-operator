@@ -69,12 +69,14 @@ func (d *Discovery) Start(ctx context.Context) error {
 		return fmt.Errorf("cache sync failed")
 	}
 
+	// Initial recompute once the cache is populated, before marking ready.
+	// This ensures WaitForCacheSync() does not return until the routing table
+	// is actually populated.
+	d.doRecompute(ctx)
+
 	d.syncedMu.Lock()
 	d.synced = true
 	d.syncedMu.Unlock()
-
-	// Initial recompute once the cache is populated.
-	d.doRecompute(ctx)
 
 	<-ctx.Done()
 	return ctx.Err()

@@ -71,3 +71,19 @@ func TestConcurrentLookupAndReplace(_ *testing.T) {
 	}
 	// If race detector enabled, this test will catch data races
 }
+
+func TestReplaceMakesDefensiveCopy(t *testing.T) {
+	s := NewRouteStore()
+	key := WorkflowKey{Namespace: "ns", Name: "wf", Version: "v1"}
+	original := map[WorkflowKey]string{key: "https://original.example.com"}
+
+	s.Replace(original)
+
+	// Mutate the original map after Replace.
+	original[key] = "https://mutated.example.com"
+
+	// Lookup should return the original value, not the mutated one.
+	url, ok := s.Lookup(key)
+	assert.True(t, ok)
+	assert.Equal(t, "https://original.example.com", url, "Replace should have copied the map")
+}

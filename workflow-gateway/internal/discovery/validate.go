@@ -32,8 +32,11 @@ func ValidateExternalURL(raw string) error {
 		return fmt.Errorf("empty host")
 	}
 
-	// Normalize to lowercase for comparison.
+	// Normalize to lowercase and strip trailing root dot. A valid FQDN may end with
+	// a root dot (e.g., "hello.default.svc.cluster.local."). Strip it before
+	// validation so the suffix checks don't miss cluster-internal hostnames.
 	hostLower := strings.ToLower(host)
+	hostLower = strings.TrimSuffix(hostLower, ".")
 
 	// Reject cluster-internal Service DNS (name.namespace.svc[.cluster.local]).
 	// The ".svc" suffix already covers the bare name.namespace.svc form.

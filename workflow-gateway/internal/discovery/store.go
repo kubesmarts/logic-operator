@@ -67,9 +67,14 @@ func (s *RouteStore) Snapshot() []Route {
 	return result
 }
 
-// Replace atomically swaps the entire routing map.
+// Replace atomically swaps the entire routing map. The input is copied so that
+// the caller cannot bypass the lock by mutating the map after return.
 func (s *RouteStore) Replace(routes map[WorkflowKey]string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.routes = routes
+	// Defensive copy: prevent caller from mutating the stored map outside the lock.
+	s.routes = make(map[WorkflowKey]string, len(routes))
+	for k, v := range routes {
+		s.routes[k] = v
+	}
 }

@@ -193,3 +193,36 @@ func TestBuildRoutesEmptyInput(t *testing.T) {
 	assert.Empty(t, errs)
 	assert.Empty(t, routes)
 }
+
+func TestBuildRoutesDuplicateKeyRejectedWhenURLsDiffer(t *testing.T) {
+	// Two Services that both reference the same Definition with different URLs.
+	// This is ambiguous because cache list ordering is not stable across recomputes.
+	services := []logicv1.LogicFlowService{
+		{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "svc1"},
+			Spec: logicv1.LogicFlowServiceSpec{
+				DefaultDefinition: &corev1.LocalObjectReference{Name: "shared-def"},
+			},
+			Status: logicv1.LogicFlowServiceStatus{URL: "https://url1.example.com"},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "svc2"},
+			Spec: logicv1.LogicFlowServiceSpec{
+				DefaultDefinition: &corev1.LocalObjectReference{Name: "shared-def"},
+			},
+			Status: logicv1.LogicFlowServiceStatus{URL: "https://url2.example.com"},
+		},
+	}
+
+	defs := map[string]*logicv1.LogicFlowDefinition{
+		"default/shared-def": definitionWithLabels("default", "shared-def", "acme", "workflow1", "v1"),
+	}
+
+	routes, errs := buildRoutes(services, resolverFrom(defs))
+
+	// The second service's conflicting URL should be rejected with an error.
+	assert.Len(t, errs, 1, "should have one error for the conflicting route")
+	// The first service's route should be accepted; the second rejected.
+	assert.Len(t, routes, 1)
+	assert.Equal(t, "https://url1.example.com", routes[WorkflowKey{Namespace: "acme", Name: "workflow1", Version: "v1"}])
+}
