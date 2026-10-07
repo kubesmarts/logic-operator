@@ -2,12 +2,15 @@ package server
 
 import (
 	"context"
-	"fmt"
+	"encoding/json"
 	"net/http"
 	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/discovery"
 )
 
 type Config struct {
@@ -33,13 +36,15 @@ type Server struct {
 	router *chi.Mux
 	ready  atomic.Bool
 	server *http.Server
+	store  *discovery.RouteStore
 }
 
-func New(config Config) *Server {
+func New(config Config, store *discovery.RouteStore) *Server {
 	router := chi.NewRouter()
 	s := &Server{
 		config: config,
 		router: router,
+		store:  store,
 	}
 	s.registerRoutes()
 	return s
@@ -48,6 +53,30 @@ func New(config Config) *Server {
 func (s *Server) registerRoutes() {
 	s.router.Get("/health", s.healthHandler)
 	s.router.Get("/ready", s.readyHandler)
+	s.router.Get("/debug/routes", s.debugRoutesHandler)
+}
+
+func (s *Server) healthHandler(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func (s *Server) readyHandler(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if !s.IsReady() {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "not ready"})
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+}
+
+func (s *Server) debugRoutesHandler(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	snapshot := s.store.Snapshot()
+	_ = json.NewEncoder(w).Encode(snapshot)
 }
 
 func (s *Server) Start() error {
@@ -59,7 +88,7 @@ func (s *Server) Start() error {
 		IdleTimeout:  s.config.IdleTimeout,
 	}
 
-	fmt.Printf("Starting workflow gateway server on %s\n", s.config.Addr)
+	logf.Log.WithName("server").Info("starting workflow gateway server", "addr", s.config.Addr)
 	return s.server.ListenAndServe()
 }
 
