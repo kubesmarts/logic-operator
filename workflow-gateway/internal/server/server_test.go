@@ -4,10 +4,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/discovery"
 )
 
 func TestServerRoutes(t *testing.T) {
-	s := New(DefaultConfig())
+	store := discovery.NewRouteStore()
+	s := New(DefaultConfig(), store)
 	s.SetReady(true)
 
 	tests := []struct {

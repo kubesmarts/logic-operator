@@ -3,14 +3,18 @@ ARG TARGETOS
 ARG TARGETARCH
 
 WORKDIR /workspace
-COPY go.mod go.mod
-COPY go.sum go.sum
+COPY go.mod go.sum ./
+COPY workflow-gateway/go.mod workflow-gateway/go.mod
+COPY workflow-gateway/go.sum workflow-gateway/go.sum
+COPY api/ api/
+COPY utils/ utils/
+WORKDIR /workspace/workflow-gateway
 RUN go mod download
 
-COPY cmd/ cmd/
-COPY internal/ internal/
+COPY workflow-gateway/cmd/ cmd/
+COPY workflow-gateway/internal/ internal/
 
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o gateway cmd/main.go
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o /workspace/gateway ./cmd
 
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /

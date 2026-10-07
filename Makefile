@@ -117,7 +117,7 @@ vet: ## Run go vet against code.
 .PHONY: test
 test: manifests generate fmt vet setup-envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
-	cd workflow-gateway && go test -v ./... -coverprofile ../cover-gateway.out
+	cd workflow-gateway && KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test -v ./... -coverprofile ../cover-gateway.out
 
 ##@ E2E Tests
 #
@@ -340,7 +340,7 @@ docker-push: ## Push docker image with the manager.
 
 .PHONY: docker-build-gateway
 docker-build-gateway: ## Build docker image with the workflow gateway.
-	$(CONTAINER_TOOL) build -t ${GATEWAY_IMG} -f workflow-gateway/Dockerfile workflow-gateway
+	$(CONTAINER_TOOL) build -t ${GATEWAY_IMG} -f workflow-gateway/Dockerfile .
 
 .PHONY: docker-push-gateway
 docker-push-gateway: ## Push docker image with the workflow gateway.
@@ -369,7 +369,7 @@ docker-buildx-gateway: ## Build and push docker image for the workflow gateway f
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' workflow-gateway/Dockerfile > workflow-gateway/Dockerfile.cross
 	- $(CONTAINER_TOOL) buildx create --name logic-operator-gateway-builder
 	$(CONTAINER_TOOL) buildx use logic-operator-gateway-builder
-	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${GATEWAY_IMG} -f workflow-gateway/Dockerfile.cross workflow-gateway
+	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${GATEWAY_IMG} -f workflow-gateway/Dockerfile.cross .
 	- $(CONTAINER_TOOL) buildx rm logic-operator-gateway-builder
 	rm workflow-gateway/Dockerfile.cross
 

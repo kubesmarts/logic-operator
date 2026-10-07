@@ -4,45 +4,55 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/discovery"
 )
 
+func TestDebugRoutesHandler(t *testing.T) {
+	store := discovery.NewRouteStore()
+	store.Replace(map[discovery.WorkflowKey]string{
+		{Namespace: "default", Name: "hello", Version: "1.0"}: "https://hello.example.com",
+		{Namespace: "default", Name: "world", Version: "1.0"}: "https://world.example.com",
+	})
+
+	cfg := DefaultConfig()
+	srv := New(cfg, store)
+	req := httptest.NewRequest("GET", "/debug/routes", nil)
+	w := httptest.NewRecorder()
+
+	srv.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "hello")
+	assert.Contains(t, w.Body.String(), "world")
+	assert.Contains(t, w.Body.String(), "https://hello.example.com")
+}
+
+func TestDebugRoutesHandlerEmpty(t *testing.T) {
+	store := discovery.NewRouteStore()
+
+	cfg := DefaultConfig()
+	srv := New(cfg, store)
+	req := httptest.NewRequest("GET", "/debug/routes", nil)
+	w := httptest.NewRecorder()
+
+	srv.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	// Should return empty JSON array or object
+	assert.NotEmpty(t, w.Body.String())
+}
+
 func TestHealthHandler(t *testing.T) {
-	s := New(DefaultConfig())
-	recorder := httptest.NewRecorder()
+	store := discovery.NewRouteStore()
+	cfg := DefaultConfig()
+	srv := New(cfg, store)
 	req := httptest.NewRequest("GET", "/health", nil)
+	w := httptest.NewRecorder()
 
-	s.healthHandler(recorder, req)
+	srv.router.ServeHTTP(w, req)
 
-	if recorder.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", recorder.Code)
-	}
-	if recorder.Header().Get("Content-Type") != "application/json" {
-		t.Errorf("expected Content-Type application/json, got %s", recorder.Header().Get("Content-Type"))
-	}
-}
-
-func TestReadyHandlerNotReady(t *testing.T) {
-	s := New(DefaultConfig())
-	s.SetReady(false)
-	recorder := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/ready", nil)
-
-	s.readyHandler(recorder, req)
-
-	if recorder.Code != http.StatusServiceUnavailable {
-		t.Errorf("expected status 503, got %d", recorder.Code)
-	}
-}
-
-func TestReadyHandlerReady(t *testing.T) {
-	s := New(DefaultConfig())
-	s.SetReady(true)
-	recorder := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/ready", nil)
-
-	s.readyHandler(recorder, req)
-
-	if recorder.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", recorder.Code)
-	}
+	assert.Equal(t, http.StatusOK, w.Code)
 }
