@@ -223,3 +223,7 @@ func (d *Discovery) WaitForCacheSync(ctx context.Context) bool {
 func (d *Discovery) GetRouteStore() *RouteStore {
 	return d.store
 }
+
+func (d *Discovery) FetchDefinition(ctx context.Context, ns, name, version string) error {
+	return nil
+}
