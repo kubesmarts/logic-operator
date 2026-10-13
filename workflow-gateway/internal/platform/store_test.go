@@ -25,7 +25,7 @@ func TestPlatformStore_EndpointLifecycle(t *testing.T) {
 	}
 }
 
-func TestPlatformStore_ConcurrentAccess(t *testing.T) {
+func TestPlatformStore_ConcurrentAccess(_ *testing.T) {
 	s := platform.NewPlatformStore()
 	done := make(chan struct{})
 	go func() {

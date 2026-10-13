@@ -71,7 +71,7 @@ func (c *Client) post(ctx context.Context, endpoint string, req gqlRequest) (*gq
 	if err != nil {
 		return nil, fmt.Errorf("data index unreachable: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var gqlResp gqlResponse
 	if err := json.NewDecoder(resp.Body).Decode(&gqlResp); err != nil {

@@ -37,9 +37,9 @@ func TestServerRoutes(t *testing.T) {
 	}
 }
 
-func newServerWithMockDI(t *testing.T, diResponse any) (*Server, *httptest.Server) {
+func newServerWithMockDI(t *testing.T, diResponse any) *Server {
 	t.Helper()
-	diSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	diSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(diResponse)
 	}))
@@ -49,7 +49,7 @@ func newServerWithMockDI(t *testing.T, diResponse any) (*Server, *httptest.Serve
 	pStore.SetEndpoint(diSrv.URL)
 	c := dataindex.NewClient(pStore)
 	s := New(DefaultConfig(), discovery.NewRouteStore(), c)
-	return s, diSrv
+	return s
 }
 
 func TestListInstancesHandler_EndpointNotDiscovered(t *testing.T) {
@@ -67,7 +67,7 @@ func TestListInstancesHandler_EndpointNotDiscovered(t *testing.T) {
 }
 
 func TestListInstancesHandler_Returns200(t *testing.T) {
-	s, _ := newServerWithMockDI(t, map[string]any{
+	s := newServerWithMockDI(t, map[string]any{
 		"data": map[string]any{
 			"getWorkflowInstances": []map[string]any{
 				{"id": "i1", "namespace": "ns", "name": "wf", "version": "v1", "status": "RUNNING"},
@@ -92,7 +92,7 @@ func TestListInstancesHandler_Returns200(t *testing.T) {
 }
 
 func TestGetInstanceHandler_NotFound(t *testing.T) {
-	s, _ := newServerWithMockDI(t, map[string]any{
+	s := newServerWithMockDI(t, map[string]any{
 		"data": map[string]any{"getWorkflowInstance": nil},
 	})
 
@@ -106,7 +106,7 @@ func TestGetInstanceHandler_NotFound(t *testing.T) {
 }
 
 func TestGetInstanceHandler_Returns200(t *testing.T) {
-	s, _ := newServerWithMockDI(t, map[string]any{
+	s := newServerWithMockDI(t, map[string]any{
 		"data": map[string]any{
 			"getWorkflowInstance": map[string]any{
 				"id": "xyz", "namespace": "ns", "name": "wf",
