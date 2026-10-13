@@ -87,3 +87,41 @@ func TestReplaceMakesDefensiveCopy(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, "https://original.example.com", url, "Replace should have copied the map")
 }
+
+func TestLookupLatest_SingleVersion(t *testing.T) {
+	s := NewRouteStore()
+	s.Replace(map[WorkflowKey]string{
+		{Namespace: "demo", Name: "hello", Version: "1.0.0"}: "https://hello.example.com",
+	})
+	url, ok := s.LookupLatest("demo", "hello")
+	assert.True(t, ok)
+	assert.Equal(t, "https://hello.example.com", url)
+}
+
+func TestLookupLatest_MultipleVersions_ReturnsSameURL(t *testing.T) {
+	// All versions of a workflow share one LogicFlowService and therefore the
+	// same upstream URL. LookupLatest returns whichever it finds first.
+	s := NewRouteStore()
+	s.Replace(map[WorkflowKey]string{
+		{Namespace: "demo", Name: "hello", Version: "1.0.0"}: "https://hello.example.com",
+		{Namespace: "demo", Name: "hello", Version: "2.0.0"}: "https://hello.example.com",
+	})
+	url, ok := s.LookupLatest("demo", "hello")
+	assert.True(t, ok)
+	assert.Equal(t, "https://hello.example.com", url)
+}
+
+func TestLookupLatest_NotFound(t *testing.T) {
+	s := NewRouteStore()
+	_, ok := s.LookupLatest("demo", "missing")
+	assert.False(t, ok)
+}
+
+func TestLookupLatest_DifferentNamespace(t *testing.T) {
+	s := NewRouteStore()
+	s.Replace(map[WorkflowKey]string{
+		{Namespace: "prod", Name: "hello", Version: "1.0.0"}: "https://prod.example.com",
+	})
+	_, ok := s.LookupLatest("demo", "hello")
+	assert.False(t, ok)
+}

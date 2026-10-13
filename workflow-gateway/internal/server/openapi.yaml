@@ -1,0 +1,323 @@
+openapi: "3.0.3"
+info:
+  title: Logic Platform Workflow Gateway
+  description: >
+    Unified HTTP gateway for the KubeSmarts Logic Platform. Routes requests to
+    the CRD store (definitions), data-index (instances), or runtime ingress
+    (execution and operations).
+  version: v1
+
+servers:
+  - url: /v1
+    description: Workflow Gateway API v1
+
+paths:
+  /openapi.json:
+    get:
+      summary: Get this OpenAPI specification as JSON
+      operationId: getOpenAPISpec
+      tags: [Meta]
+      responses:
+        "200":
+          description: OpenAPI 3.0 spec
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /definitions:
+    get:
+      summary: List all workflow definitions
+      operationId: listDefinitions
+      tags: [Definitions]
+      responses:
+        "200":
+          description: Available workflow definitions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WorkflowDefinition"
+
+  /definitions/{namespace}/{name}/{version}:
+    get:
+      summary: Get a specific workflow definition (not yet implemented)
+      description: >
+        Returns the full flow document for a workflow version. Not implemented:
+        the gateway informer cache strips LogicFlowDefinition.Spec to reduce
+        memory footprint. A live Kubernetes API call is required; tracked as a
+        future issue.
+      operationId: getDefinition
+      tags: [Definitions]
+      parameters:
+        - $ref: "#/components/parameters/namespace"
+        - $ref: "#/components/parameters/name"
+        - $ref: "#/components/parameters/version"
+      responses:
+        "501":
+          description: Not implemented
+
+  /instances:
+    get:
+      summary: List workflow instances (not yet implemented)
+      description: >
+        Routes to data-index for instance queries. Not implemented in this
+        release; tracked as a future issue.
+      operationId: listInstances
+      tags: [Instances]
+      responses:
+        "501":
+          description: Not implemented
+
+  /instances/{id}:
+    get:
+      summary: Get a workflow instance (not yet implemented)
+      description: >
+        Routes to data-index for instance detail. Not implemented in this
+        release; tracked as a future issue.
+      operationId: getInstance
+      tags: [Instances]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Instance ID (ULID)
+          schema:
+            type: string
+      responses:
+        "501":
+          description: Not implemented
+
+  /runtime/{namespace}/{name}:
+    post:
+      summary: Execute workflow (latest version)
+      description: >
+        Resolves the workflow from the routing table and forwards to the
+        runtime ingress. Proxy forwarding is not yet implemented; returns 501
+        when the workflow is found.
+      operationId: executeWorkflow
+      tags: [Runtime]
+      parameters:
+        - $ref: "#/components/parameters/namespace"
+        - $ref: "#/components/parameters/name"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExecuteRequest"
+      responses:
+        "501":
+          description: Proxy not yet implemented
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /runtime/{namespace}/{name}/{version}:
+    post:
+      summary: Execute workflow (specific version)
+      description: >
+        Resolves the workflow version from the routing table and forwards to
+        the runtime ingress. Proxy forwarding is not yet implemented; returns
+        501 when the workflow is found.
+      operationId: executeWorkflowVersioned
+      tags: [Runtime]
+      parameters:
+        - $ref: "#/components/parameters/namespace"
+        - $ref: "#/components/parameters/name"
+        - $ref: "#/components/parameters/version"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExecuteRequest"
+      responses:
+        "501":
+          description: Proxy not yet implemented
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /runtime/{namespace}/{name}/instance/{id}/suspend:
+    post:
+      summary: Suspend a running instance (latest version)
+      operationId: suspendInstance
+      tags: [Runtime]
+      parameters:
+        - $ref: "#/components/parameters/namespace"
+        - $ref: "#/components/parameters/name"
+        - $ref: "#/components/parameters/instanceId"
+      responses:
+        "501":
+          description: Proxy not yet implemented
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /runtime/{namespace}/{name}/instance/{id}/resume:
+    post:
+      summary: Resume a suspended instance (latest version)
+      operationId: resumeInstance
+      tags: [Runtime]
+      parameters:
+        - $ref: "#/components/parameters/namespace"
+        - $ref: "#/components/parameters/name"
+        - $ref: "#/components/parameters/instanceId"
+      responses:
+        "501":
+          description: Proxy not yet implemented
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /runtime/{namespace}/{name}/instance/{id}/cancel:
+    post:
+      summary: Cancel an active instance (latest version)
+      operationId: cancelInstance
+      tags: [Runtime]
+      parameters:
+        - $ref: "#/components/parameters/namespace"
+        - $ref: "#/components/parameters/name"
+        - $ref: "#/components/parameters/instanceId"
+      responses:
+        "501":
+          description: Proxy not yet implemented
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /runtime/{namespace}/{name}/{version}/instance/{id}/suspend:
+    post:
+      summary: Suspend a running instance (specific version)
+      operationId: suspendInstanceVersioned
+      tags: [Runtime]
+      parameters:
+        - $ref: "#/components/parameters/namespace"
+        - $ref: "#/components/parameters/name"
+        - $ref: "#/components/parameters/version"
+        - $ref: "#/components/parameters/instanceId"
+      responses:
+        "501":
+          description: Proxy not yet implemented
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /runtime/{namespace}/{name}/{version}/instance/{id}/resume:
+    post:
+      summary: Resume a suspended instance (specific version)
+      operationId: resumeInstanceVersioned
+      tags: [Runtime]
+      parameters:
+        - $ref: "#/components/parameters/namespace"
+        - $ref: "#/components/parameters/name"
+        - $ref: "#/components/parameters/version"
+        - $ref: "#/components/parameters/instanceId"
+      responses:
+        "501":
+          description: Proxy not yet implemented
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /runtime/{namespace}/{name}/{version}/instance/{id}/cancel:
+    post:
+      summary: Cancel an active instance (specific version)
+      operationId: cancelInstanceVersioned
+      tags: [Runtime]
+      parameters:
+        - $ref: "#/components/parameters/namespace"
+        - $ref: "#/components/parameters/name"
+        - $ref: "#/components/parameters/version"
+        - $ref: "#/components/parameters/instanceId"
+      responses:
+        "501":
+          description: Proxy not yet implemented
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+components:
+  parameters:
+    namespace:
+      name: namespace
+      in: path
+      required: true
+      schema:
+        type: string
+    name:
+      name: name
+      in: path
+      required: true
+      schema:
+        type: string
+    version:
+      name: version
+      in: path
+      required: true
+      schema:
+        type: string
+    instanceId:
+      name: id
+      in: path
+      required: true
+      description: Workflow instance ID (ULID)
+      schema:
+        type: string
+
+  schemas:
+    WorkflowDefinition:
+      type: object
+      properties:
+        namespace:
+          type: string
+        name:
+          type: string
+        version:
+          type: string
+
+    WorkflowInstance:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          $ref: "#/components/schemas/InstanceStatus"
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+
+    InstanceStatus:
+      type: string
+      enum: [RUNNING, WAITING, SUSPENDED, PENDING, COMPLETED, FAULTED, CANCELLED]
+
+    ExecuteRequest:
+      type: object
+      properties:
+        input:
+          type: object
+          additionalProperties: true
+
+    ExecuteResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Created workflow instance ID (ULID)
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+
+  responses:
+    NotFound:
+      description: Workflow or instance not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    MethodNotAllowed:
+      description: Operation not allowed on a terminated instance
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"

@@ -39,6 +39,21 @@ func (s *RouteStore) Lookup(key WorkflowKey) (string, bool) {
 	return url, ok
 }
 
+// LookupLatest returns the URL for any version of the workflow identified by
+// namespace+name. All versions of a workflow share a single LogicFlowService
+// and therefore the same upstream URL; version-based traffic splitting is the
+// ingress's responsibility. Returns ("", false) if no route exists.
+func (s *RouteStore) LookupLatest(namespace, name string) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for key, url := range s.routes {
+		if key.Namespace == namespace && key.Name == name {
+			return url, true
+		}
+	}
+	return "", false
+}
+
 // Snapshot returns a copy of the current routing table as a sorted slice.
 // The slice is a copy; mutating it does not affect the store.
 func (s *RouteStore) Snapshot() []Route {

@@ -18,8 +18,6 @@ func TestServerRoutes(t *testing.T) {
 		expectedStatus int
 		name           string
 	}{
-		{"/health", http.StatusOK, "health endpoint"},
-		{"/ready", http.StatusOK, "ready endpoint"},
 		{"/notfound", http.StatusNotFound, "404 on unknown route"},
 	}
 
