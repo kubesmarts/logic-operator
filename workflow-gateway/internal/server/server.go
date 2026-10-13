@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/dataindex"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/discovery"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/routing"
 )
@@ -34,19 +35,21 @@ func DefaultConfig() Config {
 }
 
 type Server struct {
-	config Config
-	router *chi.Mux
-	ready  atomic.Bool
-	server *http.Server
-	store  *discovery.RouteStore
+	config   Config
+	router   *chi.Mux
+	ready    atomic.Bool
+	server   *http.Server
+	store    *discovery.RouteStore
+	diClient *dataindex.Client
 }
 
-func New(config Config, store *discovery.RouteStore) *Server {
+func New(config Config, store *discovery.RouteStore, diClient *dataindex.Client) *Server {
 	router := chi.NewRouter()
 	s := &Server{
-		config: config,
-		router: router,
-		store:  store,
+		config:   config,
+		router:   router,
+		store:    store,
+		diClient: diClient,
 	}
 	s.registerRoutes()
 	return s
@@ -117,14 +120,68 @@ func (s *Server) getDefinitionHandler(w http.ResponseWriter, _ *http.Request) {
 	notImplemented(w)
 }
 
-// Instances — stub: routes to data-index (future issue)
+// Instances — routes to data-index
 
-func (s *Server) listInstancesHandler(w http.ResponseWriter, _ *http.Request) {
-	notImplemented(w)
+func (s *Server) listInstancesHandler(w http.ResponseWriter, r *http.Request) {
+	if s.diClient == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "data index not available"})
+		return
+	}
+	q := r.URL.Query()
+	filter := dataindex.InstanceFilter{
+		Namespace: q.Get("namespace"),
+		Name:      q.Get("name"),
+		Version:   q.Get("version"),
+		Status:    q.Get("status"),
+	}
+	instances, err := s.diClient.ListInstances(r.Context(), filter)
+	if err != nil {
+		if errors.Is(err, dataindex.ErrEndpointNotDiscovered) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "data index not available"})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "upstream error"})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(instances)
 }
 
-func (s *Server) getInstanceHandler(w http.ResponseWriter, _ *http.Request) {
-	notImplemented(w)
+func (s *Server) getInstanceHandler(w http.ResponseWriter, r *http.Request) {
+	if s.diClient == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "data index not available"})
+		return
+	}
+	id := chi.URLParam(r, "id")
+	inst, err := s.diClient.GetInstance(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, dataindex.ErrEndpointNotDiscovered) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "data index not available"})
+			return
+		}
+		if errors.Is(err, dataindex.ErrInstanceNotFound) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "instance not found"})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "upstream error"})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(inst)
 }
 
 // Runtime — resolves upstream URL via routing table; proxy is a future issue.

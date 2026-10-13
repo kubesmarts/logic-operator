@@ -18,7 +18,7 @@ func newTestServer(routes map[discovery.WorkflowKey]string) *Server {
 	if routes != nil {
 		store.Replace(routes)
 	}
-	return New(DefaultConfig(), store)
+	return New(DefaultConfig(), store, nil)
 }
 
 // Definitions
@@ -70,20 +70,20 @@ func TestGetDefinition_NotImplemented(t *testing.T) {
 
 // Instances
 
-func TestListInstances_NotImplemented(t *testing.T) {
+func TestListInstances_EndpointNotDiscovered(t *testing.T) {
 	srv := newTestServer(nil)
 	req := httptest.NewRequest(http.MethodGet, "/v1/instances", nil)
 	w := httptest.NewRecorder()
 	srv.router.ServeHTTP(w, req)
-	assert.Equal(t, http.StatusNotImplemented, w.Code)
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 }
 
-func TestGetInstance_NotImplemented(t *testing.T) {
+func TestGetInstance_EndpointNotDiscovered(t *testing.T) {
 	srv := newTestServer(nil)
 	req := httptest.NewRequest(http.MethodGet, "/v1/instances/01ARZ3NDEKTSV4RRFFQ69G5FAV", nil)
 	w := httptest.NewRecorder()
 	srv.router.ServeHTTP(w, req)
-	assert.Equal(t, http.StatusNotImplemented, w.Code)
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 }
 
 // Runtime — unknown workflow returns 404

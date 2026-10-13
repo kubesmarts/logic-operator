@@ -60,22 +60,54 @@ paths:
 
   /instances:
     get:
-      summary: List workflow instances (not yet implemented)
+      summary: List workflow instances
       description: >
-        Routes to data-index for instance queries. Not implemented in this
-        release; tracked as a future issue.
+        Queries Data Index for workflow instances. Optional query parameters:
+        namespace, name, version, status.
       operationId: listInstances
       tags: [Instances]
+      parameters:
+        - name: namespace
+          in: query
+          schema:
+            type: string
+        - name: name
+          in: query
+          schema:
+            type: string
+        - name: version
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/InstanceStatus"
       responses:
-        "501":
-          description: Not implemented
+        "200":
+          description: List of workflow instances
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WorkflowInstance"
+        "503":
+          description: Data Index endpoint not yet discovered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Upstream Data Index error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /instances/{id}:
     get:
-      summary: Get a workflow instance (not yet implemented)
-      description: >
-        Routes to data-index for instance detail. Not implemented in this
-        release; tracked as a future issue.
+      summary: Get a workflow instance by ID
       operationId: getInstance
       tags: [Instances]
       parameters:
@@ -86,8 +118,26 @@ paths:
           schema:
             type: string
       responses:
-        "501":
-          description: Not implemented
+        "200":
+          description: Workflow instance detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowInstance"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          description: Data Index endpoint not yet discovered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Upstream Data Index error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /runtime/{namespace}/{name}:
     post:
@@ -274,6 +324,12 @@ components:
       type: object
       properties:
         id:
+          type: string
+        namespace:
+          type: string
+        name:
+          type: string
+        version:
           type: string
         status:
           $ref: "#/components/schemas/InstanceStatus"

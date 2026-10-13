@@ -77,7 +77,7 @@ func TestE2EListDefinitions(t *testing.T) {
 		return ok
 	}, 10*time.Second, 100*time.Millisecond, "route must appear in store before querying server")
 
-	srv := server.New(server.DefaultConfig(), store)
+	srv := server.New(server.DefaultConfig(), store, nil)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
