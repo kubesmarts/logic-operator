@@ -205,27 +205,27 @@ func TestE2EDataIndexDiscoveryAndProxy(t *testing.T) {
 	diServer := mockDataIndexServer(t)
 	defer diServer.Close()
 
-	// Create LogicPlatform with mock endpoint BEFORE starting the watcher
+	// Start PlatformWatcher first
+	platformStore := platform.NewPlatformStore()
 	c := testutil.NewTestClient(t, testCfg, testScheme)
+	startPlatformWatcher(ctx, t, platformStore, "default")
+
+	// Now create LogicPlatform — watcher's event handlers will discover it
 	lp := &logicv1.LogicPlatform{
 		ObjectMeta: v1.ObjectMeta{Namespace: "default", Name: "test-platform"},
 		Spec:       logicv1.LogicPlatformSpec{},
 	}
 	require.NoError(t, c.Create(ctx, lp))
 
-	// Update status with endpoint
+	// Update status with endpoint — triggers watcher's UpdateFunc
 	lp.Status.DataIndex.Service.GraphQLEndpoint = diServer.URL + "/graphql"
 	require.NoError(t, c.Status().Update(ctx, lp))
 
-	// Start PlatformWatcher to discover the endpoint (catches initial state via doSync)
-	platformStore := platform.NewPlatformStore()
-	startPlatformWatcher(ctx, t, platformStore, "default")
-
-	// Verify endpoint is discovered
+	// Verify endpoint is discovered via event-driven sync
 	require.Eventually(t, func() bool {
 		url, ok := platformStore.Endpoint()
 		return ok && url == diServer.URL+"/graphql"
-	}, 10*time.Second, 100*time.Millisecond, "endpoint must be discovered and synced to platform store")
+	}, 10*time.Second, 100*time.Millisecond, "endpoint must be discovered via watcher's event handler")
 
 	// Create server with Data Index client
 	diClient := dataindex.NewClient(platformStore)
