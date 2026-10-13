@@ -26,6 +26,7 @@ func main() {
 	// Parse command-line flags
 	var (
 		bindAddr        string
+		managementAddr  string
 		readTimeout     time.Duration
 		writeTimeout    time.Duration
 		idleTimeout     time.Duration
@@ -33,6 +34,7 @@ func main() {
 	)
 
 	flag.StringVar(&bindAddr, "bind-address", ":8080", "The address the server binds to.")
+	flag.StringVar(&managementAddr, "management-bind-address", ":8081", "The address the management server binds to.")
 	flag.DurationVar(&readTimeout, "read-timeout", 15*time.Second, "Read timeout for HTTP connections.")
 	flag.DurationVar(&writeTimeout, "write-timeout", 15*time.Second, "Write timeout for HTTP connections.")
 	flag.DurationVar(&idleTimeout, "idle-timeout", 60*time.Second, "Idle timeout for HTTP connections.")
@@ -70,6 +72,15 @@ func main() {
 	}
 	srv := server.New(serverCfg, store)
 
+	// Create management server
+	mgmtCfg := server.ManagementConfig{
+		Addr:            managementAddr,
+		ReadTimeout:     5 * time.Second,
+		WriteTimeout:    5 * time.Second,
+		ShutdownTimeout: 10 * time.Second,
+	}
+	mgmtSrv := server.NewManagement(mgmtCfg, store, srv.IsReady)
+
 	// Setup signal handling
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
@@ -91,6 +102,14 @@ func main() {
 	go func() {
 		if err := srv.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			setupLog.Error(err, "server failed")
+			os.Exit(1)
+		}
+	}()
+
+	// Start management server in background
+	go func() {
+		if err := mgmtSrv.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			setupLog.Error(err, "management server failed")
 			os.Exit(1)
 		}
 	}()
@@ -121,6 +140,10 @@ func main() {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		setupLog.Error(err, "shutdown error")
 		os.Exit(1)
+	}
+
+	if err := mgmtSrv.Shutdown(shutdownCtx); err != nil {
+		setupLog.Error(err, "management server shutdown error")
 	}
 
 	cancel() // stop discovery

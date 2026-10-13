@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"sync/atomic"
 	"time"
@@ -11,6 +12,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/discovery"
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/routing"
 )
 
 type Config struct {
@@ -50,33 +52,129 @@ func New(config Config, store *discovery.RouteStore) *Server {
 	return s
 }
 
+// Handler returns the underlying HTTP handler, allowing the server to be
+// wrapped by httptest.NewServer in integration tests.
+func (s *Server) Handler() http.Handler {
+	return s.router
+}
+
 func (s *Server) registerRoutes() {
-	s.router.Get("/health", s.healthHandler)
-	s.router.Get("/ready", s.readyHandler)
-	s.router.Get("/debug/routes", s.debugRoutesHandler)
+	s.router.Route("/v1", func(r chi.Router) {
+		r.Route("/definitions", func(r chi.Router) {
+			r.Get("/", s.listDefinitionsHandler)
+			r.Get("/{namespace}/{name}/{version}", s.getDefinitionHandler)
+		})
+		r.Route("/instances", func(r chi.Router) {
+			r.Get("/", s.listInstancesHandler)
+			r.Get("/{id}", s.getInstanceHandler)
+		})
+		r.Route("/runtime/{namespace}/{name}", func(r chi.Router) {
+			r.Post("/", s.executeHandler)
+			r.Post("/instance/{id}/suspend", s.suspendHandler)
+			r.Post("/instance/{id}/resume", s.resumeHandler)
+			r.Post("/instance/{id}/cancel", s.cancelHandler)
+			r.Post("/{version}", s.executeHandler)
+			r.Post("/{version}/instance/{id}/suspend", s.suspendHandler)
+			r.Post("/{version}/instance/{id}/resume", s.resumeHandler)
+			r.Post("/{version}/instance/{id}/cancel", s.cancelHandler)
+		})
+		r.Get("/openapi.json", s.openapiHandler)
+	})
 }
 
-func (s *Server) healthHandler(w http.ResponseWriter, _ *http.Request) {
+func notImplemented(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	w.WriteHeader(http.StatusNotImplemented)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": "not implemented"})
 }
 
-func (s *Server) readyHandler(w http.ResponseWriter, _ *http.Request) {
+func workflowNotFound(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
-	if !s.IsReady() {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": "not ready"})
+	w.WriteHeader(http.StatusNotFound)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": "workflow not found"})
+}
+
+// Definitions
+
+// listDefinitionsHandler returns the workflow catalog from the in-memory
+// routing table. The upstream URL is an internal routing detail and is
+// intentionally omitted from the response.
+func (s *Server) listDefinitionsHandler(w http.ResponseWriter, _ *http.Request) {
+	snapshot := s.store.Snapshot()
+	keys := make([]discovery.WorkflowKey, 0, len(snapshot))
+	for _, r := range snapshot {
+		keys = append(keys, r.WorkflowKey)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(keys)
+}
+
+// getDefinitionHandler is a stub. Returning a specific definition requires the
+// full flow document, which is not cached in memory (LogicFlowDefinition.Spec
+// is stripped by the informer transform to reduce memory footprint). A live
+// K8s API call is needed; tracked as a future issue.
+func (s *Server) getDefinitionHandler(w http.ResponseWriter, _ *http.Request) {
+	notImplemented(w)
+}
+
+// Instances — stub: routes to data-index (future issue)
+
+func (s *Server) listInstancesHandler(w http.ResponseWriter, _ *http.Request) {
+	notImplemented(w)
+}
+
+func (s *Server) getInstanceHandler(w http.ResponseWriter, _ *http.Request) {
+	notImplemented(w)
+}
+
+// Runtime — resolves upstream URL via routing table; proxy is a future issue.
+
+// resolveWorkflow looks up the workflow from the routing table.
+// Returns false (and writes the error response) if not found or on any error.
+func (s *Server) resolveWorkflow(w http.ResponseWriter, r *http.Request) bool {
+	_, err := routing.Resolve(r, s.store)
+	if err == nil {
+		return true
+	}
+	if errors.Is(err, routing.ErrWorkflowNotFound) {
+		workflowNotFound(w)
+	} else {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+	return false
+}
+
+func (s *Server) executeHandler(w http.ResponseWriter, r *http.Request) {
+	if !s.resolveWorkflow(w, r) {
 		return
 	}
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+	notImplemented(w)
 }
 
-func (s *Server) debugRoutesHandler(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) suspendHandler(w http.ResponseWriter, r *http.Request) {
+	if !s.resolveWorkflow(w, r) {
+		return
+	}
+	notImplemented(w)
+}
+
+func (s *Server) resumeHandler(w http.ResponseWriter, r *http.Request) {
+	if !s.resolveWorkflow(w, r) {
+		return
+	}
+	notImplemented(w)
+}
+
+func (s *Server) cancelHandler(w http.ResponseWriter, r *http.Request) {
+	if !s.resolveWorkflow(w, r) {
+		return
+	}
+	notImplemented(w)
+}
+
+func (s *Server) openapiHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	snapshot := s.store.Snapshot()
-	_ = json.NewEncoder(w).Encode(snapshot)
+	_, _ = w.Write(openapiJSON)
 }
 
 func (s *Server) Start() error {
