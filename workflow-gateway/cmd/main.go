@@ -18,7 +18,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/dataindex"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/discovery"
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/platform"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/server"
 )
 
@@ -50,6 +52,12 @@ func main() {
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 	setupLog := ctrl.Log.WithName("setup")
 
+	operatorNamespace := os.Getenv("POD_NAMESPACE")
+	if operatorNamespace == "" {
+		operatorNamespace = "default"
+		setupLog.Info("POD_NAMESPACE not set, defaulting", "namespace", operatorNamespace)
+	}
+
 	// Load Kubernetes config (in-cluster or from KUBECONFIG env)
 	restCfg := ctrl.GetConfigOrDie()
 
@@ -57,6 +65,11 @@ func main() {
 	scheme := runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(logicv1.AddToScheme(scheme))
+
+	// Initialize platform store, watcher, and Data Index client
+	platformStore := platform.NewPlatformStore()
+	platformWatcher := platform.NewPlatformWatcher(restCfg, scheme, platformStore, operatorNamespace)
+	diClient := dataindex.NewClient(platformStore)
 
 	// Initialize discovery and route store
 	store := discovery.NewRouteStore()
@@ -70,7 +83,7 @@ func main() {
 		IdleTimeout:     idleTimeout,
 		ShutdownTimeout: shutdownTimeout,
 	}
-	srv := server.New(serverCfg, store)
+	srv := server.New(serverCfg, store, diClient)
 
 	// Create management server
 	mgmtCfg := server.ManagementConfig{
@@ -94,6 +107,14 @@ func main() {
 		if err := disc.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			setupLog.Error(err, "discovery failed")
 			os.Exit(1)
+		}
+	}()
+
+	// Start platform watcher in background
+	go func() {
+		if err := platformWatcher.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			setupLog.Error(err, "platform watcher failed")
+			// non-fatal: gateway still routes, instances return 503
 		}
 	}()
 

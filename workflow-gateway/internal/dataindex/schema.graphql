@@ -1,0 +1,125 @@
+# Data Index GraphQL schema — introspected from flow-platform-data-index 2026-10-13
+# Endpoint: /graphql (MicroProfile GraphQL)
+
+enum WorkflowInstanceStatus {
+  CANCELLED
+  COMPLETED
+  FAULTED
+  PENDING
+  RUNNING
+  SUSPENDED
+  WAITING
+}
+
+enum OrderBy {
+  ASC
+  DESC
+}
+
+type WorkflowInstance {
+  id: String
+  namespace: String
+  name: String
+  version: String
+  status: WorkflowInstanceStatus
+  startedAt: DateTime
+  endedAt: DateTime
+  lastUpdate: DateTime
+  eventTimestamp: DateTime
+  inputData: String
+  outputData: String
+  taskExecutions: [TaskExecution]
+  error: Error
+}
+
+type TaskExecution {
+  id: String
+  instanceId: String
+  task: String
+  taskName: String
+  status: String
+  startedAt: DateTime
+  endedAt: DateTime
+  eventTimestamp: DateTime
+  inputData: String
+  outputData: String
+  error: Error
+}
+
+type Error {
+  type: String
+  title: String
+  status: Int
+  detail: String
+  instance: String
+}
+
+input StringFilterInput {
+  eq: String
+  in: [String]
+  like: String
+}
+
+input WorkflowInstanceStatusFilterInput {
+  eq: WorkflowInstanceStatus
+  in: [WorkflowInstanceStatus]
+}
+
+input DateTimeFilterInput {
+  eq: DateTime
+  gt: DateTime
+  gte: DateTime
+  lt: DateTime
+  lte: DateTime
+}
+
+input ErrorFilterInput {
+  type: StringFilterInput
+  title: StringFilterInput
+  status: IntFilterInput
+  detail: StringFilterInput
+  instance: StringFilterInput
+}
+
+input WorkflowInstanceFilterInput {
+  id: StringFilterInput
+  namespace: StringFilterInput
+  name: StringFilterInput
+  version: StringFilterInput
+  status: WorkflowInstanceStatusFilterInput
+  startTime: DateTimeFilterInput
+  endTime: DateTimeFilterInput
+  input: JsonFilterInput
+  output: JsonFilterInput
+  error: ErrorFilterInput
+}
+
+input WorkflowInstanceOrderByInput {
+  id: OrderBy
+  namespace: OrderBy
+  name: OrderBy
+  version: OrderBy
+  status: OrderBy
+  startTime: OrderBy
+  endTime: OrderBy
+  lastUpdate: OrderBy
+}
+
+type Query {
+  getWorkflowInstance(id: String!): WorkflowInstance
+  getWorkflowInstances(
+    filter: WorkflowInstanceFilterInput
+    orderBy: WorkflowInstanceOrderByInput
+    limit: Int
+    offset: Int
+  ): [WorkflowInstance]
+
+  getTaskExecution(id: String!): TaskExecution
+  getTaskExecutions(
+    filter: TaskExecutionFilterInput
+    orderBy: TaskExecutionOrderByInput
+    limit: Int
+    offset: Int
+  ): [TaskExecution]
+  getTaskExecutionsByWorkflowInstance(workflowInstanceId: String): [TaskExecution]
+}
