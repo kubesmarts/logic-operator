@@ -21,6 +21,9 @@ resources:
 # ClusterRole for runtime pods to acquire and renew durable leases.
 # Deployed/undeployed with the operator — not created dynamically.
 - durable_clusterrole.yaml
+# ClusterRole for workflow-gateway to read LogicFlowDefinitions.
+# Deployed/undeployed with the operator — not created dynamically.
+- workflow_gateway_clusterrole.yaml
 # For each CRD, "Admin", "Editor" and "Viewer" roles are scaffolded by
 # default, aiding admins in cluster management. Those roles are
 # not used by the logic-operator itself. You can comment the following lines
