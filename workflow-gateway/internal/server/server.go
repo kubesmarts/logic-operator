@@ -5,14 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"gopkg.in/yaml.v3"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/dataindex"
-	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/discovery"
+	disc "github.com/kubesmarts/logic-operator/workflow-gateway/internal/discovery"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/routing"
 )
 
@@ -35,21 +37,21 @@ func DefaultConfig() Config {
 }
 
 type Server struct {
-	config   Config
-	router   *chi.Mux
-	ready    atomic.Bool
-	server   *http.Server
-	store    *discovery.RouteStore
-	diClient *dataindex.Client
+	config    Config
+	router    *chi.Mux
+	ready     atomic.Bool
+	server    *http.Server
+	discovery *disc.Discovery
+	diClient  *dataindex.Client
 }
 
-func New(config Config, store *discovery.RouteStore, diClient *dataindex.Client) *Server {
+func New(config Config, discovery *disc.Discovery, diClient *dataindex.Client) *Server {
 	router := chi.NewRouter()
 	s := &Server{
-		config:   config,
-		router:   router,
-		store:    store,
-		diClient: diClient,
+		config:    config,
+		router:    router,
+		discovery: discovery,
+		diClient:  diClient,
 	}
 	s.registerRoutes()
 	return s
@@ -103,8 +105,8 @@ func workflowNotFound(w http.ResponseWriter) {
 // routing table. The upstream URL is an internal routing detail and is
 // intentionally omitted from the response.
 func (s *Server) listDefinitionsHandler(w http.ResponseWriter, _ *http.Request) {
-	snapshot := s.store.Snapshot()
-	keys := make([]discovery.WorkflowKey, 0, len(snapshot))
+	snapshot := s.discovery.GetRouteStore().Snapshot()
+	keys := make([]disc.WorkflowKey, 0, len(snapshot))
 	for _, r := range snapshot {
 		keys = append(keys, r.WorkflowKey)
 	}
@@ -116,8 +118,33 @@ func (s *Server) listDefinitionsHandler(w http.ResponseWriter, _ *http.Request) 
 // full flow document, which is not cached in memory (LogicFlowDefinition.Spec
 // is stripped by the informer transform to reduce memory footprint). A live
 // K8s API call is needed; tracked as a future issue.
-func (s *Server) getDefinitionHandler(w http.ResponseWriter, _ *http.Request) {
-	notImplemented(w)
+func (s *Server) getDefinitionHandler(w http.ResponseWriter, r *http.Request) {
+	ns := chi.URLParam(r, "namespace")
+	name := chi.URLParam(r, "name")
+	version := chi.URLParam(r, "version")
+
+	flowDef, err := s.discovery.FetchDefinition(r.Context(), ns, name, version)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		if errors.Is(err, disc.ErrDefinitionNotFound) {
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "workflow definition not found"})
+			return
+		}
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	accept := r.Header.Get("Accept")
+
+	w.Header().Set("Content-Type", "application/json") // default
+
+	if strings.Contains(accept, "application/yaml") || strings.Contains(accept, "application/x-yaml") {
+		w.Header().Set("Content-Type", "application/yaml")
+		_ = yaml.NewEncoder(w).Encode(flowDef.Spec.Flow)
+	} else {
+		_ = json.NewEncoder(w).Encode(flowDef.Spec.Flow)
+	}
 }
 
 // Instances — routes to data-index
@@ -137,19 +164,17 @@ func (s *Server) listInstancesHandler(w http.ResponseWriter, r *http.Request) {
 		Status:    q.Get("status"),
 	}
 	instances, err := s.diClient.ListInstances(r.Context(), filter)
+	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
 		if errors.Is(err, dataindex.ErrEndpointNotDiscovered) {
-			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "data index not available"})
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadGateway)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "upstream error"})
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(instances)
 }
 
@@ -162,25 +187,22 @@ func (s *Server) getInstanceHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	id := chi.URLParam(r, "id")
 	inst, err := s.diClient.GetInstance(r.Context(), id)
+	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
 		if errors.Is(err, dataindex.ErrEndpointNotDiscovered) {
-			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "data index not available"})
 			return
 		}
 		if errors.Is(err, dataindex.ErrInstanceNotFound) {
-			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "instance not found"})
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadGateway)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "upstream error"})
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(inst)
 }
 
@@ -189,7 +211,7 @@ func (s *Server) getInstanceHandler(w http.ResponseWriter, r *http.Request) {
 // resolveWorkflow looks up the workflow from the routing table.
 // Returns false (and writes the error response) if not found or on any error.
 func (s *Server) resolveWorkflow(w http.ResponseWriter, r *http.Request) bool {
-	_, err := routing.Resolve(r, s.store)
+	_, err := routing.Resolve(r, s.discovery.GetRouteStore())
 	if err == nil {
 		return true
 	}

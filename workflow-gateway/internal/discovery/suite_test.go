@@ -38,7 +38,8 @@ func TestMain(m *testing.M) {
 func startDiscovery(ctx context.Context, t *testing.T) (*Discovery, *RouteStore) {
 	t.Helper()
 	store := NewRouteStore()
-	disc := NewDiscovery(testCfg, store, testScheme)
+	c := testutil.NewTestClient(t, testCfg, testScheme)
+	disc := NewDiscovery(testCfg, store, testScheme, c)
 	go func() { _ = disc.Start(ctx) }()
 
 	syncCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -117,4 +118,30 @@ func TestEnvtestCacheStripsDefinitionSpec(t *testing.T) {
 
 	assert.Empty(t, cached.Spec.Flow.Raw, "flow document must be stripped from the cache")
 	assert.Equal(t, "billing", cached.Labels[logicv1.LabelWorkflowName], "labels must survive the transform")
+}
+
+func TestFetchDefinition(t *testing.T) {
+	if testCfg == nil {
+		t.Skip("envtest unavailable")
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	c := testutil.NewTestClient(t, testCfg, testScheme)
+	disc, _ := startDiscovery(ctx, t)
+
+	// Create a test definition
+	def := testutil.NewDefinition("default", "def-test", "default", "wf", "v1")
+	require.NoError(t, c.Create(ctx, def))
+
+	// Fetch it via FetchDefinition
+	require.Eventually(t, func() bool {
+		flowDef, err := disc.FetchDefinition(ctx, "default", "wf", "v1")
+		return err == nil && flowDef != nil
+	}, 10*time.Second, 100*time.Millisecond)
+
+	// Verify the returned definition has the Flow document
+	flowDef, err := disc.FetchDefinition(ctx, "default", "wf", "v1")
+	require.NoError(t, err)
+	assert.NotNil(t, flowDef.Spec.Flow)
 }

@@ -15,6 +15,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
@@ -72,8 +73,13 @@ func main() {
 	diClient := dataindex.NewClient(platformStore)
 
 	// Initialize discovery and route store
+	kubeClient, err := client.New(restCfg, client.Options{Scheme: scheme})
+	if err != nil {
+		setupLog.Error(err, "unable to create kubernetes client")
+		os.Exit(1)
+	}
 	store := discovery.NewRouteStore()
-	disc := discovery.NewDiscovery(restCfg, store, scheme)
+	disc := discovery.NewDiscovery(restCfg, store, scheme, kubeClient)
 
 	// Create HTTP server with configured options
 	serverCfg := server.Config{
@@ -83,7 +89,7 @@ func main() {
 		IdleTimeout:     idleTimeout,
 		ShutdownTimeout: shutdownTimeout,
 	}
-	srv := server.New(serverCfg, store, diClient)
+	srv := server.New(serverCfg, disc, diClient)
 
 	// Create management server
 	mgmtCfg := server.ManagementConfig{

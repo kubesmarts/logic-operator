@@ -42,14 +42,16 @@ func TestMain(m *testing.M) {
 
 // startDiscovery starts a Discovery against the envtest control plane and waits
 // for its cache to sync. The caller cancels ctx to stop the watcher goroutine.
-func startDiscovery(ctx context.Context, t *testing.T, store *discovery.RouteStore) {
+func startDiscovery(ctx context.Context, t *testing.T, store *discovery.RouteStore) *discovery.Discovery {
 	t.Helper()
-	disc := discovery.NewDiscovery(testCfg, store, testScheme)
+	c := testutil.NewTestClient(t, testCfg, testScheme)
+	disc := discovery.NewDiscovery(testCfg, store, testScheme, c)
 	go func() { _ = disc.Start(ctx) }()
 
 	syncCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	require.True(t, disc.WaitForCacheSync(syncCtx), "discovery cache must sync within 30s")
+	return disc
 }
 
 // startPlatformWatcher starts a PlatformWatcher against the envtest control plane and waits
@@ -157,7 +159,7 @@ func TestE2EListDefinitions(t *testing.T) {
 	)
 
 	store := discovery.NewRouteStore()
-	startDiscovery(ctx, t, store)
+	disc := startDiscovery(ctx, t, store)
 
 	key := discovery.WorkflowKey{Namespace: "acme", Name: "hello", Version: "v1"}
 	require.Eventually(t, func() bool {
@@ -165,7 +167,7 @@ func TestE2EListDefinitions(t *testing.T) {
 		return ok
 	}, 10*time.Second, 100*time.Millisecond, "route must appear in store before querying server")
 
-	srv := server.New(server.DefaultConfig(), store, nil)
+	srv := server.New(server.DefaultConfig(), disc, nil)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -229,7 +231,10 @@ func TestE2EDataIndexDiscoveryAndProxy(t *testing.T) {
 
 	// Create server with Data Index client
 	diClient := dataindex.NewClient(platformStore)
-	srv := server.New(server.DefaultConfig(), discovery.NewRouteStore(), diClient)
+	routeStore := discovery.NewRouteStore()
+	kubeClient := testutil.NewTestClient(t, testCfg, testScheme)
+	disc := discovery.NewDiscovery(testCfg, routeStore, testScheme, kubeClient)
+	srv := server.New(server.DefaultConfig(), disc, diClient)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -268,4 +273,52 @@ func TestE2EDataIndexDiscoveryAndProxy(t *testing.T) {
 		assert.Equal(t, "v1", instance.Version)
 		assert.Equal(t, "RUNNING", instance.Status)
 	})
+}
+
+// TestE2EGetDefinition verifies the end-to-end path for fetching a workflow definition
+// from the cache through the handler and returning it as JSON.
+func TestE2EGetDefinition(t *testing.T) {
+	if testCfg == nil {
+		t.Skip("envtest unavailable; run 'make test-gateway'")
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	c := testutil.NewTestClient(t, testCfg, testScheme)
+
+	// Create definition
+	def := testutil.NewDefinition("default", "def-e2e", "default", "hello", "v1")
+	require.NoError(t, c.Create(ctx, def))
+
+	// Create service to route it
+	testutil.CreateServiceWithURL(ctx, t, c, "default", "svc-e2e", "def-e2e", "https://hello.example.com")
+
+	// Start discovery
+	store := discovery.NewRouteStore()
+	kubeClient := testutil.NewTestClient(t, testCfg, testScheme)
+	disc := discovery.NewDiscovery(testCfg, store, testScheme, kubeClient)
+	go func() { _ = disc.Start(ctx) }()
+
+	// Wait for cache sync
+	syncCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	require.True(t, disc.WaitForCacheSync(syncCtx), "discovery must sync")
+	cancel()
+
+	// Create server and test handler
+	diClient := dataindex.NewClient(platform.NewPlatformStore())
+	srv := server.New(server.DefaultConfig(), disc, diClient)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	// Query the definition
+	resp, err := http.Get(ts.URL + "/v1/definitions/default/hello/v1")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "application/json", resp.Header.Get("Content-Type"))
+
+	var flowDoc any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&flowDoc))
+	assert.NotNil(t, flowDoc)
 }

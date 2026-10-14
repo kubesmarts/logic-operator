@@ -12,8 +12,10 @@ import (
 )
 
 func TestServerRoutes(t *testing.T) {
+	// For unit tests without envtest, create a minimal Discovery with just a route store.
 	store := discovery.NewRouteStore()
-	s := New(DefaultConfig(), store, nil)
+	disc := discovery.NewDiscovery(nil, store, nil, nil)
+	s := New(DefaultConfig(), disc, nil)
 	s.SetReady(true)
 
 	tests := []struct {
@@ -48,14 +50,18 @@ func newServerWithMockDI(t *testing.T, diResponse any) *Server {
 	pStore := platform.NewPlatformStore()
 	pStore.SetEndpoint(diSrv.URL)
 	c := dataindex.NewClient(pStore)
-	s := New(DefaultConfig(), discovery.NewRouteStore(), c)
+	store := discovery.NewRouteStore()
+	disc := discovery.NewDiscovery(nil, store, nil, nil)
+	s := New(DefaultConfig(), disc, c)
 	return s
 }
 
 func TestListInstancesHandler_EndpointNotDiscovered(t *testing.T) {
 	pStore := platform.NewPlatformStore() // no endpoint
 	c := dataindex.NewClient(pStore)
-	s := New(DefaultConfig(), discovery.NewRouteStore(), c)
+	store := discovery.NewRouteStore()
+	disc := discovery.NewDiscovery(nil, store, nil, nil)
+	s := New(DefaultConfig(), disc, c)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/v1/instances", nil)
