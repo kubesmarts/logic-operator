@@ -18,7 +18,8 @@ func newTestServer(routes map[discovery.WorkflowKey]string) *Server {
 	if routes != nil {
 		store.Replace(routes)
 	}
-	return New(DefaultConfig(), store, nil)
+	disc := discovery.NewDiscovery(nil, store, nil, nil)
+	return New(DefaultConfig(), disc, nil)
 }
 
 // Definitions
@@ -60,12 +61,13 @@ func TestListDefinitions_DoesNotExposeURL(t *testing.T) {
 	assert.NotContains(t, w.Body.String(), "hello.example.com")
 }
 
-func TestGetDefinition_NotImplemented(t *testing.T) {
+func TestGetDefinition_NotFound(t *testing.T) {
 	srv := newTestServer(nil)
 	req := httptest.NewRequest(http.MethodGet, "/v1/definitions/demo/hello/1.0.0", nil)
 	w := httptest.NewRecorder()
 	srv.router.ServeHTTP(w, req)
-	assert.Equal(t, http.StatusNotImplemented, w.Code)
+	// FetchDefinition returns 404 when definition not found in cache
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 // Instances

@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -15,10 +16,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+var ErrDefinitionNotFound = errors.New("workflow definition not found")
+
 // Discovery watches LogicFlowService and LogicFlowDefinition CRDs and maintains a routing table.
 type Discovery struct {
 	config        *rest.Config
 	scheme        *runtime.Scheme
+	client        client.Client
 	store         *RouteStore
 	cache         crcache.Cache
 	syncedMu      sync.Mutex
@@ -30,11 +34,12 @@ type Discovery struct {
 }
 
 // NewDiscovery creates a new discovery manager.
-func NewDiscovery(config *rest.Config, store *RouteStore, scheme *runtime.Scheme) *Discovery {
+func NewDiscovery(config *rest.Config, store *RouteStore, scheme *runtime.Scheme, kubeClient client.Client) *Discovery {
 	return &Discovery{
 		config: config,
 		scheme: scheme,
 		store:  store,
+		client: kubeClient,
 	}
 }
 
@@ -219,7 +224,34 @@ func (d *Discovery) WaitForCacheSync(ctx context.Context) bool {
 	}
 }
 
-// GetRouteStore returns the underlying route store (for testing or debugging).
+// GetRouteStore returns the underlying route store.
 func (d *Discovery) GetRouteStore() *RouteStore {
 	return d.store
+}
+
+func (d *Discovery) FetchDefinition(ctx context.Context, ns, name, version string) (*logicv1.LogicFlowDefinition, error) {
+	if d.cache == nil || d.client == nil {
+		return nil, ErrDefinitionNotFound
+	}
+	definitions := &logicv1.LogicFlowDefinitionList{}
+	// Search across all namespaces for a definition matching the workflow labels.
+	// ns, name, version are workflow identifiers (from URL), not k8s namespace.
+	if err := d.cache.List(ctx, definitions, client.InNamespace(ns), client.MatchingLabels{
+		logicv1.LabelWorkflowVersion: version,
+		logicv1.LabelWorkflowName:    name,
+	}); err != nil {
+		return nil, err
+	}
+	if len(definitions.Items) == 0 {
+		return nil, ErrDefinitionNotFound
+	}
+
+	// Get the full definition (with Spec.Flow) from the API server.
+	def := &definitions.Items[0]
+	fullDef := &logicv1.LogicFlowDefinition{}
+	if err := d.client.Get(ctx, client.ObjectKey{Namespace: def.Namespace, Name: def.Name}, fullDef); err != nil {
+		return nil, err
+	}
+
+	return fullDef, nil
 }
