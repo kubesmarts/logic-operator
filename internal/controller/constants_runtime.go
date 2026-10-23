@@ -18,7 +18,7 @@ const (
 
 	LeaseMemberNameFmt = "flow-pool-member-%s-%02d"
 	LeaseDuration      = int32(30)
-	//LeaseRenewSchedulingInterval is ISO-8601 format
+	// LeaseRenewSchedulingInterval is ISO-8601 format
 	LeaseRenewSchedulingInterval = "10s"
 	// LeaseAcquireTimeoutDuration is Java duration
 	LeaseAcquireTimeoutDuration = "30S"
