@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -14,7 +17,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/dataindex"
-	disc "github.com/kubesmarts/logic-operator/workflow-gateway/internal/discovery"
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/definitions"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/routing"
 )
 
@@ -37,21 +40,23 @@ func DefaultConfig() Config {
 }
 
 type Server struct {
-	config    Config
-	router    *chi.Mux
-	ready     atomic.Bool
-	server    *http.Server
-	discovery *disc.Discovery
-	diClient  *dataindex.Client
+	config      Config
+	router      *chi.Mux
+	ready       atomic.Bool
+	server      *http.Server
+	resolver    *routing.Resolver
+	definitions *definitions.Reader
+	diClient    *dataindex.Client
 }
 
-func New(config Config, discovery *disc.Discovery, diClient *dataindex.Client) *Server {
+func New(config Config, resolver *routing.Resolver, defReader *definitions.Reader, diClient *dataindex.Client) *Server {
 	router := chi.NewRouter()
 	s := &Server{
-		config:    config,
-		router:    router,
-		discovery: discovery,
-		diClient:  diClient,
+		config:      config,
+		router:      router,
+		resolver:    resolver,
+		definitions: defReader,
+		diClient:    diClient,
 	}
 	s.registerRoutes()
 	return s
@@ -74,23 +79,19 @@ func (s *Server) registerRoutes() {
 			r.Get("/{id}", s.getInstanceHandler)
 		})
 		r.Route("/runtime/{namespace}/{name}", func(r chi.Router) {
-			r.Post("/", s.executeHandler)
+			r.Post("/", s.executeAsyncHandler)
+			r.Post("/sync", s.executeSyncHandler)
 			r.Post("/instance/{id}/suspend", s.suspendHandler)
 			r.Post("/instance/{id}/resume", s.resumeHandler)
 			r.Post("/instance/{id}/cancel", s.cancelHandler)
-			r.Post("/{version}", s.executeHandler)
+			r.Post("/{version}", s.executeAsyncHandler)
+			r.Post("/{version}/sync", s.executeSyncHandler)
 			r.Post("/{version}/instance/{id}/suspend", s.suspendHandler)
 			r.Post("/{version}/instance/{id}/resume", s.resumeHandler)
 			r.Post("/{version}/instance/{id}/cancel", s.cancelHandler)
 		})
 		r.Get("/openapi.json", s.openapiHandler)
 	})
-}
-
-func notImplemented(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusNotImplemented)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": "not implemented"})
 }
 
 func workflowNotFound(w http.ResponseWriter) {
@@ -102,11 +103,10 @@ func workflowNotFound(w http.ResponseWriter) {
 // Definitions
 
 // listDefinitionsHandler returns the workflow catalog from the in-memory
-// routing table. The upstream URL is an internal routing detail and is
-// intentionally omitted from the response.
+// routing table.
 func (s *Server) listDefinitionsHandler(w http.ResponseWriter, _ *http.Request) {
-	snapshot := s.discovery.GetRouteStore().Snapshot()
-	keys := make([]disc.WorkflowKey, 0, len(snapshot))
+	snapshot := s.resolver.ExecutionEndpointsSnapshot()
+	keys := make([]routing.WorkflowKey, 0, len(snapshot))
 	for _, r := range snapshot {
 		keys = append(keys, r.WorkflowKey)
 	}
@@ -119,14 +119,12 @@ func (s *Server) listDefinitionsHandler(w http.ResponseWriter, _ *http.Request) 
 // is stripped by the informer transform to reduce memory footprint). A live
 // K8s API call is needed; tracked as a future issue.
 func (s *Server) getDefinitionHandler(w http.ResponseWriter, r *http.Request) {
-	ns := chi.URLParam(r, "namespace")
-	name := chi.URLParam(r, "name")
-	version := chi.URLParam(r, "version")
+	ns, name, version := workflowParams(r)
 
-	flowDef, err := s.discovery.FetchDefinition(r.Context(), ns, name, version)
+	flowDef, err := s.definitions.FetchDefinition(r.Context(), ns, name, version)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
-		if errors.Is(err, disc.ErrDefinitionNotFound) {
+		if errors.Is(err, definitions.ErrDefinitionNotFound) {
 			w.WriteHeader(http.StatusNotFound)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "workflow definition not found"})
 			return
@@ -206,49 +204,187 @@ func (s *Server) getInstanceHandler(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(inst)
 }
 
-// Runtime — resolves upstream URL via routing table; proxy is a future issue.
+// Runtime — resolves upstream URL via routing table and proxies to runner.
 
-// resolveWorkflow looks up the workflow from the routing table.
-// Returns false (and writes the error response) if not found or on any error.
-func (s *Server) resolveWorkflow(w http.ResponseWriter, r *http.Request) bool {
-	_, err := routing.Resolve(r, s.discovery.GetRouteStore())
+// resolveWorkflow confirms the workflow exists in the routing table.
+func (s *Server) resolveWorkflow(w http.ResponseWriter, r *http.Request) (routing.URL, bool) {
+	ns, name, version := workflowParams(r)
+	execURL, err := s.resolver.ResolveExecution(ns, name, version)
 	if err == nil {
-		return true
+		return execURL, true
 	}
 	if errors.Is(err, routing.ErrWorkflowNotFound) {
 		workflowNotFound(w)
 	} else {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
-	return false
+	return "", false
 }
 
-func (s *Server) executeHandler(w http.ResponseWriter, r *http.Request) {
-	if !s.resolveWorkflow(w, r) {
+// resolveInstance resolves the destination for an instance operation, trying
+// lease->pod routing with a fallback to service routing.
+func (s *Server) resolveInstance(w http.ResponseWriter, r *http.Request) (routing.Destination, bool) {
+	ns, name, _ := workflowParams(r)
+	id := instanceID(r)
+	dest, err := s.resolver.ResolveInstance(r.Context(), ns, name, id)
+	if err != nil {
+		workflowNotFound(w)
+		return routing.Destination{}, false
+	}
+	return dest, true
+}
+
+// proxyInstanceOperation proxies an instance operation (suspend/resume/cancel) to its resolved destination.
+// Gateway path: /v1/runtime/{namespace}/{name}[/{version}]/instance/{id}/{operation}
+// Runner path: /q/flow/exec/{namespace}/{name}[/{version}]/{id}/{operation}
+func (s *Server) proxyInstanceOperation(w http.ResponseWriter, r *http.Request, dest routing.Destination) {
+	target, err := url.Parse(string(dest.URL))
+	if err != nil {
+		http.Error(w, "invalid destination URL", http.StatusInternalServerError)
 		return
 	}
-	notImplemented(w)
+	ns, name, version := workflowParams(r)
+	id := instanceID(r)
+
+	// Extract operation (suspend/resume/cancel) from request URL
+	parts := strings.Split(r.URL.Path, "/")
+	operation := parts[len(parts)-1]
+
+	runnerPath := constructRunnerPath(ns, name, version, id, operation)
+	proxy := newReverseProxy(target, runnerPath)
+	proxy.ServeHTTP(w, r)
+}
+
+// executeAsyncHandler proxies async workflow execution to the runner and caches the instance.
+// Returns 202 Accepted with instanceId and workflowApplicationId (pod name).
+func (s *Server) executeAsyncHandler(w http.ResponseWriter, r *http.Request) {
+	execURL, ok := s.resolveWorkflow(w, r)
+	if !ok {
+		return
+	}
+	target, err := url.Parse(string(execURL))
+	if err != nil {
+		http.Error(w, "invalid upstream URL", http.StatusInternalServerError)
+		return
+	}
+	ns, name, version := workflowParams(r)
+
+	runnerPath := constructRunnerPath(ns, name, version)
+	proxy := newReverseProxyWithQuery(target, runnerPath, "wait=false")
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		if resp.StatusCode == http.StatusAccepted {
+			// Parse response to extract instanceId and workflowApplicationId (pod name)
+			var result map[string]interface{}
+			body, _ := io.ReadAll(resp.Body)
+			if err := json.Unmarshal(body, &result); err == nil {
+				if instanceID, ok := result["instanceId"].(string); ok {
+					if podName, ok := result["workflowApplicationId"].(string); ok {
+						// Cache the instance with the pod name (lease holder identity)
+						s.resolver.CacheInstance(instanceID, podName)
+					}
+				}
+			}
+			// Restore body for client response
+			resp.Body = io.NopCloser(strings.NewReader(formatAsyncResponse(result)))
+		}
+		return nil
+	}
+	proxy.ServeHTTP(w, r)
+}
+
+// executeSyncHandler proxies sync workflow execution to the runner.
+// Returns 200 OK with workflow output. No caching needed (instance is transient).
+func (s *Server) executeSyncHandler(w http.ResponseWriter, r *http.Request) {
+	execURL, ok := s.resolveWorkflow(w, r)
+	if !ok {
+		return
+	}
+	target, err := url.Parse(string(execURL))
+	if err != nil {
+		http.Error(w, "invalid upstream URL", http.StatusInternalServerError)
+		return
+	}
+	ns, name, version := workflowParams(r)
+
+	runnerPath := constructRunnerPath(ns, name, version)
+	proxy := newReverseProxyWithQuery(target, runnerPath, "wait=true")
+	proxy.ServeHTTP(w, r)
+}
+
+// constructRunnerPath builds the runner API path for exec/instance operations.
+// Format: /q/flow/exec/{namespace}/{name}[/{version}][/{id}[/{operation}]]
+func constructRunnerPath(namespace, name, version string, parts ...string) string {
+	var path strings.Builder
+	path.WriteString("/q/flow/exec/")
+	path.WriteString(namespace)
+	path.WriteString("/")
+	path.WriteString(name)
+	if version != "" {
+		path.WriteString("/")
+		path.WriteString(version)
+	}
+	for _, part := range parts {
+		if part != "" {
+			path.WriteString("/")
+			path.WriteString(part)
+		}
+	}
+	return path.String()
+}
+
+// newReverseProxy creates a reverse proxy with path rewriting and no Director to avoid deprecation.
+func newReverseProxy(target *url.URL, rewritePath string) *httputil.ReverseProxy {
+	return &httputil.ReverseProxy{
+		Rewrite: func(r *httputil.ProxyRequest) {
+			r.SetURL(target)
+			r.Out.URL.Path = rewritePath
+			r.Out.RequestURI = ""
+			r.Out.Host = target.Host
+		},
+	}
+}
+
+// newReverseProxyWithQuery creates a reverse proxy with path and query rewriting.
+func newReverseProxyWithQuery(target *url.URL, rewritePath, query string) *httputil.ReverseProxy {
+	return &httputil.ReverseProxy{
+		Rewrite: func(r *httputil.ProxyRequest) {
+			r.SetURL(target)
+			r.Out.URL.Path = rewritePath
+			r.Out.URL.RawQuery = query
+			r.Out.RequestURI = ""
+			r.Out.Host = target.Host
+		},
+	}
+}
+
+// formatAsyncResponse re-encodes the async response after caching.
+func formatAsyncResponse(result map[string]interface{}) string {
+	data, _ := json.Marshal(result)
+	return string(data)
 }
 
 func (s *Server) suspendHandler(w http.ResponseWriter, r *http.Request) {
-	if !s.resolveWorkflow(w, r) {
+	dest, ok := s.resolveInstance(w, r)
+	if !ok {
 		return
 	}
-	notImplemented(w)
+	s.proxyInstanceOperation(w, r, dest)
 }
 
 func (s *Server) resumeHandler(w http.ResponseWriter, r *http.Request) {
-	if !s.resolveWorkflow(w, r) {
+	dest, ok := s.resolveInstance(w, r)
+	if !ok {
 		return
 	}
-	notImplemented(w)
+	s.proxyInstanceOperation(w, r, dest)
 }
 
 func (s *Server) cancelHandler(w http.ResponseWriter, r *http.Request) {
-	if !s.resolveWorkflow(w, r) {
+	dest, ok := s.resolveInstance(w, r)
+	if !ok {
 		return
 	}
-	notImplemented(w)
+	s.proxyInstanceOperation(w, r, dest)
 }
 
 func (s *Server) openapiHandler(w http.ResponseWriter, _ *http.Request) {

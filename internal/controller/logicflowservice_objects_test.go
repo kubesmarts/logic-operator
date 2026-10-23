@@ -50,7 +50,7 @@ func TestIngressForService_Basic(t *testing.T) {
 	svc := newTestService()
 	rt := newTestRuntime()
 
-	ingress := ingressForService(svc, rt, testWfNamespace, testWfName, testWfVersion)
+	ingress := ingressForService(svc, rt, testWfNamespace, testWfName, testWfVersion, true)
 
 	if ingress.Name == nil || *ingress.Name != "my-service" {
 		t.Errorf("expected ingress name 'my-service', got %v", ingress.Name)
@@ -82,11 +82,22 @@ func TestIngressForService_Basic(t *testing.T) {
 	}
 }
 
-func TestIngressForService_RewriteTarget(t *testing.T) {
+func TestIngressForService_PassthroughNoRewrite(t *testing.T) {
 	svc := newTestService()
 	rt := newTestRuntime()
 
-	ingress := ingressForService(svc, rt, testWfNamespace, testWfName, testWfVersion)
+	ingress := ingressForService(svc, rt, testWfNamespace, testWfName, testWfVersion, true)
+
+	if val, ok := ingress.Annotations[annotationNginxRewriteTarget]; ok {
+		t.Errorf("expected no rewrite-target in passthrough mode, got %q", val)
+	}
+}
+
+func TestIngressForService_RewriteTargetForSplit(t *testing.T) {
+	svc := newTestService()
+	rt := newTestRuntime()
+
+	ingress := ingressForService(svc, rt, testWfNamespace, testWfName, testWfVersion, false)
 
 	expectedRewrite := fmt.Sprintf("/q/flow/exec/%s/%s/%s", testWfNamespace, testWfName, testWfVersion)
 	if val, ok := ingress.Annotations[annotationNginxRewriteTarget]; !ok || val != expectedRewrite {
@@ -102,13 +113,10 @@ func TestIngressForService_UserAnnotations(t *testing.T) {
 	})
 	rt := newTestRuntime()
 
-	ingress := ingressForService(svc, rt, testWfNamespace, testWfName, testWfVersion)
+	ingress := ingressForService(svc, rt, testWfNamespace, testWfName, testWfVersion, true)
 
 	if ingress.Annotations["custom.io/foo"] != "bar" {
 		t.Error("expected user annotation to be preserved")
-	}
-	if _, ok := ingress.Annotations[annotationNginxRewriteTarget]; !ok {
-		t.Error("expected rewrite-target annotation to be present alongside user annotations")
 	}
 }
 
@@ -118,7 +126,7 @@ func TestIngressForService_NoHost(t *testing.T) {
 	})
 	rt := newTestRuntime()
 
-	ingress := ingressForService(svc, rt, testWfNamespace, testWfName, testWfVersion)
+	ingress := ingressForService(svc, rt, testWfNamespace, testWfName, testWfVersion, true)
 
 	rule := ingress.Spec.Rules[0]
 	if rule.Host != nil {
@@ -133,7 +141,7 @@ func TestIngressForService_IngressClassName(t *testing.T) {
 	})
 	rt := newTestRuntime()
 
-	ingress := ingressForService(svc, rt, testWfNamespace, testWfName, testWfVersion)
+	ingress := ingressForService(svc, rt, testWfNamespace, testWfName, testWfVersion, true)
 
 	if ingress.Spec.IngressClassName == nil || *ingress.Spec.IngressClassName != "nginx" {
 		t.Errorf("expected ingressClassName 'nginx', got %v", ingress.Spec.IngressClassName)
@@ -149,7 +157,7 @@ func TestIngressForService_TLSWithSecretRef(t *testing.T) {
 	})
 	rt := newTestRuntime()
 
-	ingress := ingressForService(svc, rt, testWfNamespace, testWfName, testWfVersion)
+	ingress := ingressForService(svc, rt, testWfNamespace, testWfName, testWfVersion, true)
 
 	if len(ingress.Spec.TLS) != 1 {
 		t.Fatalf("expected 1 TLS entry, got %d", len(ingress.Spec.TLS))
@@ -177,7 +185,7 @@ func TestIngressForService_TLSWithCertManagerClusterIssuer(t *testing.T) {
 	})
 	rt := newTestRuntime()
 
-	ingress := ingressForService(svc, rt, testWfNamespace, testWfName, testWfVersion)
+	ingress := ingressForService(svc, rt, testWfNamespace, testWfName, testWfVersion, true)
 
 	if val, ok := ingress.Annotations[annotationCertManagerIssuer]; !ok || val != "letsencrypt-prod" {
 		t.Errorf("expected cert-manager cluster-issuer annotation, got %q", val)
@@ -207,7 +215,7 @@ func TestIngressForService_TLSWithCertManagerNamespaceIssuer(t *testing.T) {
 	})
 	rt := newTestRuntime()
 
-	ingress := ingressForService(svc, rt, testWfNamespace, testWfName, testWfVersion)
+	ingress := ingressForService(svc, rt, testWfNamespace, testWfName, testWfVersion, true)
 
 	if val, ok := ingress.Annotations[annotationCertManagerNamespaceIssuer]; !ok || val != "my-issuer" {
 		t.Errorf("expected cert-manager namespace issuer annotation, got %q", val)
@@ -221,7 +229,7 @@ func TestIngressForService_NoTLS(t *testing.T) {
 	svc := newTestService()
 	rt := newTestRuntime()
 
-	ingress := ingressForService(svc, rt, testWfNamespace, testWfName, testWfVersion)
+	ingress := ingressForService(svc, rt, testWfNamespace, testWfName, testWfVersion, true)
 
 	if len(ingress.Spec.TLS) != 0 {
 		t.Errorf("expected no TLS entries, got %d", len(ingress.Spec.TLS))
@@ -232,7 +240,7 @@ func TestIngressForService_OwnerReference(t *testing.T) {
 	svc := newTestService()
 	rt := newTestRuntime()
 
-	ingress := ingressForService(svc, rt, testWfNamespace, testWfName, testWfVersion)
+	ingress := ingressForService(svc, rt, testWfNamespace, testWfName, testWfVersion, true)
 
 	if len(ingress.OwnerReferences) != 1 {
 		t.Fatalf("expected 1 owner reference, got %d", len(ingress.OwnerReferences))
@@ -250,7 +258,7 @@ func TestIngressForService_Labels(t *testing.T) {
 	svc := newTestService()
 	rt := newTestRuntime()
 
-	ingress := ingressForService(svc, rt, testWfNamespace, testWfName, testWfVersion)
+	ingress := ingressForService(svc, rt, testWfNamespace, testWfName, testWfVersion, true)
 
 	if ingress.Labels[testLabelKeyName] != "my-service" {
 		t.Errorf("expected label %s='my-service', got %q", testLabelKeyName, ingress.Labels[testLabelKeyName])
@@ -326,7 +334,7 @@ func TestRouteForDefault_Basic(t *testing.T) {
 	svc := newTestService()
 	rt := newTestRuntime()
 
-	route := routeForDefault(svc, rt, testWfNamespace, testWfName, testWfVersion)
+	route := routeForDefault(svc, rt)
 
 	if route.Name != "my-service" {
 		t.Errorf("expected route name 'my-service', got %q", route.Name)
@@ -337,9 +345,8 @@ func TestRouteForDefault_Basic(t *testing.T) {
 	if route.Spec.Path != "/" {
 		t.Errorf("expected path '/', got %q", route.Spec.Path)
 	}
-	expectedRewrite := fmt.Sprintf("/q/flow/exec/%s/%s/%s", testWfNamespace, testWfName, testWfVersion)
-	if route.Annotations[annotationHAProxyRewriteTarget] != expectedRewrite {
-		t.Errorf("expected haproxy rewrite %q, got %q", expectedRewrite, route.Annotations[annotationHAProxyRewriteTarget])
+	if val, ok := route.Annotations[annotationHAProxyRewriteTarget]; ok {
+		t.Errorf("expected no haproxy rewrite-target in passthrough mode, got %q", val)
 	}
 	if route.Spec.To.Kind != "Service" {
 		t.Errorf("expected target kind 'Service', got %q", route.Spec.To.Kind)
@@ -361,7 +368,7 @@ func TestRouteForDefault_NoHost(t *testing.T) {
 	})
 	rt := newTestRuntime()
 
-	route := routeForDefault(svc, rt, testWfNamespace, testWfName, testWfVersion)
+	route := routeForDefault(svc, rt)
 
 	if route.Spec.Host != "" {
 		t.Errorf("expected empty host, got %q", route.Spec.Host)
@@ -374,13 +381,13 @@ func TestRouteForDefault_TLSEnabled(t *testing.T) {
 	})
 	rt := newTestRuntime()
 
-	route := routeForDefault(svc, rt, testWfNamespace, testWfName, testWfVersion)
+	route := routeForDefault(svc, rt)
 
 	if route.Spec.TLS == nil {
 		t.Fatal("expected TLS config on route")
 	}
-	if route.Spec.TLS.Termination != "edge" {
-		t.Errorf("expected edge termination, got %q", route.Spec.TLS.Termination)
+	if route.Spec.TLS.Termination != "reencrypt" {
+		t.Errorf("expected reencrypt termination, got %q", route.Spec.TLS.Termination)
 	}
 }
 
@@ -388,7 +395,7 @@ func TestRouteForDefault_NoTLS(t *testing.T) {
 	svc := newTestService()
 	rt := newTestRuntime()
 
-	route := routeForDefault(svc, rt, testWfNamespace, testWfName, testWfVersion)
+	route := routeForDefault(svc, rt)
 
 	if route.Spec.TLS != nil {
 		t.Error("expected no TLS config on route when TLS disabled")
@@ -403,13 +410,10 @@ func TestRouteForDefault_UserAnnotations(t *testing.T) {
 	})
 	rt := newTestRuntime()
 
-	route := routeForDefault(svc, rt, testWfNamespace, testWfName, testWfVersion)
+	route := routeForDefault(svc, rt)
 
 	if route.Annotations["haproxy.router.openshift.io/timeout"] != "30s" {
 		t.Error("expected user annotation on route")
-	}
-	if _, ok := route.Annotations[annotationHAProxyRewriteTarget]; !ok {
-		t.Error("expected haproxy rewrite-target annotation")
 	}
 }
 
@@ -417,7 +421,7 @@ func TestRouteForDefault_OwnerReference(t *testing.T) {
 	svc := newTestService()
 	rt := newTestRuntime()
 
-	route := routeForDefault(svc, rt, testWfNamespace, testWfName, testWfVersion)
+	route := routeForDefault(svc, rt)
 
 	if len(route.OwnerReferences) != 1 {
 		t.Fatalf("expected 1 owner reference, got %d", len(route.OwnerReferences))
@@ -435,7 +439,7 @@ func TestRouteForDefault_PortTargetsServicePort(t *testing.T) {
 	svc := newTestService()
 	rt := newTestRuntime()
 
-	route := routeForDefault(svc, rt, testWfNamespace, testWfName, testWfVersion)
+	route := routeForDefault(svc, rt)
 
 	if route.Spec.Port == nil {
 		t.Fatal("expected port on route")

@@ -8,18 +8,70 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/discovery"
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/definitions"
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/routing"
 )
 
 // helpers
 
-func newTestServer(routes map[discovery.WorkflowKey]string) *Server {
-	store := discovery.NewRouteStore()
+func newTestServer(routes map[routing.WorkflowKey]routing.URL) *Server {
+	resolver := routing.NewResolver(routing.NewExecutionEndpointStore(), routing.NewInstanceStore(), nil)
 	if routes != nil {
-		store.Replace(routes)
+		resolver.UpdateExecutionEndpoints(routes)
 	}
-	disc := discovery.NewDiscovery(nil, store, nil, nil)
-	return New(DefaultConfig(), disc, nil)
+	return New(DefaultConfig(), resolver, definitions.NewReader(nil, nil), nil)
+}
+
+// mockUpstreamServer creates a test HTTP server that mimics the quarkus-flow runner behavior.
+func mockUpstreamServer() *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		path := r.URL.Path
+
+		// Exec endpoints: /q/flow/exec/{namespace}/{name} or /q/flow/exec/{namespace}/{name}/{version}
+		if (path == "/q/flow/exec/demo/hello" || path == "/q/flow/exec/demo/hello/1.0.0") && r.Method == http.MethodPost {
+			// Async execution endpoint
+			if r.URL.Query().Get("wait") == "false" {
+				w.WriteHeader(http.StatusAccepted)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{
+					"workflowApplicationId": "test-pod",
+					"instanceId":            "test-instance-123",
+					"status":                "RUNNING",
+				})
+				return
+			}
+			// Sync execution
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"result": "workflow output",
+			})
+			return
+		}
+
+		// Instance operations: /q/flow/exec/{namespace}/{name}/{version}/{instanceId}/{operation}
+		// or /q/flow/exec/{namespace}/{name}/{instanceId}/{operation}
+		if (path == "/q/flow/exec/demo/hello/test-instance-123/suspend" ||
+			path == "/q/flow/exec/demo/hello/1.0.0/test-instance-123/suspend") && r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "suspended"})
+			return
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+	}))
+}
+
+func newTestServerWithUpstream(routes map[routing.WorkflowKey]routing.URL, upstream *httptest.Server) *Server {
+	resolver := routing.NewResolver(routing.NewExecutionEndpointStore(), routing.NewInstanceStore(), nil)
+	if routes != nil {
+		// Replace URLs with upstream server URL
+		updatedRoutes := make(map[routing.WorkflowKey]routing.URL)
+		for k := range routes {
+			updatedRoutes[k] = routing.URL(upstream.URL)
+		}
+		resolver.UpdateExecutionEndpoints(updatedRoutes)
+	}
+	return New(DefaultConfig(), resolver, definitions.NewReader(nil, nil), nil)
 }
 
 // Definitions
@@ -35,15 +87,15 @@ func TestListDefinitions_Empty(t *testing.T) {
 }
 
 func TestListDefinitions_ReturnsCatalog(t *testing.T) {
-	srv := newTestServer(map[discovery.WorkflowKey]string{
-		{Namespace: "demo", Name: "hello", Version: "1.0.0"}: "https://hello.example.com",
-		{Namespace: "prod", Name: "order", Version: "2.0.0"}: "https://order.example.com",
+	srv := newTestServer(map[routing.WorkflowKey]routing.URL{
+		{Namespace: "demo", Name: "hello", Version: "1.0.0"}: routing.URL("https://hello.example.com"),
+		{Namespace: "prod", Name: "order", Version: "2.0.0"}: routing.URL("https://order.example.com"),
 	})
 	req := httptest.NewRequest(http.MethodGet, "/v1/definitions", nil)
 	w := httptest.NewRecorder()
 	srv.router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusOK, w.Code)
-	var defs []discovery.WorkflowKey
+	var defs []routing.WorkflowKey
 	err := json.Unmarshal(w.Body.Bytes(), &defs)
 	assert.NoError(t, err)
 	assert.Len(t, defs, 2)
@@ -52,8 +104,8 @@ func TestListDefinitions_ReturnsCatalog(t *testing.T) {
 }
 
 func TestListDefinitions_DoesNotExposeURL(t *testing.T) {
-	srv := newTestServer(map[discovery.WorkflowKey]string{
-		{Namespace: "demo", Name: "hello", Version: "1.0.0"}: "https://hello.example.com",
+	srv := newTestServer(map[routing.WorkflowKey]routing.URL{
+		{Namespace: "demo", Name: "hello", Version: "1.0.0"}: routing.URL("https://hello.example.com"),
 	})
 	req := httptest.NewRequest(http.MethodGet, "/v1/definitions", nil)
 	w := httptest.NewRecorder()
@@ -114,26 +166,49 @@ func TestSuspend_UnknownWorkflow_Returns404(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
-// Runtime — known workflow returns 501 (found, not yet implemented)
+// Runtime — known workflow proxies to upstream
 
-func TestExecute_KnownWorkflow_Returns501(t *testing.T) {
-	srv := newTestServer(map[discovery.WorkflowKey]string{
-		{Namespace: "demo", Name: "hello", Version: "1.0.0"}: "https://hello.example.com",
-	})
+func TestExecuteAsync_KnownWorkflow_Returns202(t *testing.T) {
+	upstream := mockUpstreamServer()
+	defer upstream.Close()
+	srv := newTestServerWithUpstream(map[routing.WorkflowKey]routing.URL{
+		{Namespace: "demo", Name: "hello", Version: "1.0.0"}: routing.URL(""),
+	}, upstream)
 	req := httptest.NewRequest(http.MethodPost, "/v1/runtime/demo/hello", nil)
 	w := httptest.NewRecorder()
 	srv.router.ServeHTTP(w, req)
-	assert.Equal(t, http.StatusNotImplemented, w.Code)
+	assert.Equal(t, http.StatusAccepted, w.Code)
+	var resp map[string]interface{}
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	assert.NotNil(t, resp["instanceId"])
+	assert.NotNil(t, resp["workflowApplicationId"])
 }
 
-func TestExecuteVersioned_KnownWorkflow_Returns501(t *testing.T) {
-	srv := newTestServer(map[discovery.WorkflowKey]string{
-		{Namespace: "demo", Name: "hello", Version: "1.0.0"}: "https://hello.example.com",
-	})
+func TestExecuteAsyncVersioned_KnownWorkflow_Returns202(t *testing.T) {
+	upstream := mockUpstreamServer()
+	defer upstream.Close()
+	srv := newTestServerWithUpstream(map[routing.WorkflowKey]routing.URL{
+		{Namespace: "demo", Name: "hello", Version: "1.0.0"}: routing.URL(""),
+	}, upstream)
 	req := httptest.NewRequest(http.MethodPost, "/v1/runtime/demo/hello/1.0.0", nil)
 	w := httptest.NewRecorder()
 	srv.router.ServeHTTP(w, req)
-	assert.Equal(t, http.StatusNotImplemented, w.Code)
+	assert.Equal(t, http.StatusAccepted, w.Code)
+}
+
+func TestExecuteSync_KnownWorkflow_Returns200(t *testing.T) {
+	upstream := mockUpstreamServer()
+	defer upstream.Close()
+	srv := newTestServerWithUpstream(map[routing.WorkflowKey]routing.URL{
+		{Namespace: "demo", Name: "hello", Version: "1.0.0"}: routing.URL(""),
+	}, upstream)
+	req := httptest.NewRequest(http.MethodPost, "/v1/runtime/demo/hello/sync", nil)
+	w := httptest.NewRecorder()
+	srv.router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]interface{}
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	assert.Equal(t, "workflow output", resp["result"])
 }
 
 // Routing disambiguation: literal "instance" must NOT be treated as {version}
@@ -141,15 +216,17 @@ func TestExecuteVersioned_KnownWorkflow_Returns501(t *testing.T) {
 func TestSuspend_LiteralInstanceNotVersion(t *testing.T) {
 	// If chi incorrectly matched "instance" as {version}, routing.Resolve would
 	// call Lookup with version="instance" and find nothing → 404. With correct
-	// routing it calls LookupLatest → 501 (found, not implemented).
-	srv := newTestServer(map[discovery.WorkflowKey]string{
-		{Namespace: "demo", Name: "hello", Version: "1.0.0"}: "https://hello.example.com",
-	})
-	req := httptest.NewRequest(http.MethodPost, "/v1/runtime/demo/hello/instance/abc123/suspend", nil)
+	// routing it calls LookupLatest and routes to suspend endpoint.
+	upstream := mockUpstreamServer()
+	defer upstream.Close()
+	srv := newTestServerWithUpstream(map[routing.WorkflowKey]routing.URL{
+		{Namespace: "demo", Name: "hello", Version: "1.0.0"}: routing.URL(""),
+	}, upstream)
+	req := httptest.NewRequest(http.MethodPost, "/v1/runtime/demo/hello/instance/test-instance-123/suspend", nil)
 	w := httptest.NewRecorder()
 	srv.router.ServeHTTP(w, req)
-	// 501 = found workflow, proxy not implemented yet. 404 = routing bug.
-	assert.Equal(t, http.StatusNotImplemented, w.Code)
+	// 200 = suspend succeeded. 404 = routing bug.
+	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 // OpenAPI

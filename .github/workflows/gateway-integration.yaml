@@ -1,0 +1,34 @@
+name: Gateway Integration Tests
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'workflow-gateway/**'
+      - '.github/workflows/gateway-integration.yaml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'workflow-gateway/**'
+      - '.github/workflows/gateway-integration.yaml'
+
+jobs:
+  gateway-integration:
+    name: Gateway ↔ Runner Integration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Sync Vector configs from logic-apps
+        run: make sync-configs
+
+      - name: Run gateway integration tests
+        run: make test-gateway-integration

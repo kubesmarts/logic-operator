@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/discovery"
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/routing"
 )
 
 func DefaultManagementConfig() ManagementConfig {
@@ -21,8 +21,8 @@ func DefaultManagementConfig() ManagementConfig {
 }
 
 func TestManagementHealthHandler(t *testing.T) {
-	store := discovery.NewRouteStore()
-	m := NewManagement(DefaultManagementConfig(), store, func() bool { return true })
+	resolver := routing.NewResolver(routing.NewExecutionEndpointStore(), routing.NewInstanceStore(), nil)
+	m := NewManagement(DefaultManagementConfig(), resolver, func() bool { return true })
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	w := httptest.NewRecorder()
 	m.router.ServeHTTP(w, req)
@@ -31,8 +31,8 @@ func TestManagementHealthHandler(t *testing.T) {
 }
 
 func TestManagementReadyHandler_NotReady(t *testing.T) {
-	store := discovery.NewRouteStore()
-	m := NewManagement(DefaultManagementConfig(), store, func() bool { return false })
+	resolver := routing.NewResolver(routing.NewExecutionEndpointStore(), routing.NewInstanceStore(), nil)
+	m := NewManagement(DefaultManagementConfig(), resolver, func() bool { return false })
 	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
 	w := httptest.NewRecorder()
 	m.router.ServeHTTP(w, req)
@@ -40,8 +40,8 @@ func TestManagementReadyHandler_NotReady(t *testing.T) {
 }
 
 func TestManagementReadyHandler_Ready(t *testing.T) {
-	store := discovery.NewRouteStore()
-	m := NewManagement(DefaultManagementConfig(), store, func() bool { return true })
+	resolver := routing.NewResolver(routing.NewExecutionEndpointStore(), routing.NewInstanceStore(), nil)
+	m := NewManagement(DefaultManagementConfig(), resolver, func() bool { return true })
 	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
 	w := httptest.NewRecorder()
 	m.router.ServeHTTP(w, req)
@@ -49,11 +49,11 @@ func TestManagementReadyHandler_Ready(t *testing.T) {
 }
 
 func TestManagementDebugRoutesHandler(t *testing.T) {
-	store := discovery.NewRouteStore()
-	store.Replace(map[discovery.WorkflowKey]string{
-		{Namespace: "demo", Name: "hello", Version: "1.0.0"}: "https://hello.example.com",
+	resolver := routing.NewResolver(routing.NewExecutionEndpointStore(), routing.NewInstanceStore(), nil)
+	resolver.UpdateExecutionEndpoints(map[routing.WorkflowKey]routing.URL{
+		{Namespace: "demo", Name: "hello", Version: "1.0.0"}: routing.URL("https://hello.example.com"),
 	})
-	m := NewManagement(DefaultManagementConfig(), store, func() bool { return true })
+	m := NewManagement(DefaultManagementConfig(), resolver, func() bool { return true })
 	req := httptest.NewRequest(http.MethodGet, "/debug/routes", nil)
 	w := httptest.NewRecorder()
 	m.router.ServeHTTP(w, req)

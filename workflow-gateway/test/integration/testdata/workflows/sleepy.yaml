@@ -1,0 +1,14 @@
+document:
+  dsl: '1.0.0'
+  namespace: demo
+  name: sleepy
+  version: '1.0.0'
+do:
+  - greet:
+      set:
+        message: 'Starting nap...'
+  - nap:
+      wait: { seconds: 10 }
+  - wakeUp:
+      set:
+        status: 'Nap complete'
