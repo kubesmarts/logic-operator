@@ -1,0 +1,9 @@
+document:
+  dsl: '1.0.0'
+  namespace: demo
+  name: hello-world
+  version: '1.0.0'
+do:
+  - greet:
+      set:
+        message: '${ "Hello, " + .name + "!" }'

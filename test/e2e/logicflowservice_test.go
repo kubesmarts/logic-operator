@@ -88,7 +88,7 @@ func logicFlowServiceTests() {
 			_, _ = utils.Run(cmd)
 		})
 
-		It("should create an Ingress with nginx rewrite-target for default definition", func() {
+		It("should create a passthrough Ingress for default definition", func() {
 			svcYAML := `apiVersion: logic.kubesmarts.org/v1
 kind: LogicFlowService
 metadata:
@@ -106,14 +106,14 @@ spec:
 			_, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create LogicFlowService")
 
-			By("verifying the Ingress is created with correct rewrite-target")
+			By("verifying the Ingress is created in passthrough mode (no rewrite-target)")
 			verifyIngress := func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "ingress",
 					svcName, "-n", namespace,
 					"-o", "jsonpath={.metadata.annotations.nginx\\.ingress\\.kubernetes\\.io/rewrite-target}")
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).To(Equal("/q/flow/exec/" + namespace + "/payment/1.0.0"))
+				g.Expect(output).To(BeEmpty(), "default-definition Ingress should pass the full path through without rewrite")
 			}
 			Eventually(verifyIngress).Should(Succeed())
 
@@ -440,38 +440,6 @@ func logicFlowServiceMultiVersionTests() {
 			_, _ = utils.Run(cmd)
 		})
 
-		It("should serve v1 only when configured as the default definition", func() {
-			svcYAML := `apiVersion: logic.kubesmarts.org/v1
-kind: LogicFlowService
-metadata:
-  name: %s
-  namespace: %s
-spec:
-  defaultDefinition:
-    name: %s
-  ingress:
-    host: %s`
-
-			By("creating the service pointing at v1")
-			cmd := exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(fmt.Sprintf(svcYAML, svcName, namespace, mvDefV1Name, host))
-			_, err := utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred(), "Failed to create LogicFlowService")
-
-			By("verifying the primary Ingress rewrites to v1.0.0")
-			Eventually(func(g Gomega) {
-				g.Expect(getAnnotation(g, "ingress", svcName,
-					`nginx\.ingress\.kubernetes\.io/rewrite-target`)).To(Equal(rewritePath("1.0.0")))
-			}).Should(Succeed())
-
-			By("verifying no canary Ingress exists")
-			Consistently(func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "ingress", svcName+"-canary", "-n", namespace)
-				_, err := utils.Run(cmd)
-				g.Expect(err).To(HaveOccurred(), "canary Ingress should not exist for a default definition")
-			}, 5*time.Second).Should(Succeed())
-		})
-
 		It("should create a canary Ingress when v2 is introduced at 20%", func() {
 			svcYAML := `apiVersion: logic.kubesmarts.org/v1
 kind: LogicFlowService
@@ -550,10 +518,10 @@ spec:
 			_, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to promote v2")
 
-			By("verifying the primary Ingress now rewrites to v1.1.0")
+			By("verifying the primary Ingress is now passthrough (no rewrite-target)")
 			Eventually(func(g Gomega) {
 				g.Expect(getAnnotation(g, "ingress", svcName,
-					`nginx\.ingress\.kubernetes\.io/rewrite-target`)).To(Equal(rewritePath("1.1.0")))
+					`nginx\.ingress\.kubernetes\.io/rewrite-target`)).To(BeEmpty())
 			}).Should(Succeed())
 
 			By("verifying the canary and direct Ingresses are cleaned up")
@@ -580,10 +548,10 @@ spec:
 				g.Expect(err).To(HaveOccurred(), "v1 ConfigMap should be garbage collected")
 			}).Should(Succeed())
 
-			By("verifying the service still rewrites to v1.1.0")
+			By("verifying the service Ingress remains passthrough (no rewrite-target)")
 			Consistently(func(g Gomega) {
 				g.Expect(getAnnotation(g, "ingress", svcName,
-					`nginx\.ingress\.kubernetes\.io/rewrite-target`)).To(Equal(rewritePath("1.1.0")))
+					`nginx\.ingress\.kubernetes\.io/rewrite-target`)).To(BeEmpty())
 			}, 5*time.Second, 1*time.Second).Should(Succeed())
 
 			By("verifying v2 endpoint is reachable and loaded")

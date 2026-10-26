@@ -15,13 +15,18 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	ctrl "sigs.k8s.io/controller-runtime"
+	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/catalog"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/dataindex"
-	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/discovery"
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/definitions"
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/kube"
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/lease"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/platform"
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/routing"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/server"
 )
 
@@ -67,19 +72,40 @@ func main() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(logicv1.AddToScheme(scheme))
 
-	// Initialize platform store, watcher, and Data Index client
-	platformStore := platform.NewPlatformStore()
-	platformWatcher := platform.NewPlatformWatcher(restCfg, scheme, platformStore, operatorNamespace)
-	diClient := dataindex.NewClient(platformStore)
-
-	// Initialize discovery and route store
-	kubeClient, err := client.New(restCfg, client.Options{Scheme: scheme})
+	// Build the shared controller-runtime manager. Its cache is shared by all
+	// watchers; LogicFlowDefinition.Spec is stripped before entering the cache.
+	mgr, err := kube.NewManager(restCfg, scheme, map[client.Object]crcache.ByObject{
+		&logicv1.LogicFlowDefinition{}: {Transform: catalog.StripDefinitionSpec},
+	})
 	if err != nil {
-		setupLog.Error(err, "unable to create kubernetes client")
+		setupLog.Error(err, "unable to create manager")
 		os.Exit(1)
 	}
-	store := discovery.NewRouteStore()
-	disc := discovery.NewDiscovery(restCfg, store, scheme, kubeClient)
+
+	// Routing core: execution endpoint table + instance cache + lease->pod resolver.
+	resolver := routing.NewResolver(
+		routing.NewExecutionEndpointStore(),
+		routing.NewInstanceStore(),
+		lease.NewResolver(mgr.GetClient()),
+	)
+
+	// Platform store + Data Index client.
+	platformStore := platform.NewPlatformStore()
+	diClient := dataindex.NewClient(platformStore)
+
+	// On-demand reader for full LogicFlowDefinition documents.
+	defReader := definitions.NewReader(mgr.GetCache(), mgr.GetAPIReader())
+
+	// Register watchers as manager runnables (share the manager's cache).
+	catalogWatcher := catalog.NewWatcher(mgr.GetCache(), resolver)
+	if err := mgr.Add(catalogWatcher); err != nil {
+		setupLog.Error(err, "unable to register catalog watcher")
+		os.Exit(1)
+	}
+	if err := mgr.Add(platform.NewPlatformWatcher(mgr.GetCache(), platformStore, operatorNamespace)); err != nil {
+		setupLog.Error(err, "unable to register platform watcher")
+		os.Exit(1)
+	}
 
 	// Create HTTP server with configured options
 	serverCfg := server.Config{
@@ -89,7 +115,7 @@ func main() {
 		IdleTimeout:     idleTimeout,
 		ShutdownTimeout: shutdownTimeout,
 	}
-	srv := server.New(serverCfg, disc, diClient)
+	srv := server.New(serverCfg, resolver, defReader, diClient)
 
 	// Create management server
 	mgmtCfg := server.ManagementConfig{
@@ -98,7 +124,7 @@ func main() {
 		WriteTimeout:    5 * time.Second,
 		ShutdownTimeout: 10 * time.Second,
 	}
-	mgmtSrv := server.NewManagement(mgmtCfg, store, srv.IsReady)
+	mgmtSrv := server.NewManagement(mgmtCfg, resolver, srv.IsReady)
 
 	// Setup signal handling
 	sigChan := make(chan os.Signal, 1)
@@ -108,19 +134,11 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Start discovery in background
+	// Start the shared manager (cache + catalog & platform watchers) in background.
 	go func() {
-		if err := disc.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			setupLog.Error(err, "discovery failed")
+		if err := mgr.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			setupLog.Error(err, "manager failed")
 			os.Exit(1)
-		}
-	}()
-
-	// Start platform watcher in background
-	go func() {
-		if err := platformWatcher.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			setupLog.Error(err, "platform watcher failed")
-			// non-fatal: gateway still routes, instances return 503
 		}
 	}()
 
@@ -141,16 +159,22 @@ func main() {
 		}
 	}()
 
-	// Wait for discovery cache sync before marking ready. Startup fails if sync
+	// Wait for the shared cache to sync and the routing table to populate before
+	// marking ready. Startup fails if sync
 	// does not complete, ensuring the routing table is populated before the
 	// gateway advertises readiness.
-	discCtx, discCancel := context.WithTimeout(ctx, 30*time.Second)
-	if !disc.WaitForCacheSync(discCtx) {
-		discCancel()
-		setupLog.Error(nil, "cache sync timeout: gateway requires a synced routing table to serve requests")
+	readyCtx, readyCancel := context.WithTimeout(ctx, 30*time.Second)
+	if !mgr.WaitForCacheSync(readyCtx) {
+		readyCancel()
+		setupLog.Error(nil, "cache sync timeout: gateway requires a synced cache to serve requests")
 		os.Exit(1)
 	}
-	discCancel()
+	if !catalogWatcher.WaitForInitialSync(readyCtx) {
+		readyCancel()
+		setupLog.Error(nil, "routing table not populated before readiness timeout")
+		os.Exit(1)
+	}
+	readyCancel()
 
 	setupLog.Info("workflow gateway ready; cache synchronized")
 	srv.SetReady(true)
@@ -173,6 +197,6 @@ func main() {
 		setupLog.Error(err, "management server shutdown error")
 	}
 
-	cancel() // stop discovery
+	cancel() // stop the manager and its watchers
 	setupLog.Info("server shut down gracefully")
 }

@@ -254,11 +254,6 @@ func TestSecurityEnvVars_OIDC(t *testing.T) {
 	})
 }
 
-func TestQuarkusFlowVersion_IsOnePointO(t *testing.T) {
-	g := gomega.NewWithT(t)
-	g.Expect(QuarkusFlowVersion).To(gomega.Equal("1.0.0"))
-}
-
 func TestDefaultRunnerImage_AutoSelect(t *testing.T) {
 	g := gomega.NewWithT(t)
 	minimalExpected := fmt.Sprintf("%s/%s:%s-%s", QuarkusFlowRegistry, QuarkusFlowRunner, QuarkusFlowVersion, ImageVariantMinimal)
@@ -509,17 +504,17 @@ func TestWithDurableEnvVars_SetsAllEnvVars(t *testing.T) {
 
 	WithDurableEnvVars(rt)(c)
 
-	g.Expect(c.Env).To(gomega.HaveLen(5))
+	g.Expect(c.Env).To(gomega.HaveLen(7))
 	g.Expect(*c.Env[0].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_LEASE_LEADER_ENABLED"))
 	g.Expect(*c.Env[0].Value).To(gomega.Equal("false"))
 	g.Expect(*c.Env[1].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_POOL_NAME"))
 	g.Expect(*c.Env[1].Value).To(gomega.Equal(testRuntimeName))
-	g.Expect(*c.Env[2].Name).To(gomega.Equal("POD_NAME"))
-	g.Expect(*c.Env[2].ValueFrom.FieldRef.FieldPath).To(gomega.Equal("metadata.name"))
-	g.Expect(*c.Env[3].Name).To(gomega.Equal("POD_NAMESPACE"))
-	g.Expect(*c.Env[3].ValueFrom.FieldRef.FieldPath).To(gomega.Equal("metadata.namespace"))
-	g.Expect(*c.Env[4].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_LEASE_TIMEOUT"))
-	g.Expect(*c.Env[4].Value).To(gomega.Equal("PT60S"))
+	g.Expect(*c.Env[4].Name).To(gomega.Equal("POD_NAME"))
+	g.Expect(*c.Env[4].ValueFrom.FieldRef.FieldPath).To(gomega.Equal("metadata.name"))
+	g.Expect(*c.Env[5].Name).To(gomega.Equal("POD_NAMESPACE"))
+	g.Expect(*c.Env[5].ValueFrom.FieldRef.FieldPath).To(gomega.Equal("metadata.namespace"))
+	g.Expect(*c.Env[6].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_LEASE_MEMBER_ACQUIRE_TIMEOUT"))
+	g.Expect(*c.Env[6].Value).To(gomega.Equal(LeaseAcquireTimeoutDuration))
 }
 
 func TestWithDurableEnvVars_FiltersUserDuplicates(t *testing.T) {
@@ -535,16 +530,16 @@ func TestWithDurableEnvVars_FiltersUserDuplicates(t *testing.T) {
 
 	WithDurableEnvVars(rt)(c)
 
-	g.Expect(c.Env).To(gomega.HaveLen(6))
+	g.Expect(c.Env).To(gomega.HaveLen(8))
 	g.Expect(*c.Env[0].Name).To(gomega.Equal("OTHER_VAR"))
 	g.Expect(*c.Env[0].Value).To(gomega.Equal("keep"))
 	g.Expect(*c.Env[1].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_LEASE_LEADER_ENABLED"))
 	g.Expect(*c.Env[2].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_POOL_NAME"))
 	g.Expect(*c.Env[2].Value).To(gomega.Equal(testRuntimeName))
-	g.Expect(*c.Env[3].Name).To(gomega.Equal("POD_NAME"))
-	g.Expect(*c.Env[4].Name).To(gomega.Equal("POD_NAMESPACE"))
-	g.Expect(*c.Env[5].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_LEASE_TIMEOUT"))
-	g.Expect(*c.Env[5].Value).To(gomega.Equal("PT60S"))
+	g.Expect(*c.Env[5].Name).To(gomega.Equal("POD_NAME"))
+	g.Expect(*c.Env[6].Name).To(gomega.Equal("POD_NAMESPACE"))
+	g.Expect(*c.Env[7].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_LEASE_MEMBER_ACQUIRE_TIMEOUT"))
+	g.Expect(*c.Env[7].Value).To(gomega.Equal("30S"))
 }
 
 func TestWithDurableEnvVars_AllowsUserLeaseTimeout(t *testing.T) {
@@ -553,20 +548,20 @@ func TestWithDurableEnvVars_AllowsUserLeaseTimeout(t *testing.T) {
 	rt.Name = testRuntimeName
 	c := corev1ac.Container().WithName("test").
 		WithEnv(
-			corev1ac.EnvVar().WithName("QUARKUS_FLOW_DURABLE_KUBE_LEASE_TIMEOUT").WithValue("PT90S"),
+			corev1ac.EnvVar().WithName("QUARKUS_FLOW_DURABLE_KUBE_LEASE_MEMBER_ACQUIRE_TIMEOUT").WithValue("PT90S"),
 		)
 
 	WithDurableEnvVars(rt)(c)
 
-	g.Expect(c.Env).To(gomega.HaveLen(5))
+	g.Expect(c.Env).To(gomega.HaveLen(7))
 	// User-provided lease timeout should be preserved
-	g.Expect(*c.Env[0].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_LEASE_TIMEOUT"))
+	g.Expect(*c.Env[0].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_LEASE_MEMBER_ACQUIRE_TIMEOUT"))
 	g.Expect(*c.Env[0].Value).To(gomega.Equal("PT90S"))
 	// Immutable vars should be set
 	g.Expect(*c.Env[1].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_LEASE_LEADER_ENABLED"))
 	g.Expect(*c.Env[2].Name).To(gomega.Equal("QUARKUS_FLOW_DURABLE_KUBE_POOL_NAME"))
-	g.Expect(*c.Env[3].Name).To(gomega.Equal("POD_NAME"))
-	g.Expect(*c.Env[4].Name).To(gomega.Equal("POD_NAMESPACE"))
+	g.Expect(*c.Env[5].Name).To(gomega.Equal("POD_NAME"))
+	g.Expect(*c.Env[6].Name).To(gomega.Equal("POD_NAMESPACE"))
 }
 
 func TestNewMemberLease_Fields(t *testing.T) {

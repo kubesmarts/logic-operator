@@ -123,7 +123,7 @@ func (r *LogicFlowServiceReconciler) applyNetworking(
 		}
 		version := defs[0].Labels[logicv1.LabelWorkflowVersion]
 		if utils.IsOpenShift() {
-			return r.applyRoute(ctx, svc, rt, wfNamespace, wfName, version)
+			return r.applyRoute(ctx, svc, rt)
 		}
 		return r.applyDefaultIngress(ctx, svc, rt, wfNamespace, wfName, version)
 	}
@@ -154,7 +154,7 @@ func (r *LogicFlowServiceReconciler) applyDefaultIngress(
 	rt *logicv1.LogicFlowRuntime,
 	wfNamespace, wfName, version string,
 ) error {
-	ingress := ingressForService(svc, rt, wfNamespace, wfName, version)
+	ingress := ingressForService(svc, rt, wfNamespace, wfName, version, true)
 	svc.Status.IngressRef = &corev1.LocalObjectReference{Name: *ingress.Name}
 	return r.Apply(ctx, ingress, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
 }
@@ -180,7 +180,7 @@ func (r *LogicFlowServiceReconciler) applyCanaryIngresses(
 ) error {
 	primary, canary := splitTrafficTargets(svc, defs)
 
-	primaryIngress := ingressForService(svc, rt, wfNamespace, wfName, primary.version)
+	primaryIngress := ingressForService(svc, rt, wfNamespace, wfName, primary.version, false)
 	if err := r.Apply(ctx, primaryIngress, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership); err != nil {
 		return fmt.Errorf("applying primary ingress: %w", err)
 	}
@@ -203,9 +203,8 @@ func (r *LogicFlowServiceReconciler) applyRoute(
 	ctx context.Context,
 	svc *logicv1.LogicFlowService,
 	rt *logicv1.LogicFlowRuntime,
-	wfNamespace, wfName, version string,
 ) error {
-	desired := routeForDefault(svc, rt, wfNamespace, wfName, version)
+	desired := routeForDefault(svc, rt)
 	svc.Status.RouteRef = &corev1.LocalObjectReference{Name: desired.Name}
 	//nolint:staticcheck // OpenShift Route API has no apply configurations; deprecated Patch+client.Apply is the only option
 	return r.Patch(ctx, desired, client.Apply, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)

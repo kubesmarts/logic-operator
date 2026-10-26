@@ -40,22 +40,26 @@ func quarkusFlowPath(wfNamespace, wfName, version string) string {
 	return fmt.Sprintf("%s/%s/%s/%s", flowExecPathPrefix, wfNamespace, wfName, version)
 }
 
-// ingressForService creates a standard Ingress with nginx rewrite-target.
-// Used for DefaultDefinition or as the primary Ingress in traffic splitting.
+// ingressForService creates a standard Ingress routing to the runtime service.
+//
+// When passthrough is true the original request path is forwarded unchanged, so
+// workflow instance subpaths (e.g. /{instanceId}/cancel) reach the runner. This
+// is used for a DefaultDefinition. When false, an nginx rewrite-target maps the
+// request to the versioned workflow exec path, used by the traffic-split primary
+// Ingress where the version is selected by weight rather than by the client.
 func ingressForService(
 	svc *logicv1.LogicFlowService,
 	rt *logicv1.LogicFlowRuntime,
 	wfNamespace, wfName, version string,
+	passthrough bool,
 ) *networkingv1ac.IngressApplyConfiguration {
 	pathType := networkingv1.PathTypePrefix
-	rewriteTarget := quarkusFlowPath(wfNamespace, wfName, version)
 
-	annotations := map[string]string{
-		annotationNginxRewriteTarget: rewriteTarget,
+	annotations := map[string]string{}
+	if !passthrough {
+		annotations[annotationNginxRewriteTarget] = quarkusFlowPath(wfNamespace, wfName, version)
 	}
-	for k, v := range svc.Spec.Ingress.Annotations {
-		annotations[k] = v
-	}
+	applyUserAnnotations(svc, annotations)
 	applyCertManagerAnnotations(svc, annotations)
 
 	rule := networkingv1ac.IngressRule().
@@ -101,9 +105,7 @@ func canaryIngressForService(
 		annotationNginxCanary:        "true",
 		annotationNginxCanaryWeight:  strconv.FormatInt(int64(weight), 10),
 	}
-	for k, v := range svc.Spec.Ingress.Annotations {
-		annotations[k] = v
-	}
+	applyUserAnnotations(svc, annotations)
 
 	rule := networkingv1ac.IngressRule().
 		WithHTTP(networkingv1ac.HTTPIngressRuleValue().
@@ -147,9 +149,7 @@ func directVersionIngress(
 		annotationNginxRewriteTarget: rewriteTarget,
 		annotationNginxUseRegex:      "true",
 	}
-	for k, v := range svc.Spec.Ingress.Annotations {
-		annotations[k] = v
-	}
+	applyUserAnnotations(svc, annotations)
 
 	rule := networkingv1ac.IngressRule().
 		WithHTTP(networkingv1ac.HTTPIngressRuleValue().
@@ -180,21 +180,17 @@ func directVersionIngress(
 		WithSpec(spec)
 }
 
-// routeForDefault creates an OpenShift Route with haproxy rewrite for single-version access.
+// routeForDefault creates an OpenShift Route that forwards the full request path
+// unchanged to the runtime service, so workflow instance subpaths (e.g.
+// /{instanceId}/cancel) reach the runner. Used for a DefaultDefinition.
 func routeForDefault(
 	svc *logicv1.LogicFlowService,
 	rt *logicv1.LogicFlowRuntime,
-	wfNamespace, wfName, version string,
 ) *routev1.Route {
 	weight := int32(100)
-	rewriteTarget := quarkusFlowPath(wfNamespace, wfName, version)
 
-	annotations := map[string]string{
-		annotationHAProxyRewriteTarget: rewriteTarget,
-	}
-	for k, v := range svc.Spec.Ingress.Annotations {
-		annotations[k] = v
-	}
+	annotations := map[string]string{}
+	applyUserAnnotations(svc, annotations)
 
 	route := &routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
@@ -225,7 +221,7 @@ func routeForDefault(
 
 	if svc.Spec.Ingress.TLS.Enabled {
 		route.Spec.TLS = &routev1.TLSConfig{
-			Termination:                   routev1.TLSTerminationEdge,
+			Termination:                   routev1.TLSTerminationReencrypt,
 			InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
 		}
 	}
@@ -309,6 +305,12 @@ func applyCertManagerAnnotations(svc *logicv1.LogicFlowService, annotations map[
 		annotations[annotationCertManagerIssuer] = cm.IssuerRef.Name
 	} else {
 		annotations[annotationCertManagerNamespaceIssuer] = cm.IssuerRef.Name
+	}
+}
+
+func applyUserAnnotations(svc *logicv1.LogicFlowService, annotations map[string]string) {
+	for k, v := range svc.Spec.Ingress.Annotations {
+		annotations[k] = v
 	}
 }
 

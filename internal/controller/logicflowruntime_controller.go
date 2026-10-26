@@ -166,8 +166,8 @@ func (r *LogicFlowRuntimeReconciler) reconcileLeases(ctx context.Context, rt *lo
 		if !apierrors.IsNotFound(err) {
 			return err
 		}
-		// Deployment not found - we can still clean up excess leases
-		log.V(1).Info("Deployment not found, skipping new lease creation but proceeding with cleanup")
+		// Deployment not found - can't create leases (need it for owner reference)
+		log.V(1).Info("Deployment not found, skipping new lease creation")
 		deploymentFound = false
 	} else {
 		deploymentFound = true
@@ -178,11 +178,6 @@ func (r *LogicFlowRuntimeReconciler) reconcileLeases(ctx context.Context, rt *lo
 		client.InNamespace(rt.Namespace),
 		client.MatchingLabels{LabelDurablePool: rt.Name},
 	); err != nil {
-		return err
-	}
-
-	runningPods, err := r.runningPodNames(ctx, rt)
-	if err != nil {
 		return err
 	}
 
@@ -210,61 +205,10 @@ func (r *LogicFlowRuntimeReconciler) reconcileLeases(ctx context.Context, rt *lo
 		}
 	}
 
-	// Delete excess leases when count > desired
-	// We can only delete unheld leases. During scale-down, Kubernetes may terminate
-	// any pod (e.g., the one holding lease-00), leaving a low-index lease unheld while
-	// a high-index lease is held. We delete any unheld lease to bring count down to desired.
-	// The creation loop (above) ensures we always have leases 0..desired-1, filling gaps.
-	currentCount := int32(len(leaseList.Items))
-	if currentCount > desired {
-		deletedCount := int32(0)
-		for i := range leaseList.Items {
-			if currentCount-deletedCount <= desired {
-				break
-			}
-
-			isHeld := leaseHeldByRunningPod(&leaseList.Items[i], runningPods)
-			if isHeld {
-				log.V(1).Info("skipping deletion of held lease during scale-down",
-					"lease", leaseList.Items[i].Name,
-					"holder", *leaseList.Items[i].Spec.HolderIdentity)
-				continue
-			}
-
-			// Delete unheld lease to reduce count toward desired
-			if err := r.Delete(ctx, &leaseList.Items[i]); err != nil && !apierrors.IsNotFound(err) {
-				return err
-			}
-			deletedCount++
-		}
-	}
+	// Leases persist across scale-down to avoid orphaning in-flight workflows.
+	// They are only cleaned up when the runtime CR is deleted (via owner reference GC).
 
 	return nil
-}
-
-func (r *LogicFlowRuntimeReconciler) runningPodNames(ctx context.Context, rt *logicv1.LogicFlowRuntime) (map[string]struct{}, error) {
-	var podList corev1.PodList
-	if err := r.List(ctx, &podList,
-		client.InNamespace(rt.Namespace),
-		client.MatchingLabels(SelectorLabels(rt.Name)),
-	); err != nil {
-		return nil, err
-	}
-	names := make(map[string]struct{}, len(podList.Items))
-	for i := range podList.Items {
-		if podList.Items[i].DeletionTimestamp == nil {
-			names[podList.Items[i].Name] = struct{}{}
-		}
-	}
-	return names, nil
-}
-
-func leaseHeldByRunningPod(lease *coordinationv1.Lease, runningPods map[string]struct{}) bool {
-	if lease.Spec.HolderIdentity == nil || *lease.Spec.HolderIdentity == "" {
-		return false
-	}
-	_, held := runningPods[*lease.Spec.HolderIdentity]
-	return held
 }
 
 func (r *LogicFlowRuntimeReconciler) reconcilePodRBAC(ctx context.Context, rt *logicv1.LogicFlowRuntime) error {
@@ -332,14 +276,15 @@ func (r *LogicFlowRuntimeReconciler) updateStatusLeases(ctx context.Context, rt 
 		return err
 	}
 
-	rt.Status.LeaseReplicas = int32(len(leaseList.Items))
 	desired := effectiveReplicas(&rt.Spec.ApplicationSpec)
+	rt.Status.LeaseReplicas = desired
 
-	if rt.Status.LeaseReplicas >= desired {
+	// Check if we have at least the desired number of leases (even if they exceed desired, that's OK for scale-down)
+	if int32(len(leaseList.Items)) >= desired {
 		logicv1.SetCondition(&rt.Status.Conditions, logicv1.ConditionLeaseReady, metav1.ConditionTrue, rt.Generation, logicv1.ReasonReady, "")
 	} else {
 		logicv1.SetCondition(&rt.Status.Conditions, logicv1.ConditionLeaseReady, metav1.ConditionFalse, rt.Generation, logicv1.ReasonLeaseNotFound,
-			fmt.Sprintf("%d of %d leases ready", rt.Status.LeaseReplicas, desired))
+			fmt.Sprintf("%d of %d leases ready", len(leaseList.Items), desired))
 	}
 
 	return nil

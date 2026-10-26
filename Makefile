@@ -119,6 +119,10 @@ test: manifests generate fmt vet setup-envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 	cd workflow-gateway && KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test -v ./... -coverprofile ../cover-gateway.out
 
+.PHONY: test-gateway-integration
+test-gateway-integration: ## Run workflow gateway integration tests (mounts local testdata/workflows into runner container)
+	cd workflow-gateway && go test -tags=integration ./test/integration/... -v
+
 ##@ E2E Tests
 #
 # E2E test workflow:
@@ -127,7 +131,8 @@ test: manifests generate fmt vet setup-envtest ## Run tests.
 #   3. make cleanup-test-e2e # Clean up when done
 #
 # The setup-test-e2e target creates a Kind cluster and installs all required infrastructure:
-# - Kind cluster (KIND_CLUSTER name)
+# - Kind cluster (KIND_CLUSTER name) with ingress-ready node labels and port mappings
+# - ingress-nginx (for routing and sticky session tests)
 # - cert-manager
 # - Operator image (builds and loads E2E_IMG)
 # - Required test images (postgres, quarkus-flow-runner, data-index)
@@ -148,7 +153,15 @@ setup-test-e2e: manifests generate fmt vet ## Set up complete E2E test infrastru
 			echo "Kind cluster '$(KIND_CLUSTER)' already exists." ;; \
 		*) \
 			echo "Creating Kind cluster '$(KIND_CLUSTER)'..."; \
-			$(KIND) create cluster --name $(KIND_CLUSTER) ;; \
+			$(KIND) create cluster --name $(KIND_CLUSTER) --config hack/kind-config.yaml; \
+			echo "Waiting for node to be Ready..."; \
+			$(KUBECTL) wait --for=condition=Ready node --all --timeout=90s; \
+			echo "Installing ingress-nginx..."; \
+			$(KUBECTL) apply -f $(INGRESS_NGINX_URL); \
+			echo "Waiting for ingress-nginx deployment to exist..."; \
+			for i in $$(seq 1 30); do $(KUBECTL) get deployment -n ingress-nginx ingress-nginx-controller >/dev/null 2>&1 && break || sleep 2; done; \
+			echo "Waiting for ingress-nginx to be ready..."; \
+			$(KUBECTL) wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=120s ;; \
 	esac
 	@echo "Checking if cert-manager is installed..."
 	@if ! $(KUBECTL) get namespace cert-manager >/dev/null 2>&1; then \
@@ -175,15 +188,18 @@ setup-test-e2e: manifests generate fmt vet ## Set up complete E2E test infrastru
 	$(CONTAINER_TOOL) build -t $(E2E_IMG) .
 	@echo "Loading operator image into Kind cluster..."
 	$(KIND) load docker-image $(E2E_IMG) --name $(KIND_CLUSTER)
-	@echo "Pulling and loading postgres image for E2E tests..."
-	docker pull postgres:16-alpine
-	$(KIND) load docker-image postgres:16-alpine --name $(KIND_CLUSTER)
-	@echo "Pulling and loading quarkus-flow-runner image for E2E tests..."
-	docker pull quay.io/quarkiverse/quarkus-flow-runner:1.0.0-standard
-	$(KIND) load docker-image quay.io/quarkiverse/quarkus-flow-runner:1.0.0-standard --name $(KIND_CLUSTER)
-	@echo "Pulling and loading data-index-service image for E2E tests..."
-	docker pull quay.io/kubesmarts/data-index-service:2.0.0-SNAPSHOT-postgresql
-	$(KIND) load docker-image quay.io/kubesmarts/data-index-service:2.0.0-SNAPSHOT-postgresql --name $(KIND_CLUSTER)
+	@echo "Loading postgres image for E2E tests..."
+	@docker image inspect $(POSTGRES_IMG) >/dev/null 2>&1 || docker pull $(POSTGRES_IMG)
+	$(KIND) load docker-image $(POSTGRES_IMG) --name $(KIND_CLUSTER)
+	@echo "Loading quarkus-flow-runner (minimal) image for E2E tests..."
+	@docker image inspect $(QUARKUS_FLOW_RUNNER_MINIMAL_IMG) >/dev/null 2>&1 || docker pull $(QUARKUS_FLOW_RUNNER_MINIMAL_IMG)
+	$(KIND) load docker-image $(QUARKUS_FLOW_RUNNER_MINIMAL_IMG) --name $(KIND_CLUSTER)
+	@echo "Loading quarkus-flow-runner (standard) image for E2E tests..."
+	@docker image inspect $(QUARKUS_FLOW_RUNNER_STANDARD_IMG) >/dev/null 2>&1 || docker pull $(QUARKUS_FLOW_RUNNER_STANDARD_IMG)
+	$(KIND) load docker-image $(QUARKUS_FLOW_RUNNER_STANDARD_IMG) --name $(KIND_CLUSTER)
+	@echo "Loading data-index-service image for E2E tests..."
+	@docker image inspect $(DATA_INDEX_IMG) >/dev/null 2>&1 || docker pull $(DATA_INDEX_IMG)
+	$(KIND) load docker-image $(DATA_INDEX_IMG) --name $(KIND_CLUSTER)
 	@echo "Installing CRDs..."
 	$(MAKE) install
 	@echo "Deploying operator..."
@@ -243,6 +259,16 @@ CERT_MANAGER_URL ?= https://github.com/cert-manager/cert-manager/releases/downlo
 INGRESS_NGINX_VERSION ?= v1.12.2
 INGRESS_NGINX_URL ?= https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-$(INGRESS_NGINX_VERSION)/deploy/static/provider/kind/deploy.yaml
 
+# E2E test images
+QUARKUS_FLOW_RUNNER_VERSION ?= 1.3.0
+QUARKUS_FLOW_RUNNER_MINIMAL_IMG ?= quay.io/quarkiverse/quarkus-flow-runner:$(QUARKUS_FLOW_RUNNER_VERSION)-minimal
+QUARKUS_FLOW_RUNNER_STANDARD_IMG ?= quay.io/quarkiverse/quarkus-flow-runner:$(QUARKUS_FLOW_RUNNER_VERSION)-standard
+QUARKUS_FLOW_RUNNER_IMG ?= $(QUARKUS_FLOW_RUNNER_STANDARD_IMG)
+POSTGRES_VERSION ?= 16-alpine
+POSTGRES_IMG ?= postgres:$(POSTGRES_VERSION)
+DATA_INDEX_VERSION ?= 2.0.0-SNAPSHOT-postgresql
+DATA_INDEX_IMG ?= quay.io/kubesmarts/data-index-service:$(DATA_INDEX_VERSION)
+
 .PHONY: kind-create
 kind-create: ## Create a KIND cluster for local development.
 	@command -v $(KIND) >/dev/null 2>&1 || { \
@@ -268,7 +294,13 @@ kind-create: ## Create a KIND cluster for local development.
 			echo "Waiting for cert-manager deployments to exist..."; \
             for i in $$(seq 1 30); do $(KUBECTL) get deployment -n cert-manager cert-manager >/dev/null 2>&1 && break || sleep 2; done; \
 			echo "Waiting for cert-manager to be ready..."; \
-			$(KUBECTL) wait --namespace cert-manager --for=condition=available deployment --all --timeout=180s ;; \
+			$(KUBECTL) wait --namespace cert-manager --for=condition=available deployment --all --timeout=180s; \
+			echo "Loading quarkus-flow-runner (minimal) into KIND..."; \
+			@docker image inspect $(QUARKUS_FLOW_RUNNER_MINIMAL_IMG) >/dev/null 2>&1 || docker pull $(QUARKUS_FLOW_RUNNER_MINIMAL_IMG); \
+			$(KIND) load docker-image $(QUARKUS_FLOW_RUNNER_MINIMAL_IMG) --name $(KIND_DEV_CLUSTER); \
+			echo "Loading quarkus-flow-runner (standard) into KIND..."; \
+			@docker image inspect $(QUARKUS_FLOW_RUNNER_STANDARD_IMG) >/dev/null 2>&1 || docker pull $(QUARKUS_FLOW_RUNNER_STANDARD_IMG); \
+			$(KIND) load docker-image $(QUARKUS_FLOW_RUNNER_STANDARD_IMG) --name $(KIND_DEV_CLUSTER) ;; \
 	esac
 
 KIND_IMG ?= controller:dev

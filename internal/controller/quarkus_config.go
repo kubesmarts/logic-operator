@@ -252,6 +252,8 @@ func WithDurableEnvVars(rt *logicv1.LogicFlowRuntime) ContainerOption {
 		defaultEnvs := []*corev1ac.EnvVarApplyConfiguration{
 			envLiteral("QUARKUS_FLOW_DURABLE_KUBE_LEASE_LEADER_ENABLED", "false"),
 			envLiteral("QUARKUS_FLOW_DURABLE_KUBE_POOL_NAME", rt.Name),
+			envLiteral("QUARKUS_FLOW_DURABLE_KUBE_LEASE_MEMBER_DURATION", fmt.Sprint(LeaseDuration)),
+			envLiteral("QUARKUS_FLOW_DURABLE_KUBE_SCHEDULERS_MEMBER_INTERVAL", LeaseRenewSchedulingInterval),
 			envFieldRef("POD_NAME", "metadata.name"),
 			envFieldRef("POD_NAMESPACE", "metadata.namespace"),
 		}
@@ -259,13 +261,13 @@ func WithDurableEnvVars(rt *logicv1.LogicFlowRuntime) ContainerOption {
 		// Add lease timeout default if user hasn't specified it
 		hasLeaseTimeout := false
 		for _, e := range c.Env {
-			if e.Name != nil && *e.Name == "QUARKUS_FLOW_DURABLE_KUBE_LEASE_TIMEOUT" {
+			if e.Name != nil && *e.Name == "QUARKUS_FLOW_DURABLE_KUBE_LEASE_MEMBER_ACQUIRE_TIMEOUT" {
 				hasLeaseTimeout = true
 				break
 			}
 		}
 		if !hasLeaseTimeout {
-			defaultEnvs = append(defaultEnvs, envLiteral("QUARKUS_FLOW_DURABLE_KUBE_LEASE_TIMEOUT", "PT60S"))
+			defaultEnvs = append(defaultEnvs, envLiteral("QUARKUS_FLOW_DURABLE_KUBE_LEASE_MEMBER_ACQUIRE_TIMEOUT", LeaseAcquireTimeoutDuration))
 		}
 
 		c.WithEnv(defaultEnvs...)

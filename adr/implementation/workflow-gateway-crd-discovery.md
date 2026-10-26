@@ -3,7 +3,9 @@
 **Status:** Design Document
 **Version:** v1.0
 **Last Updated:** 2026-10-05
-**Related:** [ADR-0002: Workflow Gateway Architecture](https://github.com/kubesmarts/logic-apps/blob/main/adrs/0002-workflow-gateway-architecture.md), Issue [#34](https://github.com/kubesmarts/logic-operator/issues/34)
+**Related:** [ADR-0002: Workflow Gateway Architecture](workflow-gateway-architecture.md), Issue [#34](https://github.com/kubesmarts/logic-operator/issues/34)
+
+> **⚠️ PARTIALLY SUPERSEDED (2026-10-16):** Decision 2 (No Cross-Pod Clustering, as it pertains to the forwarding path) and Decision 3 (Forward Through Ingress) are superseded by [Workflow Gateway — Lease-Based Instance Routing](workflow-gateway-instance-routing.md). The gateway now routes **directly to the owning runtime pod** (resolved via lease → pod), bypassing the Ingress for workflow start and instance-addressed operations.
 
 ## Overview
 

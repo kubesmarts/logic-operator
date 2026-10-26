@@ -124,7 +124,7 @@ var _ = Describe("LogicFlowService Controller", func() {
 		}
 	})
 
-	It("should create an Ingress with rewrite-target on reconcile", func() {
+	It("should create a passthrough Ingress on reconcile", func() {
 		reconciler := &LogicFlowServiceReconciler{
 			Client: k8sClient,
 			Scheme: k8sClient.Scheme(),
@@ -140,10 +140,8 @@ var _ = Describe("LogicFlowService Controller", func() {
 		Expect(ingress.Spec.Rules[0].HTTP.Paths).To(HaveLen(1))
 		Expect(ingress.Spec.Rules[0].HTTP.Paths[0].Path).To(Equal("/"))
 		Expect(ingress.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Name).To(Equal(rtName))
-		Expect(ingress.Annotations).To(HaveKeyWithValue(
-			annotationNginxRewriteTarget,
-			"/q/flow/exec/payments/payment/1.0.0",
-		))
+		Expect(ingress.Annotations).NotTo(HaveKey(annotationNginxRewriteTarget),
+			"default-definition Ingress should pass the full path through without rewrite")
 	})
 
 })

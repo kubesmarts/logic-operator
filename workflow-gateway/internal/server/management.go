@@ -9,7 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/discovery"
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/routing"
 )
 
 type ManagementConfig struct {
@@ -20,20 +20,20 @@ type ManagementConfig struct {
 }
 
 type ManagementServer struct {
-	config  ManagementConfig
-	router  *chi.Mux
-	store   *discovery.RouteStore
-	isReady func() bool
-	server  *http.Server
+	config   ManagementConfig
+	router   *chi.Mux
+	resolver *routing.Resolver
+	isReady  func() bool
+	server   *http.Server
 }
 
-func NewManagement(config ManagementConfig, store *discovery.RouteStore, isReady func() bool) *ManagementServer {
+func NewManagement(config ManagementConfig, resolver *routing.Resolver, isReady func() bool) *ManagementServer {
 	router := chi.NewRouter()
 	m := &ManagementServer{
-		config:  config,
-		router:  router,
-		store:   store,
-		isReady: isReady,
+		config:   config,
+		router:   router,
+		resolver: resolver,
+		isReady:  isReady,
 	}
 	m.registerRoutes()
 	return m
@@ -64,7 +64,7 @@ func (m *ManagementServer) readyHandler(w http.ResponseWriter, _ *http.Request) 
 
 func (m *ManagementServer) debugRoutesHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(m.store.Snapshot())
+	_ = json.NewEncoder(w).Encode(m.resolver.ExecutionEndpointsSnapshot())
 }
 
 func (m *ManagementServer) Start() error {

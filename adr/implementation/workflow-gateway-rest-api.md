@@ -2,7 +2,9 @@
 
 **Status:** Active — supersedes the REST endpoint section of ADR-0002.
 **Date:** 2026-10-07
-**Related:** [ADR-0002](https://github.com/kubesmarts/logic-apps/blob/main/adrs/0002-workflow-gateway-architecture.md), Issue [#35](https://github.com/kubesmarts/logic-operator/issues/35)
+**Related:** [ADR-0002](workflow-gateway-architecture.md), Issue [#35](https://github.com/kubesmarts/logic-operator/issues/35)
+
+> **⚠️ PARTIALLY SUPERSEDED (2026-10-16):** The `/v1/runtime` **runtime-forwarding-through-Ingress** behavior is superseded by [Workflow Gateway — Lease-Based Instance Routing](workflow-gateway-instance-routing.md). The gateway now routes **directly to the owning pod** (resolved via lease → pod) instead of through the Ingress for workflow start and instance-addressed operations.
 
 ## Overview
 
