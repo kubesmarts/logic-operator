@@ -1,7 +1,11 @@
 package e2e
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net"
 	"os/exec"
 	"strings"
 	"time"
@@ -248,11 +252,10 @@ func durableTests() {
 			Eventually(verifyHolders, time.Minute, 5*time.Second).Should(Succeed())
 		})
 
-		It("should complete a workflow and survive pod crash (verified via metrics)", func() {
+		It("should recover an in-flight workflow after pod crash", func() {
 			// The operator overrides flow.document.namespace with the CR's Kubernetes namespace.
 			// URL format: /q/flow/exec/{document.namespace}/{document.name}/{document.version}
 			svcURL := fmt.Sprintf("http://e2e-durable.lvh.me/q/flow/exec/%s/sleepy/1.0.0", namespace)
-			metricsURL := "http://e2e-durable.lvh.me/q/metrics"
 			healthURL := "http://e2e-durable.lvh.me/q/health/ready"
 
 			By("verifying runtime pods are ready to accept requests")
@@ -263,23 +266,39 @@ func durableTests() {
 			}
 			Eventually(verifyHealthy, 5*time.Minute, 5*time.Second).Should(Succeed())
 
-			By("starting a sleepy workflow instance without retries — kill pod while it sleeps")
-			c := exec.Command("curl", "-s", "-X", "POST",
+			By("starting a sleepy workflow instance without retries")
+			c := exec.Command("curl", "-sf", "-X", "POST",
 				"-H", "Content-Type: application/json",
 				"-d", `{"name":"e2e"}`,
 				svcURL)
 			out, err := c.CombinedOutput()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(string(out)).To(ContainSubstring("instanceId"),
-				"expected workflow invocation to return an instanceId")
+			var invocation struct {
+				WorkflowApplicationID string `json:"workflowApplicationId"`
+				InstanceID            string `json:"instanceId"`
+				Status                string `json:"status"`
+			}
+			Expect(json.Unmarshal(out, &invocation)).To(Succeed(), "workflow response: %s", string(out))
+			Expect(invocation.WorkflowApplicationID).NotTo(BeEmpty(), "expected workflowApplicationId in response")
+			Expect(invocation.InstanceID).NotTo(BeEmpty(), "expected instanceId in response")
 
-			By("killing pod immediately — workflow is still sleeping")
-			podName, err := utils.Run(exec.Command("kubectl", "get", "pods",
-				"-l", fmt.Sprintf("app.kubernetes.io/name=%s", durableRuntimeName),
-				"-n", namespace, "-o", "jsonpath={.items[0].metadata.name}"))
+			By("finding the pod that holds the workflow's application lease")
+			cmd := exec.Command("kubectl", "get", "lease", invocation.WorkflowApplicationID,
+				"-n", namespace, "-o", "jsonpath={.spec.holderIdentity}")
+			podName, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
+			podName = strings.TrimSpace(podName)
+			Expect(podName).NotTo(BeEmpty(), "lease %q has no holder", invocation.WorkflowApplicationID)
+			_, _ = fmt.Fprintf(GinkgoWriter,
+				"Durable workflow invocation: applicationId=%s instanceId=%s status=%s ownerPod=%s\n",
+				invocation.WorkflowApplicationID, invocation.InstanceID, invocation.Status, podName)
+
+			By("allowing asynchronous persistence a moment to commit before killing the owner")
+			time.Sleep(2 * time.Second)
+
+			By("killing the pod that owns the workflow lease")
 			_, err = utils.Run(exec.Command("kubectl", "delete", "pod",
-				strings.TrimSpace(podName), "-n", namespace))
+				podName, "-n", namespace, "--grace-period=0", "--force"))
 			Expect(err).NotTo(HaveOccurred())
 
 			By("waiting for 2 ready replicas again after crash")
@@ -293,18 +312,77 @@ func durableTests() {
 			}
 			Eventually(verifyTwoReady, 3*time.Minute, 5*time.Second).Should(Succeed())
 
-			By("polling metrics until sleepy workflow shows completed_total >= 1")
-			// With 2 replicas the service round-robins. Eventually we hit the pod
-			// that processed (and completed) the workflow — whether the original or
-			// the resumed one — and its Micrometer counter reflects the completion.
-			verifyCompleted := func(g Gomega) {
-				c := exec.Command("curl", "-s", metricsURL)
-				metricsOutput, err := c.CombinedOutput()
+			By("waiting for the same lease to move to the replacement pod")
+			replacementPodName := ""
+			verifyLeaseRecovery := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "lease", invocation.WorkflowApplicationID,
+					"-n", namespace, "-o", "jsonpath={.spec.holderIdentity}")
+				holder, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(strings.Contains(string(metricsOutput), `quarkus_flow_workflow_completed_total{workflow="sleepy"`)).
-					To(BeTrue(), "expected sleepy workflow completion metric on the runtime pod")
+				holder = strings.TrimSpace(holder)
+				g.Expect(holder).NotTo(BeEmpty(), "lease %q has no holder", invocation.WorkflowApplicationID)
+				g.Expect(holder).NotTo(Equal(podName), "expected lease to move off the deleted pod")
+
+				cmd = exec.Command("kubectl", "get", "pod", holder,
+					"-n", namespace,
+					"-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}")
+				ready, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(ready).To(Equal("True"), "lease holder pod %q is not Ready", holder)
+				replacementPodName = holder
 			}
-			Eventually(verifyCompleted, 3*time.Minute, 10*time.Second).Should(Succeed())
+			Eventually(verifyLeaseRecovery, 3*time.Minute, 2*time.Second).Should(Succeed())
+			_, _ = fmt.Fprintf(GinkgoWriter,
+				"Durable workflow lease recovered: applicationId=%s replacementPod=%s\n",
+				invocation.WorkflowApplicationID, replacementPodName)
+
+			By("checking the replacement pod has the recovered workflow instance in memory")
+			runnerURL, stopPortForward, err := startRunnerPortForward(replacementPodName)
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(stopPortForward)
+			var lastInstancesOutput string
+			var lastInstancesError string
+			var recoveredStatus string
+			verifyRestored := func() bool {
+				c := exec.Command("curl", "-fsS", runnerURL+"/q/flow/instances")
+				instancesOutput, err := c.CombinedOutput()
+				lastInstancesOutput = string(instancesOutput)
+				lastInstancesError = ""
+				if err != nil {
+					lastInstancesError = err.Error()
+					return false
+				}
+				var activeInstances struct {
+					ApplicationID string `json:"applicationId"`
+					Instances     []struct {
+						InstanceID string `json:"instanceId"`
+						Status     string `json:"status"`
+					} `json:"instances"`
+				}
+				if err := json.Unmarshal(instancesOutput, &activeInstances); err != nil {
+					lastInstancesError = fmt.Sprintf("decode response: %v", err)
+					return false
+				}
+				if activeInstances.ApplicationID != invocation.WorkflowApplicationID {
+					lastInstancesError = fmt.Sprintf("unexpected applicationId %q", activeInstances.ApplicationID)
+					return false
+				}
+				for _, instance := range activeInstances.Instances {
+					if instance.InstanceID == invocation.InstanceID {
+						recoveredStatus = instance.Status
+						return true
+					}
+				}
+				lastInstancesError = "instance is absent from the active-instance response"
+				return false
+			}
+			Eventually(verifyRestored, 3*time.Minute, 2*time.Second).Should(BeTrue(),
+				"expected active instance on replacement pod; applicationId=%s instanceId=%s ownerPod=%s replacementPod=%s lastResponseError=%s lastResponse:\n%s",
+				invocation.WorkflowApplicationID, invocation.InstanceID, podName, replacementPodName,
+				lastInstancesError, lastInstancesOutput)
+			_, _ = fmt.Fprintf(GinkgoWriter,
+				"Durable workflow instance recovered: applicationId=%s instanceId=%s status=%s replacementPod=%s\n",
+				invocation.WorkflowApplicationID, invocation.InstanceID, recoveredStatus, replacementPodName)
 		})
 
 		It("should persist leases after scaling down to 1", func() {
@@ -323,4 +401,31 @@ func durableTests() {
 			Eventually(verifyLeasePersist, time.Minute, 5*time.Second).Should(Succeed())
 		})
 	})
+}
+
+func startRunnerPortForward(podName string) (string, func(), error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return "", nil, err
+	}
+	localPort := listener.Addr().(*net.TCPAddr).Port
+	if err := listener.Close(); err != nil {
+		return "", nil, err
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cmd := exec.CommandContext(ctx, "kubectl", "port-forward",
+		"--address=127.0.0.1", "-n", namespace,
+		"pod/"+podName, fmt.Sprintf("%d:8080", localPort))
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	if err := cmd.Start(); err != nil {
+		cancel()
+		return "", nil, err
+	}
+	stop := func() {
+		cancel()
+		_ = cmd.Wait()
+	}
+	return fmt.Sprintf("http://127.0.0.1:%d", localPort), stop, nil
 }
