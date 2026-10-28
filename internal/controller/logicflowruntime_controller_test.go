@@ -184,16 +184,16 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
 
 			c := mainContainer(&dep)
-			expectedImage := fmt.Sprintf("%s/%s:%s-%s", QuarkusFlowRegistry, QuarkusFlowRunner, QuarkusFlowVersion, ImageVariantMinimal)
+			expectedImage := fmt.Sprintf("%s/%s:%s-%s", logicv1.FlowRunnerRegistry, logicv1.FlowRunnerImage, QuarkusFlowVersion, logicv1.ImageVariantMinimal)
 			Expect(c.Image).To(Equal(expectedImage))
 
 			Expect(c.LivenessProbe).NotTo(BeNil())
 			Expect(c.LivenessProbe.HTTPGet.Path).To(Equal("/q/health/live"))
-			Expect(c.LivenessProbe.HTTPGet.Port.IntValue()).To(Equal(int(QuarkusPort)))
+			Expect(c.LivenessProbe.HTTPGet.Port.IntValue()).To(Equal(int(logicv1.QuarkusFlowRunnerHTTPPort)))
 
 			Expect(c.ReadinessProbe).NotTo(BeNil())
 			Expect(c.ReadinessProbe.HTTPGet.Path).To(Equal("/q/health/ready"))
-			Expect(c.ReadinessProbe.HTTPGet.Port.IntValue()).To(Equal(int(QuarkusPort)))
+			Expect(c.ReadinessProbe.HTTPGet.Port.IntValue()).To(Equal(int(logicv1.QuarkusFlowRunnerHTTPPort)))
 
 			Expect(dep.Labels).To(HaveKeyWithValue(testLabelKeyName, name))
 			Expect(dep.Labels).To(HaveKeyWithValue(testLabelKeyManagedBy, LabelManagedBy))
@@ -218,7 +218,7 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 			Expect(port.Name).To(Equal("http"))
 			Expect(port.Protocol).To(Equal(corev1.ProtocolTCP))
 			Expect(port.Port).To(Equal(int32(80)))
-			Expect(port.TargetPort.IntValue()).To(Equal(int(QuarkusPort)))
+			Expect(port.TargetPort.IntValue()).To(Equal(int(logicv1.QuarkusFlowRunnerHTTPPort)))
 
 			Expect(svc.Spec.Selector).To(Equal(SelectorLabels(name)))
 		})
@@ -302,7 +302,7 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
 			c := mainContainer(&dep)
 
-			expectedImage := fmt.Sprintf("%s/%s:%s-%s", QuarkusFlowRegistry, QuarkusFlowRunner, QuarkusFlowVersion, ImageVariantStandard)
+			expectedImage := fmt.Sprintf("%s/%s:%s-%s", logicv1.FlowRunnerRegistry, logicv1.FlowRunnerImage, QuarkusFlowVersion, logicv1.ImageVariantStandard)
 			Expect(c.Image).To(Equal(expectedImage))
 		})
 
@@ -525,7 +525,7 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 			var dep appsv1.Deployment
 			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
-			Expect(mainContainer(&dep).Image).To(Equal(runnerImage(ImageVariantMinimal)))
+			Expect(mainContainer(&dep).Image).To(Equal(runnerImage(logicv1.ImageVariantMinimal)))
 
 			var rt logicv1.LogicFlowRuntime
 			Expect(k8sClient.Get(ctx, nn, &rt)).To(Succeed())

@@ -7,11 +7,6 @@ import (
 )
 
 const (
-	FlowRunnerRegistry   = "quay.io/quarkiverse"
-	FlowRunnerImage      = "quarkus-flow-runner"
-	ImageVariantMinimal  = "minimal"
-	ImageVariantStandard = "standard"
-
 	DefaultPgsqlSecretUserKey     = "POSTGRESQL_USER"
 	DefaultPgsqlSecretPasswordKey = "POSTGRESQL_PASSWORD"
 )

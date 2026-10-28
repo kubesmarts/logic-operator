@@ -88,7 +88,7 @@ An unauthenticated request must now return 401:
 [source,bash]
 ----
 curl -s -o /dev/null -w "%{http_code}" \
-  -X POST http://hello.lvh.me/ \
+  -X POST http://gateway.lvh.me/v1/runtime/default/hello-world/1.0.0/sync \
   -H "Content-Type: application/json" \
   -d '{"name": "World"}'
 # Output: 401
@@ -100,7 +100,7 @@ Pass the token as a `Bearer` value in the `Authorization` header:
 
 [source,bash]
 ----
-curl -X POST http://hello.lvh.me/ \
+curl -X POST http://gateway.lvh.me/v1/runtime/default/hello-world/1.0.0/sync \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer logic-operator-dev-token" \
   -d '{"name": "World"}'

@@ -61,56 +61,45 @@ kubectl wait --namespace logic-operator-system \
 make kind-demo
 ----
 
-This creates a `LogicFlowRuntime`, a `LogicFlowDefinition` (the hello-world workflow), and a `LogicFlowService` in the `default` namespace.
+This creates a `LogicPlatform` with the workflow gateway enabled, a `LogicFlowRuntime`, and a `LogicFlowDefinition` (the hello-world workflow) in the `default` namespace. The gateway routes to the runtime Service using `spec.runtimeRef`; no `LogicFlowService` is required.
 
 Verify everything is ready:
 
 [source,bash]
 ----
-kubectl get logicflowruntimes,logicflowdefinitions,logicflowservices
+kubectl get logicplatforms,logicflowruntimes,logicflowdefinitions
 ----
 
-Expected output:
+Inspect gateway readiness and its public URL in the LogicPlatform status:
 
-[source]
+[source,bash]
 ----
-NAME                                                 PHASE   REPLICAS   READY
-logicflowruntime.logic.kubesmarts.org/hello-runtime  Ready   1          1
-
-NAME                                                              WORKFLOW      VERSION
-logicflowdefinition.logic.kubesmarts.org/hello-world-v1-0-0       hello-world   1.0.0
-
-NAME                                                   HOST           URL
-logicflowservice.logic.kubesmarts.org/hello-world      hello.lvh.me   http://hello.lvh.me/
+kubectl get logicplatform logicplatform-sample -o yaml
 ----
 
 == 5. Invoke the workflow
 
 [source,bash]
 ----
-curl -X POST http://hello.lvh.me/q/flow/exec/default/hello-world/1.0.0 \
+curl -X POST http://gateway.lvh.me/v1/runtime/default/hello-world/1.0.0/sync \
   -H "Content-Type: application/json" \
-  -d '{"input": {"name": "world"}}'
+  -d '{"name": "world"}'
 ----
 
-The runner responds with the new workflow instance:
+The gateway returns the synchronous workflow response:
 
 [source,json]
 ----
-{
-  "instanceId": "01M0GC81PBCYD3X6E2SHJZ64V2",
-  "status": "RUNNING",
-  "startedAt": "2026-08-20T19:58:22.351417832Z"
-}
+{"message": "Hi, world!"}
 ----
 
 == 6. Check metrics
 
-The runner exposes Micrometer metrics automatically at `/q/metrics`:
+Start kubectl port-forward svc/hello-runtime 8080:80 in a separate terminal, then query the runner's Micrometer metrics at `/q/metrics`:
 
 [source,bash]
 ----
-curl http://runtime.lvh.me/q/metrics | grep quarkus_flow_workflow
+curl http://localhost:8080/q/metrics | grep quarkus_flow_workflow
 ----
 
 == Next Steps
@@ -130,6 +119,7 @@ Now that you have the operator running, explore these topics:
 
 **Reference:**
 
-* xref:crd-reference/logicplatform.adoc[LogicPlatform CRD] — Data Index, Vector, and data integration configuration
+* xref:crd-reference/logicplatform.adoc[LogicPlatform CRD] — Data Index, Vector, and Workflow Gateway configuration
 * xref:crd-reference/logicflowruntime.adoc[LogicFlowRuntime CRD] — Runtime configuration and structured logging
 * xref:concepts/runtime-model.adoc[Runtime Model] — How the operator manages runtimes
+* xref:components/workflow-gateway.adoc[Workflow Gateway] — API, routing behavior, and limitations

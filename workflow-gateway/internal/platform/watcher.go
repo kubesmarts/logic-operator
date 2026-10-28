@@ -62,11 +62,18 @@ func (w *PlatformWatcher) syncEndpoint(obj any) {
 	if p.Namespace != w.namespace {
 		return
 	}
-	if url := p.Status.DataIndex.Service.GraphQLEndpoint; url != "" {
+	if url := dataIndexEndpoint(p); url != "" {
 		w.store.SetEndpoint(url)
 	} else {
 		w.store.ClearEndpoint()
 	}
+}
+
+func dataIndexEndpoint(p *logicv1.LogicPlatform) string {
+	if p == nil || p.Status.DataIndex == nil {
+		return ""
+	}
+	return p.Status.DataIndex.Service.GraphQLEndpoint
 }
 
 func (w *PlatformWatcher) doSync(ctx context.Context) {
@@ -77,7 +84,7 @@ func (w *PlatformWatcher) doSync(ctx context.Context) {
 		return
 	}
 	for i := range list.Items {
-		if url := list.Items[i].Status.DataIndex.Service.GraphQLEndpoint; url != "" {
+		if url := dataIndexEndpoint(&list.Items[i]); url != "" {
 			w.store.SetEndpoint(url)
 			return
 		}

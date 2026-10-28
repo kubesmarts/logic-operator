@@ -1,7 +1,7 @@
 name: logic-operator
 title: Logic Operator
-version: 2.0.0
-display_version: 2.0.0
+version: 2.0.0-Alpha1
+display_version: 2.0.0-Alpha1
 nav:
   - modules/ROOT/nav.adoc
 asciidoc:
@@ -9,6 +9,4 @@ asciidoc:
     page-pagination: ''
     sectanchors: ''
     source-highlighter: highlight.js
-    operator-version: 2.0.0
-    runner-version: 1.0.0
     k8s-min-version: 1.29

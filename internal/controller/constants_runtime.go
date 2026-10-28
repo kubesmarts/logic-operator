@@ -1,19 +1,10 @@
 package controller
 
 import (
-	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
+	"github.com/kubesmarts/logic-operator/api/version"
 )
 
 const (
-	QuarkusFlowRegistry = logicv1.FlowRunnerRegistry
-	QuarkusFlowRunner   = logicv1.FlowRunnerImage
-	QuarkusFlowVersion  = "1.3.0"
-
-	ImageVariantMinimal  = logicv1.ImageVariantMinimal
-	ImageVariantStandard = logicv1.ImageVariantStandard
-
-	QuarkusPort = int32(8080)
-
 	WorkflowMountPath = "/deployments/workflows"
 
 	LeaseMemberNameFmt = "flow-pool-member-%s-%02d"
@@ -31,3 +22,7 @@ const (
 
 	ClusterRoleDurable = "logic-operator-logic-flow-runtime-durable"
 )
+
+// QuarkusFlowVersion is the runner image version selected for this operator
+// build. It is kept as a package variable for callers that compose image tags.
+var QuarkusFlowVersion = version.GetQuarkusFlowRunnerVersion()

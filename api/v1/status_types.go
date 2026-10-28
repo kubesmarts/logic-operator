@@ -15,6 +15,8 @@ const (
 )
 
 const (
+	ConditionReady = "Ready"
+
 	ConditionDeploymentAvailable = "DeploymentAvailable"
 	ConditionServiceReady        = "ServiceReady"
 	ConditionLeaseReady          = "LeaseReady"
@@ -54,10 +56,12 @@ const (
 
 // LogicPlatform conditions
 const (
+	ConditionDataIndexReady               = "DataIndexReady"
 	ConditionDataIndexDeploymentAvailable = "DataIndexDeploymentAvailable"
 	ConditionDataIndexServiceReady        = "DataIndexServiceReady"
 	ConditionDataIndexPersistenceReady    = "DataIndexPersistenceReady"
 	ConditionVectorReady                  = "VectorReady"
+	ConditionWorkflowGatewayReady         = "WorkflowGatewayReady"
 )
 
 // LogicPlatform reasons
@@ -69,6 +73,7 @@ const (
 	ReasonDataIndexUnhealthy          = "DataIndexUnhealthy"
 	ReasonDaemonSetNotFound           = "DaemonSetNotFound"
 	ReasonDaemonSetProgressing        = "DaemonSetProgressing"
+	ReasonComponentsNotReady          = "ComponentsNotReady"
 	ReasonDisabled                    = "Disabled"
 )
 

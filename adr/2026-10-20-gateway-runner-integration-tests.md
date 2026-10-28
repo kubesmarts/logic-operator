@@ -123,16 +123,16 @@ The fixture manages the runner container lifecycle using `testcontainers-go`:
 
 **Why port 8080 is pinned (NOT configurable):**
 
-The gateway's `routing.Resolver.ResolveInstance()` (file `workflow-gateway/internal/routing/resolver.go`, ~line 78) constructs the pod URL as:
+The gateway's `routing.Resolver.ResolveInstance()` (file `workflow-gateway/internal/routing/resolver.go`) constructs the pod URL as:
 ```
-http://{podName}:{QuarkusPort}
+http://{podName}:{port}
 ```
 
-where `QuarkusPort` is **hardcoded to 8080** in `internal/controller/constants_runtime.go`. This port is **not configurable at the resolver layer**.
+The production default comes from `api/v1.QuarkusFlowRunnerHTTPPort` (`8080`), shared by the runtime reconciler and gateway. The resolver's `WithRunnerPort` option lets integration tests use testcontainers' dynamically mapped host port while leaving the runner's container port at 8080.
 
-Therefore, for instance-operation proxying to reach the runner, the container must be bound to host port 8080. The fake pod resolver (see [Headless Gateway Harness](#headless-gateway-harness)) returns the host `localhost`, so the constructed URL becomes `http://localhost:8080`.
+The fake pod resolver (see [Headless Gateway Harness](#headless-gateway-harness)) returns `localhost` and the mapped host port, so the constructed URL reaches the runner without requiring host port 8080 to be free.
 
-**Trade-off:** This ties the integration suite to host port 8080 availability. In CI, port 8080 must be free. An alternative—making the instance-op port configurable—was rejected because this task is **test-only wiring with no production-code changes**.
+This keeps production routing aligned with the runner's pod port while avoiding a fixed host-port requirement in the integration suite.
 
 ---
 

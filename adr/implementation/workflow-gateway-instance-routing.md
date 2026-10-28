@@ -1,4 +1,4 @@
-# Workflow Gateway — Lease-Based Instance Routing (Direct-to-Pod)
+# Workflow Gateway — Lease-Based Instance Follow-Up Routing (Direct-to-Pod)
 
 **Status:** Active — supersedes Decision 2 (No Cross-Pod Clustering, as it pertains to the forwarding path) and Decision 3 (Forward Through Ingress) of `workflow-gateway-crd-discovery.md`, and the runtime-forwarding model of [ADR-0002: Workflow Gateway Architecture](workflow-gateway-architecture.md). Those documents have been updated.
 
@@ -6,9 +6,11 @@
 
 **Related:** Issue [#38](https://github.com/kubesmarts/logic-operator/issues/38), [adr/implementation/workflow-gateway-crd-discovery.md](workflow-gateway-crd-discovery.md), [adr/implementation/workflow-gateway-rest-api.md](workflow-gateway-rest-api.md)
 
+> **Current execution-path note (2026-10-27):** The gateway-only deployment introduced for issue #42 does not require a `LogicFlowService`. Execution prefers `LogicFlowService.status.url` when a matching resource exists and otherwise calls the runtime Kubernetes Service identified by `LogicFlowDefinition.spec.runtimeRef`. Instance follow-up operations still resolve the lease holder and call that pod directly. This supersedes Decision 6 below for the start/synchronous execution path; the direct-to-pod follow-up rationale remains active.
+
 ## Overview
 
-Workflow runtimes (quarkus-flow) hold workflow-instance state in memory, partitioned by lease — the lease name equals the `workflowApplicationId` (the shard). Only the pod holding a given lease services instances in that shard. Instance-addressed operations (suspend, cancel, resume) must reach the specific pod that currently holds the instance's lease. This document records the decision to route directly to the owning pod, bypassing the ingress.
+Workflow runtimes (quarkus-flow) hold workflow-instance state in memory, partitioned by lease — the lease name equals the `workflowApplicationId` (the shard). Only the pod holding a given lease services instances in that shard. Instance-addressed operations (suspend, cancel, resume) must reach the specific pod that currently holds the instance's lease. This document records the decision to route those follow-up operations directly to the owning pod, bypassing the ingress.
 
 ## Table of Contents
 
@@ -40,7 +42,7 @@ Workflow runtimes (quarkus-flow) hold workflow-instance state in memory, partiti
 
 ## Decisions
 
-1. **Gateway as single entry point:** The workflow-gateway becomes the single entry point for ALL workflow operations (start AND instance-addressed operations) and routes **directly to the owning pod** over the cluster network, bypassing the ingress entirely.
+1. **Gateway as an entry point:** The workflow-gateway can be the entry point for workflow operations. Execution uses a configured LogicFlowService URL when one matches the workflow, with the runtime Kubernetes Service as fallback; instance-addressed follow-up operations route **directly to the owning pod** over the cluster network, bypassing the ingress.
 
 2. **Routing model:** `instanceId → leaseId → pod`, where `leaseId == workflowApplicationId == shard`.
    - `instanceId → leaseId`: returned in the async `/exec` response as the `workflowApplicationId` field; the authoritative copy lives in the runtime's PostgreSQL (`instanceId → workflowApplicationId`)
@@ -52,7 +54,7 @@ Workflow runtimes (quarkus-flow) hold workflow-instance state in memory, partiti
 
 5. **Cross-replica state:** Go processes do not share memory across replicas. In persistence mode, PostgreSQL IS the shared store — any replica resolves `instanceId → leaseId` from the DB on a cache miss, and clients stay dumb (they send only workflow identity + instanceId). In NON-persistence mode there is no shared store, so the client must pass the `workflowApplicationId` back on follow-up calls, or the gateway must run as a single replica. **No distributed-cache dependency** (Redis/Infinispan) is introduced.
 
-6. **Start path:** `/exec` also goes through the gateway direct-to-pod. Weighted per-version traffic-splitting is NOT supported via this path for now; this is an accepted tradeoff to avoid calling public endpoints and can be revisited if a customer needs it.
+6. **Historical start-path decision:** `/exec` also goes through the gateway direct-to-pod. This decision was superseded by the 2026-10-27 execution-path note above: configured LogicFlowService URLs are preferred, with the runtime Kubernetes Service as fallback when no LogicFlowService exists.
 
 7. **Failover handling:** Because `leaseId → pod` is resolved live, during a failover window (up to the lease duration) `HolderIdentity` may still name a dead/terminating pod or be briefly empty. Direct pod calls MUST be wrapped in retry-with-backoff; once a new pod re-acquires the lease, `HolderIdentity` updates and the retry succeeds.
 
@@ -69,7 +71,7 @@ Workflow runtimes (quarkus-flow) hold workflow-instance state in memory, partiti
 | **Traffic-splitting deferred** | Weighted traffic-splitting via the gateway is deferred (see Decision 6). |
 | **Auth pass-through** | The gateway passes client-supplied tokens THROUGH to the runner, which evaluates them; a dedicated gateway auth design is a future issue. |
 | **Observability gap** | Direct pod calls bypass ingress access logs, so the gateway must propagate OpenTelemetry trace context to the pod. A follow-up issue should be filed in logic-operator to implement OTel on the gateway path. |
-| **Ingress retained optional** | LogicFlowService + Ingress/Route are RETAINED as an OPTIONAL external-exposure mechanism for users who do NOT use the gateway; the gateway path no longer depends on them. Non-gateway users get round-robin access with no instance affinity. |
+| **Ingress retained optional** | LogicFlowService + Ingress/Route remain optional for gateway execution. The gateway uses a configured LogicFlowService URL when present and can route directly to the runtime Service when absent. Non-gateway users continue to use LogicFlowService directly. |
 
 ## Prerequisites
 

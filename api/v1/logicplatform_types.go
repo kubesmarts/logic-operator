@@ -26,78 +26,88 @@ type LogicPlatformStatusPhase string
 
 // LogicPlatformSpec defines the desired state of LogicPlatform.
 //
-// LogicPlatform is the top-level resource that manages platform-wide services
-// and default configurations for Logic flows. It provides:
-//   - Data Index service for workflow indexing and queries
-//   - Default runtime configuration for all LogicFlowRuntime deployments
-//   - Application-specific persistence configuration (isolated per service)
+// LogicPlatform manages Data Index, optional Vector log collection, and an
+// optional Workflow Gateway in its namespace.
 //
 // Example:
 //
 //	apiVersion: logic.kubesmarts.org/v1
 //	kind: LogicPlatform
 //	metadata:
-//	  name: production-platform
+//	  name: workflow-platform
 //	spec:
 //	  dataIndex:
-//	    enabled: true
-//	    application:
-//	      image: quay.io/kubesmarts/data-index:2.0.0
-//	      replicas: 2
-//	    persistence:
-//	      postgresql:
-//	        secretRef:
-//	          name: postgres-credentials
-//	        serviceRef:
-//	          name: postgres
-//	          databaseSchema: data-index
-//	  runtimeDefaults:
-//	    image: quay.io/kubesmarts/quarkus-flow:2.0.0
-//	    replicas: 2
-//	    persistence:
-//	      postgresql:
-//	        secretRef:
-//	          name: postgres-credentials
-//	        serviceRef:
-//	          name: postgres
-//	          databaseSchema: workflows
+//	    enabled: false
+//	  workflowGateway:
+//	    ingress:
+//	      enabled: true
+//	      host: gateway.example.com
 type LogicPlatformSpec struct {
 	// DataIndex configures the Data Index service for workflow indexing.
 	// The Data Index service provides GraphQL and REST APIs to query
 	// workflow instances, process definitions, and execution history.
 	// +optional
 	DataIndex DataIndexSpec `json:"dataIndex,omitempty"`
-	// RuntimeDefaults defines default configuration for all LogicFlowRuntime
-	// deployments in this namespace. Individual LogicFlowRuntime resources
-	// can override these defaults.
-	//
-	// This provides centralized governance for runtime deployments, ensuring
-	// consistent configuration across all workflows while still allowing
-	// per-workflow customization when needed.
-	//
-	// Common use cases:
-	//   - Set default runtime image version
-	//   - Configure default resource requests/limits
-	//   - Set default replica count
-	//   - Configure default scheduling constraints
-	//   - Configure default persistence (database schema for all runtimes)
-	//
-	// Example:
-	//   runtimeDefaults:
-	//     image: quay.io/kubesmarts/quarkus-flow:2.0.0
-	//     replicas: 2
-	//     resources:
-	//       requests:
-	//         memory: 512Mi
-	//     persistence:
-	//       postgresql:
-	//         secretRef:
-	//           name: postgres-credentials
-	//         serviceRef:
-	//           name: postgres
-	//           databaseSchema: workflows
+	// RuntimeDefaults is present in the API schema for future platform-level
+	// runtime defaults. The current LogicPlatform controller does not apply this
+	// field to LogicFlowRuntime resources; configure each runtime directly.
 	// +optional
 	RuntimeDefaults RuntimeSpec `json:"runtimeDefaults,omitempty"`
+
+	// WorkflowGateway configures the optional workflow gateway component.
+	// When present, the operator manages the gateway Deployment, Service and RBAC.
+	// When absent, any existing gateway resources are cleaned up.
+	// +optional
+	WorkflowGateway *WorkflowGatewaySpec `json:"workflowGateway,omitempty"`
+}
+
+// WorkflowGatewaySpec configures the optional workflow-gateway component for routing workflows.
+type WorkflowGatewaySpec struct {
+	// Application configures the gateway Deployment.
+	// Image, replicas, resources and pod/container customization follow ApplicationSpec.
+	// +optional
+	Application ApplicationSpec `json:"application,omitempty"`
+
+	// Ingress configures optional external access to the gateway's user API.
+	// Uses the same pattern as DataIndexIngressSpec: host required when enabled.
+	// +optional
+	Ingress *DataIndexIngressSpec `json:"ingress,omitempty"`
+}
+
+// WorkflowGatewayStatus reports gateway availability and child resources.
+type WorkflowGatewayStatus struct {
+	// Ready indicates whether the gateway Deployment has at least one ready replica
+	// and the expected Service exists.
+	Ready bool `json:"ready"`
+
+	// DeploymentRef references the gateway Deployment.
+	// +optional
+	DeploymentRef corev1.LocalObjectReference `json:"deploymentRef,omitempty"`
+
+	// ServiceRef references the gateway Service.
+	// +optional
+	ServiceRef corev1.LocalObjectReference `json:"serviceRef,omitempty"`
+
+	// ServiceAccountRef references the gateway ServiceAccount.
+	// +optional
+	ServiceAccountRef corev1.LocalObjectReference `json:"serviceAccountRef,omitempty"`
+
+	// IngressRef references the Kubernetes Ingress (populated on Kubernetes only).
+	// +optional
+	IngressRef *corev1.LocalObjectReference `json:"ingressRef,omitempty"`
+
+	// RouteRef references the OpenShift Route (populated on OpenShift only).
+	// +optional
+	RouteRef *corev1.LocalObjectReference `json:"routeRef,omitempty"`
+
+	// Replicas shows the current replica counts for the gateway Deployment.
+	// +optional
+	Replicas ReplicaStatus `json:"replicas,omitempty"`
+
+	// URL is the external URL to access the gateway (via Ingress/Route).
+	// Populated only when spec.workflowGateway.ingress.enabled is true and hostname is assigned.
+	// +optional
+	URL string `json:"url,omitempty"`
 }
 
 // LogicPlatformStatus defines the observed state of LogicPlatform.
@@ -107,11 +117,16 @@ type LogicPlatformStatus struct {
 	// The controller updates this field after successfully reconciling the spec.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// DataIndex contains status for the Data Index service.
-	// This includes the service deployment status, database connectivity,
-	// and Vector DaemonSet status (if configured).
+	// DataIndex contains status for the Data Index component when enabled.
 	// +optional
-	DataIndex DataIndexStatus `json:"dataIndex,omitempty"`
+	DataIndex *DataIndexStatus `json:"dataIndex,omitempty"`
+	// Vector contains status for the Vector component when enabled.
+	// +optional
+	Vector *VectorStatus `json:"vector,omitempty"`
+	// WorkflowGateway contains status for the workflow gateway component.
+	// This field is populated only when spec.workflowGateway is configured.
+	// +optional
+	WorkflowGateway *WorkflowGatewayStatus `json:"workflowGateway,omitempty"`
 	// IngressRef references the Ingress resource (Kubernetes).
 	// Populated when spec.dataIndex.ingress is enabled on Kubernetes.
 	// +optional
@@ -128,26 +143,23 @@ type LogicPlatformStatus struct {
 	Phase      LogicPlatformStatusPhase `json:"phase,omitempty"`
 }
 
-// DataIndexStatus contains status information for the Data Index service.
+// DataIndexStatus contains status information for the Data Index component.
 type DataIndexStatus struct {
+	// Ready indicates whether the enabled Data Index component is ready to serve requests.
+	Ready bool `json:"ready"`
+
 	// Service contains status for the Data Index service deployment.
 	// +optional
 	Service DataIndexServiceStatus `json:"service,omitempty"`
 	// Persistence contains status for the Data Index persistence configuration validation.
-	// This validates that secrets and service refs exist, not runtime database connectivity.
+	// The controller checks referenced resources and reports database connectivity when it can
+	// infer it from Data Index readiness or run a direct connection check.
 	// +optional
 	Persistence *PersistenceConfigStatus `json:"persistence,omitempty"`
-	// Vector contains status for the Vector DaemonSet (if enabled).
-	// This field is only populated when spec.dataIndex.vector is configured.
-	// +optional
-	Vector *VectorStatus `json:"vector,omitempty"`
 }
 
 // DataIndexServiceStatus contains status information for the Data Index service deployment.
 type DataIndexServiceStatus struct {
-	// Ready indicates whether the Data Index service is ready to serve requests.
-	// This is true when the deployment has at least one ready replica.
-	Ready bool `json:"ready"`
 	// DeploymentRef references the Data Index Application resource.
 	// +optional
 	DeploymentRef corev1.LocalObjectReference `json:"deploymentRef,omitempty"`
@@ -161,12 +173,12 @@ type DataIndexServiceStatus struct {
 	// GraphQLEndpoint is the internal cluster URL for the Data Index GraphQL API.
 	// Users can use this endpoint to query workflow instances and process definitions.
 	//
-	// Example: http://data-index.default.svc.cluster.local:8080/graphql
+	// Example: http://data-index.default.svc.cluster.local:80/graphql
 	// +optional
 	GraphQLEndpoint string `json:"graphqlEndpoint,omitempty"`
 	// MetricsEndpoint is the internal cluster URL for Prometheus metrics.
 	//
-	// Example: http://data-index.default.svc.cluster.local:8080/q/metrics
+	// Example: http://data-index.default.svc.cluster.local:80/q/metrics
 	// +optional
 	MetricsEndpoint string `json:"metricsEndpoint,omitempty"`
 	// URL is the external URL to access Data Index (via Ingress/Route).
@@ -210,9 +222,8 @@ type VectorStatus struct {
 	MetricsEndpoint string `json:"metricsEndpoint,omitempty"`
 }
 
-// PersistenceConfigStatus validates persistence configuration without testing runtime connectivity.
-// The operator checks that referenced secrets and services exist, but does not connect to the database.
-// Actual database connectivity is verified by the application's health checks.
+// PersistenceConfigStatus reports persistence reference validation and, when available,
+// database connectivity observed from Data Index readiness or a direct connection check.
 type PersistenceConfigStatus struct {
 	// Valid indicates whether the persistence configuration is valid.
 	// This checks that referenced secrets and service refs exist in the cluster.
@@ -233,16 +244,8 @@ type PersistenceConfigStatus struct {
 	Error string `json:"error,omitempty"`
 }
 
-// LogicPlatform is the top-level resource for managing the Logic workflow platform.
-//
-// It provides:
-//   - Centralized configuration for platform services (Data Index)
-//   - Default runtime configuration (image, resources, persistence) for all LogicFlowRuntime deployments
-//   - Application-specific persistence configuration to prevent schema conflicts
-//   - Platform-wide service mesh and observability integration
-//
-// Note: Each service (Data Index, Runtimes) configures its own database schema
-// to prevent table name collisions and ensure independent schema migrations.
+// LogicPlatform manages Data Index, optional Vector log collection, and an
+// optional Workflow Gateway in its namespace.
 //
 // Only one LogicPlatform should exist per namespace. The operator uses this
 // resource to deploy and manage shared platform services.
@@ -250,12 +253,9 @@ type PersistenceConfigStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName={lp,platform}
-// +kubebuilder:printcolumn:name="Data Index",type=boolean,JSONPath=`.spec.dataIndex.enabled`
-// +kubebuilder:printcolumn:name="DataIndex Ready",type=boolean,JSONPath=`.status.dataIndex.service.ready`
-// +kubebuilder:printcolumn:name="DataIndex Reason",type=string,JSONPath=`.status.conditions[?(@.type=='DataIndexDeploymentAvailable')].reason`
-// +kubebuilder:printcolumn:name="Vector Ready",type=boolean,JSONPath=`.status.dataIndex.vector.ready`
-// +kubebuilder:printcolumn:name="Vector Reason",type=string,JSONPath=`.status.conditions[?(@.type=='VectorReady')].reason`
-// +kubebuilder:printcolumn:name="GraphQL URI",type=string,JSONPath=`.status.dataIndex.service.graphqlEndpoint`
+// +kubebuilder:printcolumn:name="Data Index",type=boolean,JSONPath=`.status.dataIndex.ready`
+// +kubebuilder:printcolumn:name="Vector",type=boolean,JSONPath=`.status.vector.ready`
+// +kubebuilder:printcolumn:name="Gateway",type=boolean,JSONPath=`.status.workflowGateway.ready`
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=='Ready')].status`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 type LogicPlatform struct {
@@ -376,20 +376,10 @@ type VectorSpec struct {
 	// Enabled flags whether to reconcile this object or not.
 	// If enabled previously, then disabled, this object is removed from the cluster.
 	Enabled bool `json:"enabled,omitempty"`
-	// WatchNamespaces specifies which namespaces Vector should tail logs from.
-	//
-	// Special values:
-	//   - ["*"]: Watch all namespaces
-	//   - ["ns1", "ns2"]: Watch only specified namespaces
-	//
-	// This enables organizational sharding (e.g., team-a, team-b namespaces)
-	// while all events sink to the same Data Index.
-	//
-	// Example:
-	//   watchNamespaces: ["*"]                    # All namespaces
-	//   watchNamespaces: ["workflows", "prod"]    # Specific namespaces
-	//
-	// By default, it will watch the self-namespace.
+	// WatchNamespaces specifies the namespace Vector should tail logs from.
+	// When omitted, admission defaults this to the LogicPlatform namespace.
+	// The current controller passes only the first entry as an exact namespace
+	// filter; wildcard and multi-namespace filtering are not supported.
 	//
 	// +optional
 	WatchNamespaces []string `json:"watchNamespaces,omitempty"`

@@ -4,7 +4,7 @@
   "description": "Logic Operator Documentation",
   "private": true,
   "scripts": {
-    "build": "antora antora-playbook.yaml"
+    "build": "make -C ../.. docs-versions && antora antora-playbook.yaml"
   },
   "dependencies": {
     "@antora/cli": "^3.1.9",

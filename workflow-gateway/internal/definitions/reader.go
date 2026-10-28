@@ -15,7 +15,7 @@ var ErrDefinitionNotFound = errors.New("workflow definition not found")
 // Reader fetches full LogicFlowDefinition objects on demand. It uses the shared
 // cache to locate a definition by workflow-identity labels, then reads the full
 // object (with Spec.Flow) directly from the API server, because the cache stores
-// definitions with their Spec stripped.
+// the runtime reference but strips the potentially large flow document.
 type Reader struct {
 	cache     cache.Cache
 	apiReader client.Reader

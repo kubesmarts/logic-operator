@@ -81,7 +81,7 @@ Run a burst of requests to populate the dashboard:
 [source,bash]
 ----
 for i in $(seq 1 30); do
-  curl -s -o /dev/null -X POST http://hello.lvh.me/ \
+  curl -s -o /dev/null -X POST http://gateway.lvh.me/v1/runtime/default/hello-world/1.0.0/sync \
     -H "Content-Type: application/json" \
     -d "{\"name\": \"user-$i\"}" &
 done

@@ -1,3 +1,5 @@
+include::partial$versions.adoc[]
+
 = Local Development with KIND
 :description: Run Logic Operator on your laptop using a KIND cluster.
 
@@ -31,7 +33,7 @@ The command is idempotent — if the cluster already exists it prints a message 
 [NOTE]
 ====
 `lvh.me` is a wildcard DNS name that resolves to `127.0.0.1`.
-All sample ingress hosts (e.g. `hello.lvh.me`, `grafana.lvh.me`) work automatically without editing `/etc/hosts`.
+All sample ingress hosts (e.g. `gateway.lvh.me`, `grafana.lvh.me`) work automatically without editing `/etc/hosts`.
 ====
 
 == Step 2: Deploy the Operator
@@ -64,17 +66,20 @@ make kind-demo
 
 This applies `config/samples/` which creates:
 
-* `LogicFlowRuntime/hello-runtime` — a stateless runner (defaults to `1.0.0-minimal` image)
+* `LogicPlatform/logicplatform-sample` — manages the workflow gateway and its Ingress at `gateway.lvh.me`
+* `LogicFlowRuntime/hello-runtime` — a stateless runner (defaults to the operator's Quarkus Flow Runner version, `{quarkus-flow-runner-version}-minimal` in this release)
 * `LogicFlowDefinition/hello-world-v1-0-0` — the hello-world workflow
-* `LogicFlowService/hello-world` — exposes the workflow at `hello.lvh.me`
+
+The gateway uses `LogicFlowDefinition.spec.runtimeRef` to route to the runtime's Kubernetes Service. A `LogicFlowService` is optional; when one exists, its `status.url` takes precedence and preserves its traffic policy.
 
 Wait for the runtime pod to be ready, then invoke the workflow:
 
 [source,bash]
 ----
 kubectl wait --for=condition=available deployment/hello-runtime --timeout=120s
+kubectl wait --for=condition=available deployment/logicplatform-sample-workflow-gateway --timeout=120s
 
-curl -X POST http://hello.lvh.me/ \
+curl -X POST http://gateway.lvh.me/v1/runtime/default/hello-world/1.0.0/sync \
   -H "Content-Type: application/json" \
   -d '{"name": "World"}'
 ----
@@ -113,7 +118,7 @@ See xref:deployment/troubleshooting.adoc[Troubleshooting] for more common issues
 [source,bash]
 ----
 # Check all Logic Operator CRs
-kubectl get logicflowruntimes,logicflowdefinitions,logicflowservices
+kubectl get logicplatforms,logicflowruntimes,logicflowdefinitions
 
 # Check runtime pod logs
 kubectl logs -l app.kubernetes.io/name=hello-runtime -f
@@ -122,20 +127,19 @@ kubectl logs -l app.kubernetes.io/name=hello-runtime -f
 kubectl logs -n logic-operator-system -l control-plane=controller-manager -f
 ----
 
-The runtime also exposes health and OpenAPI endpoints:
-
-[source,bash]
-----
-curl http://runtime.lvh.me/q/health    # liveness + readiness
-curl http://runtime.lvh.me/q/openapi   # OpenAPI spec
-----
-
-Or via port-forward if ingress is not available:
+The runtime exposes health and OpenAPI endpoints through its internal Service. Start this port-forward in a separate terminal:
 
 [source,bash]
 ----
 kubectl port-forward svc/hello-runtime 8080:80
+----
+
+Then query it:
+
+[source,bash]
+----
 curl http://localhost:8080/q/health
+curl http://localhost:8080/q/openapi
 ----
 
 == Next Steps: Persistence & Data Index
@@ -148,21 +152,21 @@ To test durable workflows and Data Index integration:
 kubectl apply -k config/samples/persistence/
 
 # Wait for everything
-kubectl wait --for=condition=available deployment/postgresql deployment/hello-runtime deployment/flow-platform-data-index --timeout=120s
+kubectl wait --for=condition=available deployment/postgresql deployment/hello-runtime deployment/logicplatform-sample-data-index --timeout=120s
 
 # Test a durable workflow
-curl -X POST http://hello.lvh.me/q/flow/exec/examples/sleepy-workflow/1.0.0 \
+curl -X POST http://sleepy.lvh.me/ \
   -H "Content-Type: application/json" \
   -d '{"name": "local-test"}'
 
 # Query Data Index GraphQL
-GRAPHQL_ENDPOINT=$(kubectl get logicplatform flow-platform \
+GRAPHQL_ENDPOINT=$(kubectl get logicplatform logicplatform-sample \
   -o jsonpath='{.status.dataIndex.service.graphqlEndpoint}')
 
 curl -X POST "$GRAPHQL_ENDPOINT" \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "{ getWorkflowInstances { id status outputData } }"
+    "query": "{ getWorkflowInstances(limit: 10) { id namespace name status startedAt endedAt outputData } }"
   }'
 ----
 

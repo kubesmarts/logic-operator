@@ -270,6 +270,7 @@ var _ = Describe("Manager", Ordered, func() {
 	logicFlowServiceTests()
 	logicFlowServiceMultiVersionTests()
 	webhookValidationTests()
+	workflowGatewayTests()
 })
 
 // serviceAccountToken returns a token for the specified service account in the given namespace.

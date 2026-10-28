@@ -1,8 +1,10 @@
+include::partial$versions.adoc[]
+
 = Hello World Sample
 :description: End-to-end walkthrough of the hello-world workflow using make kind-demo.
 
 The hello-world sample is the quickest way to see Logic Operator in action.
-It deploys a stateless runtime, a single-step workflow, and exposes it via an ingress.
+It deploys a LogicPlatform-managed gateway, a stateless runtime, and a single-step workflow. The gateway Ingress is the public endpoint.
 
 == Prerequisites
 
@@ -15,7 +17,7 @@ A running KIND cluster with the operator deployed. If you have not done this yet
 make kind-demo
 ----
 
-This runs `kubectl apply -k config/samples/` which creates three custom resources.
+This builds and loads the gateway image, then applies `config/samples/`, which creates a `LogicPlatform`, `LogicFlowRuntime`, and `LogicFlowDefinition`.
 
 == The Custom Resources
 
@@ -30,7 +32,7 @@ metadata:
 spec: {}
 ----
 
-An empty `spec` means the operator uses all defaults: one replica of the `1.0.0-minimal` runner image with no persistence and no authentication.
+An empty `spec` means the operator uses all defaults: one replica of the operator's Quarkus Flow Runner image (`{quarkus-flow-runner-version}-minimal` in this release), no persistence, and no authentication.
 The operator creates a `Deployment` and `Service` named `hello-runtime`.
 
 === LogicFlowDefinition
@@ -60,43 +62,28 @@ This is an OWS 1.0.0 document.
 The single task `greet` uses a `set` action to build the response string from the input field `.name`.
 The operator propagates this definition as a ConfigMap into the runtime pod.
 
-=== LogicFlowService
-
-[source,yaml]
-----
-apiVersion: logic.kubesmarts.org/v1
-kind: LogicFlowService
-metadata:
-  name: hello-world
-spec:
-  defaultDefinition:
-    name: hello-world-v1-0-0
-  ingress:
-    host: hello.lvh.me
-    ingressClassName: nginx
-----
-
-The service creates an Ingress that routes traffic from `hello.lvh.me` to the runtime pod and dispatches requests to the `hello-world-v1-0-0` definition by default.
+The `LogicPlatform` sample enables its workflow gateway with an Ingress at `gateway.lvh.me`. The gateway maps the workflow identity from the definition labels to `spec.runtimeRef.name`, then calls the runtime's Kubernetes Service. No `LogicFlowService` is required for this route. If a matching `LogicFlowService` exists, the gateway prefers its `status.url`.
 
 == Wait for the Runtime
 
 [source,bash]
 ----
 kubectl wait --for=condition=available deployment/hello-runtime --timeout=120s
+kubectl wait --for=condition=available deployment/logicplatform-sample-workflow-gateway --timeout=120s
 ----
 
-Check that all three resources are ready:
+Check the platform, runtime, and definition:
 
 [source,bash]
 ----
-kubectl get logicflowruntimes,logicflowdefinitions,logicflowservices
+kubectl get logicplatforms,logicflowruntimes,logicflowdefinitions
 ----
 
 == Invoke the Workflow
 
 [source,bash]
 ----
-curl -X POST http://hello.lvh.me/ \
+curl -X POST http://gateway.lvh.me/v1/runtime/default/hello-world/1.0.0/sync \
   -H "Content-Type: application/json" \
   -d '{"name": "World"}'
 ----
@@ -110,7 +97,7 @@ Expected response:
 
 [TIP]
 ====
-`hello.lvh.me` resolves to `127.0.0.1` via public DNS.
+`gateway.lvh.me` resolves to `127.0.0.1` via public DNS.
 No `/etc/hosts` changes are needed.
 ====
 
@@ -118,7 +105,14 @@ No `/etc/hosts` changes are needed.
 
 [source,bash]
 ----
-curl http://runtime.lvh.me/q/health
+kubectl port-forward svc/hello-runtime 8080:80
+----
+
+Then query it:
+
+[source,bash]
+----
+curl http://localhost:8080/q/health
 ----
 
 The response shows liveness and readiness probes from the Quarkus SmallRye Health extension.
@@ -127,7 +121,7 @@ The response shows liveness and readiness probes from the Quarkus SmallRye Healt
 
 [source,bash]
 ----
-curl http://runtime.lvh.me/q/metrics
+curl http://localhost:8080/q/metrics
 ----
 
 After invoking the workflow once, look for:
@@ -142,7 +136,7 @@ quarkus_flow_workflow_completed_total{workflow="hello-world"} 1.0
 
 [source,bash]
 ----
-curl http://runtime.lvh.me/q/openapi
+curl http://localhost:8080/q/openapi
 ----
 
 The Quarkus Flow Runner generates an OpenAPI spec that includes all loaded workflow definitions.

@@ -1,5 +1,7 @@
-= Logic Operator v2.0
-:description: Kubernetes operator for Quarkus Flow — manage workflow runtimes, definitions, and services as Kubernetes resources.
+include::partial$versions.adoc[]
+
+= Logic Operator v{operator-version}
+:description: Kubernetes operator for Quarkus Flow — manage workflow runtimes, definitions, services, and the Workflow Gateway as Kubernetes resources.
 
 Logic Operator is a Kubernetes operator for https://github.com/quarkiverse/quarkus-flow[Quarkus Flow].
 It lets you manage workflow runtimes, definitions, and traffic routing as native Kubernetes resources using the https://open-workflow-specification.org/[Open Workflow Specification 1.0.0].
@@ -13,25 +15,25 @@ Logic Operator introduces four custom resources:
 |CRD |Purpose
 
 |xref:crd-reference/logicplatform.adoc[LogicPlatform]
-|Manages Data Index (GraphQL query service) and Vector (log collection) for workflow data integration.
+|Manages Data Index, Vector log collection, and the optional Workflow Gateway. The gateway accepts workflow execution and lifecycle requests.
 
 |xref:crd-reference/logicflowruntime.adoc[LogicFlowRuntime]
-|Manages a Quarkus Flow Runner deployment — pods, service, ConfigMap, leases, HPA, and RBAC.
+|Manages a Quarkus Flow Runner deployment — pods, service, definition ConfigMap mounts, durable-workflow leases, and RBAC. Exposes a scale subresource for HPA.
 
 |xref:crd-reference/logicflowdefinition.adoc[LogicFlowDefinition]
-|Immutable workflow version snapshot. Mounted automatically into the runner's ConfigMap.
+|OWS workflow document connected to a runtime. The controller materializes it as a per-definition ConfigMap.
 
 |xref:crd-reference/logicflowservice.adoc[LogicFlowService]
-|Groups workflow versions under a single HTTP endpoint. Manages Ingress routing.
+|Groups workflow versions under a single HTTP endpoint. Manages Kubernetes Ingress, OpenShift Route, or Gateway API HTTPRoute routing.
 
 |===
 
 == Highlights
 
-* *Hot-reload* — workflow definition updates propagate automatically via ConfigMap directory mounts; no pod restarts needed.
+* *Workflow updates* — new definition identities can be registered by the runner's file watcher. Editing an already loaded workflow requires a runtime restart; adding or removing a definition rolls the runtime Deployment.
 * *Durable workflows* — Kubernetes Leases provide stable pod identity across restarts and scaling events.
 * *Workflow data integration* — Vector collects structured logs; Data Index provides GraphQL API to query workflow instance history.
-* *Autoscaling* — HPA support out of the box.
+* *Autoscaling* — LogicFlowRuntime exposes a scale subresource. The gateway can use an HPA capped at one replica while instance routing state remains in memory.
 * *Observability* — Micrometer metrics exposed at `/q/metrics`; sample Prometheus + Grafana dashboards included.
 * *Security* — `NONE`, `API_KEY`, and `OIDC` authentication modes.
 

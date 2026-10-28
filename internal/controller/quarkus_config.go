@@ -17,7 +17,7 @@ const (
 )
 
 func runnerImage(variant string) string {
-	return fmt.Sprintf("%s/%s:%s-%s", QuarkusFlowRegistry, QuarkusFlowRunner, QuarkusFlowVersion, variant)
+	return fmt.Sprintf("%s/%s:%s-%s", logicv1.FlowRunnerRegistry, logicv1.FlowRunnerImage, QuarkusFlowVersion, variant)
 }
 
 func QuarkusService(owner metav1.Object, ownerKind string) *corev1ac.ServiceApplyConfiguration {
@@ -40,7 +40,7 @@ func QuarkusServiceWithSelectorAndName(owner metav1.Object, ownerKind string, se
 						WithName("http").
 						WithProtocol(corev1.ProtocolTCP).
 						WithPort(defaultPort).
-						WithTargetPort(intstr.FromInt32(QuarkusPort)),
+						WithTargetPort(intstr.FromInt32(logicv1.QuarkusFlowRunnerHTTPPort)),
 				),
 		)
 	return svc
@@ -54,9 +54,9 @@ func DefaultRunnerImage(persistence *logicv1.PersistenceOptionsSpec) ContainerOp
 			return
 		}
 		if logicv1.HasPersistence(persistence) {
-			c.WithImage(runnerImage(ImageVariantStandard))
+			c.WithImage(runnerImage(logicv1.ImageVariantStandard))
 		} else {
-			c.WithImage(runnerImage(ImageVariantMinimal))
+			c.WithImage(runnerImage(logicv1.ImageVariantMinimal))
 		}
 	}
 }
@@ -69,7 +69,7 @@ func DefaultQuarkusProbes() ContainerOption {
 			c.WithLivenessProbe(corev1ac.Probe().
 				WithHTTPGet(corev1ac.HTTPGetAction().
 					WithPath("/q/health/live").
-					WithPort(intstr.FromInt32(QuarkusPort))).
+					WithPort(intstr.FromInt32(logicv1.QuarkusFlowRunnerHTTPPort))).
 				WithInitialDelaySeconds(30).
 				WithPeriodSeconds(10).
 				WithTimeoutSeconds(3).
@@ -79,7 +79,7 @@ func DefaultQuarkusProbes() ContainerOption {
 			c.WithReadinessProbe(corev1ac.Probe().
 				WithHTTPGet(corev1ac.HTTPGetAction().
 					WithPath("/q/health/ready").
-					WithPort(intstr.FromInt32(QuarkusPort))).
+					WithPort(intstr.FromInt32(logicv1.QuarkusFlowRunnerHTTPPort))).
 				WithInitialDelaySeconds(10).
 				WithPeriodSeconds(5).
 				WithTimeoutSeconds(3).
@@ -97,7 +97,7 @@ func DurableStartupProbe() ContainerOption {
 			c.WithStartupProbe(corev1ac.Probe().
 				WithHTTPGet(corev1ac.HTTPGetAction().
 					WithPath("/q/health/ready").
-					WithPort(intstr.FromInt32(QuarkusPort))).
+					WithPort(intstr.FromInt32(logicv1.QuarkusFlowRunnerHTTPPort))).
 				WithInitialDelaySeconds(0).
 				WithPeriodSeconds(5).
 				WithTimeoutSeconds(3).

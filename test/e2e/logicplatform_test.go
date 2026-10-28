@@ -12,8 +12,8 @@ import (
 	"github.com/kubesmarts/logic-operator/test/utils"
 )
 
-const platformName = "flow-platform"
-const dataIndexName = "flow-platform-data-index"
+const platformName = "logicplatform-sample"
+const dataIndexName = platformName + "-data-index"
 const runtimeName = "hello-runtime"
 
 // dataIndexIntegrationWorkflowYAML - test-specific workflow for DataIndex integration verification

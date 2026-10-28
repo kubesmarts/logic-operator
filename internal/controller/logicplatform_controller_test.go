@@ -18,7 +18,6 @@ package controller
 
 import (
 	"context"
-	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -166,7 +165,7 @@ var _ = Describe("LogicPlatform Controller", func() {
 			Expect(k8sClient.Get(ctx, depName, &dep)).To(Succeed())
 
 			c := dataIndexContainer(&dep)
-			expectedImage := fmt.Sprintf("%s/%s:%s-%s", logicv1.DataIndexRegistry, logicv1.DataIndexImage, logicv1.DataIndexVersion, logicv1.DataIndexVariant)
+			expectedImage := logicv1.DefaultDataIndexImage()
 			Expect(c.Image).To(Equal(expectedImage))
 
 			// Check Flyway migration environment variables
@@ -200,11 +199,11 @@ var _ = Describe("LogicPlatform Controller", func() {
 
 			Expect(c.LivenessProbe).NotTo(BeNil())
 			Expect(c.LivenessProbe.HTTPGet.Path).To(Equal("/q/health/live"))
-			Expect(c.LivenessProbe.HTTPGet.Port.IntValue()).To(Equal(int(QuarkusPort)))
+			Expect(c.LivenessProbe.HTTPGet.Port.IntValue()).To(Equal(int(logicv1.QuarkusFlowRunnerHTTPPort)))
 
 			Expect(c.ReadinessProbe).NotTo(BeNil())
 			Expect(c.ReadinessProbe.HTTPGet.Path).To(Equal("/q/health/ready"))
-			Expect(c.ReadinessProbe.HTTPGet.Port.IntValue()).To(Equal(int(QuarkusPort)))
+			Expect(c.ReadinessProbe.HTTPGet.Port.IntValue()).To(Equal(int(logicv1.QuarkusFlowRunnerHTTPPort)))
 		})
 
 		It("should create a Deployment with default replicas", func() {
@@ -225,7 +224,7 @@ var _ = Describe("LogicPlatform Controller", func() {
 			Expect(port.Name).To(Equal("http"))
 			Expect(port.Protocol).To(Equal(corev1.ProtocolTCP))
 			Expect(port.Port).To(Equal(int32(80)))
-			Expect(port.TargetPort.IntValue()).To(Equal(int(QuarkusPort)))
+			Expect(port.TargetPort.IntValue()).To(Equal(int(logicv1.QuarkusFlowRunnerHTTPPort)))
 
 			Expect(svc.Spec.Selector).To(Equal(SelectorLabels(dataIndexNameFor(name))))
 		})
@@ -308,7 +307,7 @@ var _ = Describe("LogicPlatform Controller", func() {
 			Expect(plat.Status.Phase).To(Equal(logicv1.LogicPlatformStatusPhase(logicv1.ApplicationPhasePending)))
 
 			// Check Ready flag
-			Expect(plat.Status.DataIndex.Service.Ready).To(BeFalse())
+			Expect(plat.Status.DataIndex.Ready).To(BeFalse())
 		})
 
 		It("should set GraphQL and Metrics endpoints", func() {
@@ -862,9 +861,9 @@ var _ = Describe("LogicPlatform Controller", func() {
 		It("should set Vector status and condition", func() {
 			plat := reconcilePlatformAndFetch(ctx, r, nn)
 
-			Expect(plat.Status.DataIndex.Vector).NotTo(BeNil())
-			Expect(plat.Status.DataIndex.Vector.DaemonSetRef.Name).To(Equal(vectorNameFor(name)))
-			Expect(plat.Status.DataIndex.Vector.MetricsEndpoint).To(ContainSubstring(vectorNameFor(name)))
+			Expect(plat.Status.Vector).NotTo(BeNil())
+			Expect(plat.Status.Vector.DaemonSetRef.Name).To(Equal(vectorNameFor(name)))
+			Expect(plat.Status.Vector.MetricsEndpoint).To(ContainSubstring(vectorNameFor(name)))
 
 			cond := meta.FindStatusCondition(plat.Status.Conditions, logicv1.ConditionVectorReady)
 			Expect(cond).NotTo(BeNil())

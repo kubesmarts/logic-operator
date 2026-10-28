@@ -404,6 +404,10 @@ func durableTests() {
 }
 
 func startRunnerPortForward(podName string) (string, func(), error) {
+	return startRunnerPortForwardInNamespace(namespace, podName)
+}
+
+func startRunnerPortForwardInNamespace(namespace, podName string) (string, func(), error) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return "", nil, err

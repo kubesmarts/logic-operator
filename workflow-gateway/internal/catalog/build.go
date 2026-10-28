@@ -51,6 +51,44 @@ func BuildExecutionEndpoints(
 	return endpoints, errs
 }
 
+// BuildRuntimeServiceEndpoints maps each LogicFlowDefinition directly to the
+// Kubernetes Service created for its referenced LogicFlowRuntime. These routes
+// let the gateway serve workflows that do not have a LogicFlowService; a
+// configured LogicFlowService URL can override them in the watcher.
+func BuildRuntimeServiceEndpoints(
+	definitions []logicv1.LogicFlowDefinition,
+) (map[routing.WorkflowKey]routing.URL, []error) {
+	endpoints := make(map[routing.WorkflowKey]routing.URL, len(definitions))
+	var errs []error
+
+	for i := range definitions {
+		def := &definitions[i]
+		key, err := workflowKeyFromLabels(def)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+
+		runtimeName := def.Spec.RuntimeRef.Name
+		if runtimeName == "" {
+			errs = append(errs, fmt.Errorf("definition %s/%s has no runtimeRef.name", def.Namespace, def.Name))
+			continue
+		}
+
+		// Runtime Services use port 80 and share the LogicFlowRuntime's name and
+		// namespace. Kubernetes DNS search resolves service.namespace against
+		// the cluster service domain without assuming that domain's value.
+		endpoint := routing.URL(fmt.Sprintf("http://%s.%s", runtimeName, def.Namespace))
+		if existing, duplicate := endpoints[key]; duplicate && existing != endpoint {
+			errs = append(errs, fmt.Errorf("duplicate workflow key %v: definition %s/%s targets %s, already mapped to %s", key, def.Namespace, def.Name, endpoint, existing))
+			continue
+		}
+		endpoints[key] = endpoint
+	}
+
+	return endpoints, errs
+}
+
 func referencedDefinitions(svc *logicv1.LogicFlowService) []string {
 	if svc.Spec.DefaultDefinition != nil && svc.Spec.DefaultDefinition.Name != "" {
 		return []string{svc.Spec.DefaultDefinition.Name}

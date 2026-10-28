@@ -4,9 +4,10 @@ metadata:
   labels:
     app.kubernetes.io/name: logic-operator
     app.kubernetes.io/managed-by: kustomize
-  name: flow-platform
+  name: logicplatform-sample
 spec:
   dataIndex:
+    enabled: true
     persistence:
       postgresql:
         secretRef:
@@ -17,3 +18,11 @@ spec:
           databaseSchema: logicflow_dataindex
     vector:
       enabled: true
+  workflowGateway:
+    application:
+      image: kubesmarts.org/workflow-gateway:v2.0.0-Alpha1
+      replicas: 1
+    ingress:
+      enabled: true
+      host: gateway.lvh.me
+      ingressClassName: nginx

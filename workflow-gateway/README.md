@@ -1,125 +1,81 @@
 # Workflow Gateway
 
-The workflow gateway is a stateless HTTP routing layer that directs requests to appropriate workflow runtime services. It implements the routing strategy defined in [ADR-0002: Workflow Gateway Architecture](https://github.com/kubesmarts/logic-apps/blob/main/adrs/0002-workflow-gateway-architecture.md).
+The Workflow Gateway is an HTTP entry point for Logic Operator workflows. It discovers
+`LogicFlowDefinition` and `LogicFlowService` resources, routes workflow execution to Quarkus Flow
+Runner, and forwards instance lifecycle operations. It can also read workflow definitions from the
+Kubernetes API and query workflow instances through Data Index.
 
-## Building
+For the user guide, API routes, LogicPlatform integration, and known limitations, see the
+[Workflow Gateway documentation](../docs/antora/modules/ROOT/pages/components/workflow-gateway.adoc).
 
-Build the gateway binary from the project root:
+## Routing behavior
+
+For execution, a matching `LogicFlowService.status.url` takes precedence and preserves that
+service's ingress or traffic policy. Otherwise, the gateway uses the workflow's
+`LogicFlowDefinition.spec.runtimeRef.name` and calls the runtime's Kubernetes Service on port 80
+(runner container port 8080). A `LogicFlowService` is optional.
+
+Async execution stores an in-memory instance-to-lease identity mapping. Suspend, resume, and cancel
+resolve the current lease holder and call the runner pod on port 8080; if that lookup is not
+available, the gateway falls back to the runtime Service. Keep the gateway at one replica until
+this state is shared across replicas. An HPA may be used with `maxReplicas: 1`.
+
+## Build and run
+
+Build the binary from the repository root:
 
 ```bash
 make build-gateway
 ```
 
-The binary is created at `bin/workflow-gateway`.
-
-## Running Locally
-
-Start the gateway from the project root:
-
-```bash
-./bin/workflow-gateway
-```
-
-The server listens on `:8080` and exposes health and readiness probes:
-
-```bash
-curl http://localhost:8080/health    # Liveness probe
-curl http://localhost:8080/ready     # Readiness probe
-```
-
-## Configuration
-
-The gateway accepts configuration via `server.Config`. Currently supported configuration:
-
-| Field | Default | Description |
-|-------|---------|-------------|
-| Addr | `:8080` | HTTP server bind address |
-| ReadTimeout | `15s` | HTTP request read timeout |
-| WriteTimeout | `15s` | HTTP response write timeout |
-| IdleTimeout | `60s` | HTTP connection idle timeout |
-| ShutdownTimeout | `30s` | Graceful shutdown timeout |
-
-Configuration can be overridden in `cmd/main.go` by modifying the `server.Config` struct.
-
-## Testing
-
-Run unit tests:
-
-```bash
-cd workflow-gateway
-go test -v ./...
-```
-
-Run with coverage:
-
-```bash
-cd workflow-gateway
-go test -v -cover ./...
-```
-
-Current coverage: 86.4% of statements
-
-## Docker
-
-### Building
-
-Build Docker image from project root:
+Build the container image using the independently configured `GATEWAY_VERSION` in `versions.mk`:
 
 ```bash
 make docker-build-gateway
 ```
 
-The image is built with tag `kubesmarts.org/workflow-gateway:v0.0.1` (uses VERSION variable).
+The default image tag is `kubesmarts.org/workflow-gateway:v$(GATEWAY_VERSION)`. When running in
+Kubernetes, `LogicPlatform` defaults the gateway image to the version embedded in the operator
+build. Set `spec.workflowGateway.application.image` to override it.
 
-### Running
+To run the binary locally, provide a usable Kubernetes configuration and access to the Logic
+Operator CRDs and resources. The gateway uses `POD_NAMESPACE` to locate the LogicPlatform for
+Data Index discovery; it defaults to `default` when unset.
 
-Run the container:
-
-```bash
-docker run -p 8080:8080 kubesmarts.org/workflow-gateway:v0.0.1
-```
-
-The container runs as non-root user (uid 65532) for security.
-
-### Multi-Platform Builds
-
-The Dockerfile supports multi-platform builds:
+The public API listener defaults to `:8080`. The management listener defaults to `:8081`.
+Containerized development runs can publish both ports:
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64 \
-  -t kubesmarts.org/workflow-gateway:latest .
+docker run --rm -p 8080:8080 -p 8081:8081 kubesmarts.org/workflow-gateway:v<version>
 ```
 
-## Endpoints
+## Listeners
 
-### GET /health
+Public API routes are under `/v1`; retrieve the OpenAPI specification at `/v1/openapi` or
+`/v1/openapi.json`.
 
-Liveness probe. Always returns 200 OK.
+The management listener provides:
 
-```bash
-curl http://localhost:8080/health
-# {"status":"ok"}
-```
+| Path | Behavior |
+|------|----------|
+| `/health` | Liveness check; returns 200 while the process responds. |
+| `/ready` | Returns 200 after the cache and initial routing table are synchronized; otherwise 503. |
+| `/debug/routes` | Shows the current workflow execution endpoint table. |
 
-**Use case:** Kubernetes liveness probe to detect if the server is alive.
+The LogicPlatform-managed Service exposes only port 80 targeting API port 8080. Port 8081 is used
+by container probes and is not exposed by that Service.
 
-### GET /ready
+## Data Index behavior
 
-Readiness probe. Returns 200 OK when ready, 503 Service Unavailable when not ready.
+`GET /v1/instances` and `GET /v1/instances/{id}` use the GraphQL endpoint published by the
+LogicPlatform in the same namespace as the gateway. They return 503 if Data Index is disabled or
+not yet discovered. Workflow execution does not depend on Data Index.
 
-```bash
-curl http://localhost:8080/ready
-# {"status":"ready"} (200 OK) or {"status":"not ready"} (503)
-```
+## Current limitations
 
-**Use case:** Kubernetes readiness probe to detect if the server is ready to accept traffic. Returns 503 until initialization is complete.
-
-## Architecture
-
-See [ADR-0002: Workflow Gateway Architecture](https://github.com/kubesmarts/logic-apps/blob/main/adrs/0002-workflow-gateway-architecture.md) for the complete architecture and routing strategy.
-
-This phase (Phase 2 of ADR-0002) establishes the HTTP server scaffold. Future phases will add:
-- Workflow instance routing (two-level routing strategy)
-- CRD watching for LogicFlowRuntime discovery
-- Data-Index integration for instance status queries
-- Header-based pod routing via sticky sessions
+* Async instance routing state is held in process memory. Use one gateway replica (`maxReplicas: 1`)
+  until this mapping uses shared runtime state.
+* A gateway restart loses its instance mappings; follow-up requests then fall back to the runtime
+  Service, which might not select the pod holding an in-memory instance.
+* The gateway forwards requests to the runner and does not define a separate authentication policy.
+  Configure runtime security and secure the external Ingress or Route.

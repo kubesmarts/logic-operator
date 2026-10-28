@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/kubesmarts/logic-operator/utils"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -31,12 +32,14 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	appsv1ac "k8s.io/client-go/applyconfigurations/apps/v1"
 	corev1ac "k8s.io/client-go/applyconfigurations/core/v1"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -55,10 +58,10 @@ type LogicPlatformReconciler struct {
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;delete
+// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch;create;update;patch;delete
 
@@ -81,6 +84,9 @@ func (r *LogicPlatformReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 	if err := r.reconcileVector(ctx, &plat); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := r.reconcileWorkflowGateway(ctx, &plat); err != nil {
 		return ctrl.Result{}, err
 	}
 	if err := r.updateStatus(ctx, &plat); err != nil {
@@ -317,36 +323,64 @@ func (r *LogicPlatformReconciler) updateStatus(ctx context.Context, plat *logicv
 	// Set observed generation
 	plat.Status.ObservedGeneration = plat.Generation
 
-	// Set resource references
-	plat.Status.DataIndex.Service.DeploymentRef.Name = diName
-	plat.Status.DataIndex.Service.ServiceRef.Name = diName
+	if plat.Spec.DataIndex.Enabled {
+		if plat.Status.DataIndex == nil {
+			plat.Status.DataIndex = &logicv1.DataIndexStatus{}
+		}
 
-	// Update persistence config validation
-	if err := r.updateStatusPersistence(ctx, plat); err != nil {
-		return err
+		// Set resource references
+		plat.Status.DataIndex.Service.DeploymentRef.Name = diName
+		plat.Status.DataIndex.Service.ServiceRef.Name = diName
+
+		// Update persistence, deployment, and service status.
+		if err := r.updateStatusPersistence(ctx, plat); err != nil {
+			return err
+		}
+		if err := r.updateDataIndexStatusDeployment(ctx, plat); err != nil {
+			return err
+		}
+		if err := r.updateDeploymentStatusService(ctx, plat); err != nil {
+			return err
+		}
+
+		ready, reason, message := platformComponentReadiness(plat.Status.Conditions,
+			logicv1.ConditionDataIndexDeploymentAvailable,
+			logicv1.ConditionDataIndexServiceReady,
+			logicv1.ConditionDataIndexPersistenceReady,
+		)
+		plat.Status.DataIndex.Ready = ready
+		if ready {
+			reason = logicv1.ReasonReady
+			message = "Data Index is ready"
+		}
+		conditionStatus := metav1.ConditionFalse
+		if ready {
+			conditionStatus = metav1.ConditionTrue
+		}
+		logicv1.SetCondition(&plat.Status.Conditions, logicv1.ConditionDataIndexReady,
+			conditionStatus, plat.Generation, reason, message)
+	} else {
+		plat.Status.DataIndex = nil
+		removeLogicPlatformCondition(&plat.Status.Conditions,
+			logicv1.ConditionDataIndexReady,
+			logicv1.ConditionDataIndexDeploymentAvailable,
+			logicv1.ConditionDataIndexServiceReady,
+			logicv1.ConditionDataIndexPersistenceReady,
+		)
 	}
 
-	// Update deployment status
-	if err := r.updateDataIndexStatusDeployment(ctx, plat); err != nil {
-		return err
-	}
-
-	// Update service status
-	if err := r.updateDeploymentStatusService(ctx, plat); err != nil {
-		return err
-	}
-
-	// Update Vector status
+	// Update Vector status independently so each enabled component has a status
+	// entry at the same level as Data Index and Workflow Gateway.
 	if err := r.updateVectorStatus(ctx, plat); err != nil {
 		return err
 	}
 
-	// Set overall ready status based on replica count
-	plat.Status.DataIndex.Service.Ready = plat.Status.DataIndex.Service.Replicas.Ready > 0
+	// Update WorkflowGateway status
+	if err := r.updateWorkflowGatewayStatus(ctx, plat); err != nil {
+		return err
+	}
 
-	// Derive phase from conditions
-	phase := logicv1.DerivePhase(plat.Status.Conditions, plat.Status.DataIndex.Service.Replicas.Ready)
-	plat.Status.Phase = logicv1.LogicPlatformStatusPhase(phase)
+	updateLogicPlatformReadiness(plat)
 
 	// Update status in API server with retry on conflict
 	savedStatus := plat.Status.DeepCopy()
@@ -358,6 +392,93 @@ func (r *LogicPlatformReconciler) updateStatus(ctx context.Context, plat *logicv
 		plat.Status = *savedStatus
 		return r.Status().Update(ctx, plat)
 	})
+}
+
+func platformComponentReadiness(conditions []metav1.Condition, conditionTypes ...string) (bool, string, string) {
+	for _, conditionType := range conditionTypes {
+		condition := logicv1.FindCondition(conditions, conditionType)
+		if condition == nil {
+			return false, logicv1.ReasonComponentsNotReady, fmt.Sprintf("%s condition is not available", conditionType)
+		}
+		if condition.Status != metav1.ConditionTrue {
+			reason := condition.Reason
+			if reason == "" {
+				reason = logicv1.ReasonComponentsNotReady
+			}
+			return false, reason, condition.Message
+		}
+	}
+	return true, logicv1.ReasonReady, ""
+}
+
+func updateLogicPlatformReadiness(plat *logicv1.LogicPlatform) {
+	var notReady []string
+	components := 0
+	if plat.Spec.DataIndex.Enabled {
+		components++
+		if plat.Status.DataIndex == nil || !plat.Status.DataIndex.Ready {
+			notReady = append(notReady, "Data Index")
+		}
+	}
+	if plat.Spec.DataIndex.Vector != nil && plat.Spec.DataIndex.Vector.Enabled {
+		components++
+		if plat.Status.Vector == nil || !plat.Status.Vector.Ready {
+			notReady = append(notReady, "Vector")
+		}
+	}
+	if plat.Spec.WorkflowGateway != nil {
+		components++
+		if plat.Status.WorkflowGateway == nil || !plat.Status.WorkflowGateway.Ready {
+			notReady = append(notReady, "Workflow Gateway")
+		}
+	}
+
+	if len(notReady) == 0 {
+		message := "All enabled platform components are ready"
+		if components == 0 {
+			message = "No platform components are enabled"
+		}
+		logicv1.SetCondition(&plat.Status.Conditions, logicv1.ConditionReady,
+			metav1.ConditionTrue, plat.Generation, logicv1.ReasonReady, message)
+		plat.Status.Phase = logicv1.LogicPlatformStatusPhase(logicv1.ApplicationPhaseReady)
+		return
+	}
+
+	phase := logicv1.ApplicationPhasePending
+	reason := logicv1.ReasonComponentsNotReady
+	for _, conditionType := range []string{
+		logicv1.ConditionDataIndexDeploymentAvailable,
+		logicv1.ConditionDataIndexServiceReady,
+		logicv1.ConditionDataIndexPersistenceReady,
+		logicv1.ConditionVectorReady,
+		logicv1.ConditionWorkflowGatewayReady,
+	} {
+		condition := logicv1.FindCondition(plat.Status.Conditions, conditionType)
+		if condition != nil && condition.Status == metav1.ConditionFalse && condition.Reason == logicv1.ReasonProgressDeadlineExceeded {
+			phase = logicv1.ApplicationPhaseFailed
+			reason = logicv1.ReasonProgressDeadlineExceeded
+			break
+		}
+	}
+	logicv1.SetCondition(&plat.Status.Conditions, logicv1.ConditionReady,
+		metav1.ConditionFalse, plat.Generation, reason,
+		fmt.Sprintf("Waiting for enabled platform components: %s", strings.Join(notReady, ", ")))
+	plat.Status.Phase = logicv1.LogicPlatformStatusPhase(phase)
+}
+
+func removeLogicPlatformCondition(conditions *[]metav1.Condition, conditionTypes ...string) {
+	remove := make(map[string]struct{}, len(conditionTypes))
+	for _, conditionType := range conditionTypes {
+		remove[conditionType] = struct{}{}
+	}
+
+	filtered := (*conditions)[:0]
+	for _, condition := range *conditions {
+		if _, found := remove[condition.Type]; !found {
+			filtered = append(filtered, condition)
+		}
+	}
+	*conditions = filtered
 }
 
 func (r *LogicPlatformReconciler) updateStatusPersistence(ctx context.Context, plat *logicv1.LogicPlatform) error {
@@ -637,21 +758,22 @@ func (r *LogicPlatformReconciler) deleteVectorResources(ctx context.Context, pla
 func (r *LogicPlatformReconciler) updateVectorStatus(ctx context.Context, plat *logicv1.LogicPlatform) error {
 	// If Vector is disabled, clear status
 	if plat.Spec.DataIndex.Vector == nil || !plat.Spec.DataIndex.Vector.Enabled {
-		plat.Status.DataIndex.Vector = nil
+		plat.Status.Vector = nil
+		removeLogicPlatformCondition(&plat.Status.Conditions, logicv1.ConditionVectorReady)
 		return nil
 	}
 
 	// Initialize status if nil
-	if plat.Status.DataIndex.Vector == nil {
-		plat.Status.DataIndex.Vector = &logicv1.VectorStatus{}
+	if plat.Status.Vector == nil {
+		plat.Status.Vector = &logicv1.VectorStatus{}
 	}
 
 	// Fetch DaemonSet
 	var ds appsv1.DaemonSet
 	err := r.Get(ctx, client.ObjectKey{Name: vectorName(plat), Namespace: plat.Namespace}, &ds)
 	if apierrors.IsNotFound(err) {
-		plat.Status.DataIndex.Vector.Ready = false
-		plat.Status.DataIndex.Vector.DaemonSetRef = corev1.LocalObjectReference{Name: vectorName(plat)}
+		plat.Status.Vector.Ready = false
+		plat.Status.Vector.DaemonSetRef = corev1.LocalObjectReference{Name: vectorName(plat)}
 		logicv1.SetCondition(&plat.Status.Conditions, logicv1.ConditionVectorReady,
 			metav1.ConditionFalse, plat.Generation,
 			logicv1.ReasonDaemonSetNotFound, "Vector DaemonSet not found")
@@ -662,14 +784,14 @@ func (r *LogicPlatformReconciler) updateVectorStatus(ctx context.Context, plat *
 	}
 
 	// Update DaemonSetRef
-	plat.Status.DataIndex.Vector.DaemonSetRef = corev1.LocalObjectReference{Name: ds.Name}
+	plat.Status.Vector.DaemonSetRef = corev1.LocalObjectReference{Name: ds.Name}
 
 	// Check if DaemonSet is ready (all desired pods are ready)
 	isReady := ds.Status.DesiredNumberScheduled == ds.Status.NumberReady && ds.Status.DesiredNumberScheduled > 0
-	plat.Status.DataIndex.Vector.Ready = isReady
+	plat.Status.Vector.Ready = isReady
 
 	// Set MetricsEndpoint
-	plat.Status.DataIndex.Vector.MetricsEndpoint = fmt.Sprintf(
+	plat.Status.Vector.MetricsEndpoint = fmt.Sprintf(
 		"http://%s.%s.svc.cluster.local:%d/metrics",
 		vectorName(plat), plat.Namespace, VectorPort,
 	)
@@ -785,6 +907,431 @@ func (r *LogicPlatformReconciler) checkPostgresDatabaseHealth(ctx context.Contex
 	return false, logicv1.ReasonDatabaseUnreachable, "PostgreSQL connection check failed"
 }
 
+func (r *LogicPlatformReconciler) reconcileWorkflowGateway(ctx context.Context, plat *logicv1.LogicPlatform) error {
+	log := logf.FromContext(ctx)
+
+	// Handle deletion: clean up resources before finalizer removal
+	if plat.DeletionTimestamp != nil {
+		if hasFinalizerWorkflowGateway(plat) {
+			log.V(1).Info("LogicPlatform is being deleted, cleaning up gateway resources")
+			return r.deleteWorkflowGatewayResources(ctx, plat)
+		}
+		return nil
+	}
+
+	// If gateway is disabled, clean up resources
+	if plat.Spec.WorkflowGateway == nil {
+		log.V(1).Info("WorkflowGateway is disabled, cleaning up resources")
+		return r.deleteWorkflowGatewayResources(ctx, plat)
+	}
+
+	// Gateway enabled; add finalizer if not present
+	if !hasFinalizerWorkflowGateway(plat) {
+		original := plat.DeepCopy()
+		plat.Finalizers = append(plat.Finalizers, FinalizerWorkflowGateway)
+		if err := r.Patch(ctx, plat, client.MergeFrom(original)); err != nil {
+			return err
+		}
+	}
+
+	// Reconcile gateway resources in order
+	if err := r.applyGatewayServiceAccount(ctx, plat); err != nil {
+		return err
+	}
+	if err := r.applyGatewayClusterRoleBinding(ctx, plat); err != nil {
+		return err
+	}
+	if err := r.applyGatewayDeployment(ctx, plat); err != nil {
+		return err
+	}
+	if err := r.applyGatewayService(ctx, plat); err != nil {
+		return err
+	}
+	if err := r.applyGatewayIngress(ctx, plat); err != nil {
+		return err
+	}
+
+	log.V(1).Info("Gateway reconciliation complete", "platform", plat.Name)
+	return nil
+}
+
+func (r *LogicPlatformReconciler) applyGatewayServiceAccount(ctx context.Context, plat *logicv1.LogicPlatform) error {
+	gwName := workflowGatewayName(plat)
+	saKey := client.ObjectKey{Name: gwName, Namespace: plat.Namespace}
+
+	// Check if existing resource is owned by this platform
+	var existing corev1.ServiceAccount
+	if err := r.Get(ctx, saKey, &existing); err == nil && !hasOwner(&existing, plat) {
+		return fmt.Errorf("ServiceAccount %s already exists and is not owned by this LogicPlatform", saKey)
+	}
+
+	sa := serviceAccountForGateway(plat)
+	return r.Apply(ctx, sa, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
+}
+
+func (r *LogicPlatformReconciler) applyGatewayClusterRoleBinding(ctx context.Context, plat *logicv1.LogicPlatform) error {
+	gwName := workflowGatewayName(plat)
+	bindingName := workflowGatewayClusterRoleBindingName(plat)
+
+	// Build desired ClusterRoleBinding object
+	desired := &rbacv1.ClusterRoleBinding{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "rbac.authorization.k8s.io/v1",
+			Kind:       "ClusterRoleBinding",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: bindingName,
+			Labels: map[string]string{
+				"logic.kubesmarts.org/platform-namespace": plat.Namespace,
+				"logic.kubesmarts.org/platform-name":      plat.Name,
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     ClusterRoleWorkflowGateway,
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      gwName,
+				Namespace: plat.Namespace,
+			},
+		},
+	}
+
+	// Check if binding exists and detect drift in immutable fields
+	var existing rbacv1.ClusterRoleBinding
+	bindingKey := client.ObjectKey{Name: bindingName}
+	if err := r.Get(ctx, bindingKey, &existing); err == nil {
+		// If owned by us and role reference drifted (immutable field), delete and recreate
+		if hasOwner(&existing, plat) && existing.RoleRef != desired.RoleRef {
+			if err := r.Delete(ctx, &existing); err != nil {
+				return fmt.Errorf("failed to delete drifted ClusterRoleBinding: %w", err)
+			}
+		}
+	} else if !apierrors.IsNotFound(err) {
+		return err
+	}
+
+	// Use Patch+Apply for ClusterRoleBinding
+	//nolint:staticcheck
+	return r.Patch(ctx, desired, client.Apply, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
+}
+
+func (r *LogicPlatformReconciler) applyGatewayDeployment(ctx context.Context, plat *logicv1.LogicPlatform) error {
+	gwName := workflowGatewayName(plat)
+	childLabels := ChildLabelsInstance(plat, gwName)
+
+	deployKey := client.ObjectKey{Name: gwName, Namespace: plat.Namespace}
+	var existing appsv1.Deployment
+	if err := r.Get(ctx, deployKey, &existing); err == nil && !hasOwner(&existing, plat) {
+		return fmt.Errorf("deployment %s already exists and is not owned by this LogicPlatform", deployKey)
+	}
+
+	opts := []ContainerOption{
+		WorkflowGatewayEnvVars(),
+		WorkflowGatewayPorts(),
+		WorkflowGatewayProbes(),
+	}
+
+	spec := ToDeploymentSpec(
+		GatewayContainerName,
+		&plat.Spec.WorkflowGateway.Application,
+		childLabels,
+		SelectorLabels(gwName),
+		opts...,
+	)
+
+	// Do not set replicas if unset in CR — allow HPA to own scale.
+	// But preserve replicas from PodTemplate if set there.
+	if plat.Spec.WorkflowGateway.Application.Replicas == nil &&
+		plat.Spec.WorkflowGateway.Application.PodTemplate.Replicas == nil {
+		spec.Replicas = nil
+	}
+
+	// Set dedicated ServiceAccount
+	spec.Template.Spec.ServiceAccountName = &gwName
+
+	deployment := appsv1ac.Deployment(gwName, plat.Namespace).
+		WithLabels(childLabels).
+		WithOwnerReferences(OwnerRef(plat, logicv1.LogicPlatformKind)).
+		WithSpec(spec)
+
+	return r.Apply(ctx, deployment, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
+}
+
+func (r *LogicPlatformReconciler) applyGatewayService(ctx context.Context, plat *logicv1.LogicPlatform) error {
+	gwName := workflowGatewayName(plat)
+	childLabels := ChildLabelsInstance(plat, gwName)
+
+	svcKey := client.ObjectKey{Name: gwName, Namespace: plat.Namespace}
+	var existing corev1.Service
+	if err := r.Get(ctx, svcKey, &existing); err == nil && !hasOwner(&existing, plat) {
+		return fmt.Errorf("service %s already exists and is not owned by this LogicPlatform", svcKey)
+	}
+
+	spec := serviceForGateway(plat).Spec
+
+	service := corev1ac.Service(gwName, plat.Namespace).
+		WithLabels(childLabels).
+		WithOwnerReferences(OwnerRef(plat, logicv1.LogicPlatformKind)).
+		WithSpec(spec)
+
+	return r.Apply(ctx, service, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
+}
+
+func (r *LogicPlatformReconciler) applyGatewayIngress(ctx context.Context, plat *logicv1.LogicPlatform) error {
+	// If ingress disabled, delete any existing resources
+	if plat.Spec.WorkflowGateway.Ingress == nil || !plat.Spec.WorkflowGateway.Ingress.Enabled {
+		return r.deleteGatewayIngress(ctx, plat)
+	}
+
+	// Apply Ingress or Route based on platform
+	if utils.IsOpenShift() {
+		return r.applyGatewayRoute(ctx, plat)
+	}
+	return r.applyGatewayKubernetesIngress(ctx, plat)
+}
+
+func (r *LogicPlatformReconciler) deleteGatewayIngress(ctx context.Context, plat *logicv1.LogicPlatform) error {
+	gwName := workflowGatewayName(plat)
+
+	// Delete Ingress if owned by this platform
+	ingKey := client.ObjectKey{Name: gwName, Namespace: plat.Namespace}
+	var ing networkingv1.Ingress
+	if err := r.Get(ctx, ingKey, &ing); err == nil {
+		if hasOwner(&ing, plat) {
+			if err := r.Delete(ctx, &ing); err != nil && !apierrors.IsNotFound(err) {
+				return err
+			}
+		}
+	} else if !apierrors.IsNotFound(err) {
+		return err
+	}
+
+	// Delete Route if owned by this platform
+	if utils.IsOpenShift() {
+		rtKey := client.ObjectKey{Name: gwName, Namespace: plat.Namespace}
+		var rt routev1.Route
+		if err := r.Get(ctx, rtKey, &rt); err == nil {
+			if hasOwner(&rt, plat) {
+				if err := r.Delete(ctx, &rt); err != nil && !apierrors.IsNotFound(err) {
+					return err
+				}
+			}
+		} else if !apierrors.IsNotFound(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *LogicPlatformReconciler) applyGatewayKubernetesIngress(ctx context.Context, plat *logicv1.LogicPlatform) error {
+	ingress := ingressForGateway(plat)
+	return r.Apply(ctx, ingress, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
+}
+
+func (r *LogicPlatformReconciler) applyGatewayRoute(ctx context.Context, plat *logicv1.LogicPlatform) error {
+	route := routeForGateway(plat)
+	//nolint:staticcheck
+	return r.Patch(ctx, route, client.Apply, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
+}
+
+func (r *LogicPlatformReconciler) deleteWorkflowGatewayResources(ctx context.Context, plat *logicv1.LogicPlatform) error {
+	log := logf.FromContext(ctx)
+	gwName := workflowGatewayName(plat)
+	bindingName := workflowGatewayClusterRoleBindingName(plat)
+
+	// Delete Ingress/Route
+	if err := r.deleteGatewayIngress(ctx, plat); err != nil {
+		return err
+	}
+
+	// Delete Service (check ownership first)
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: gwName, Namespace: plat.Namespace},
+	}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err == nil {
+		// Service exists; verify it's owned by this platform
+		if !hasOwner(svc, plat) {
+			return fmt.Errorf("cannot delete Service %s/%s: not owned by LogicPlatform %s/%s", svc.Namespace, svc.Name, plat.Namespace, plat.Name)
+		}
+		if err := r.Delete(ctx, svc); err != nil && !apierrors.IsNotFound(err) {
+			return err
+		}
+	} else if !apierrors.IsNotFound(err) {
+		return err
+	}
+
+	// Delete Deployment (check ownership first)
+	deploy := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: gwName, Namespace: plat.Namespace},
+	}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(deploy), deploy); err == nil {
+		if !hasOwner(deploy, plat) {
+			return fmt.Errorf("cannot delete Deployment %s/%s: not owned by LogicPlatform %s/%s", deploy.Namespace, deploy.Name, plat.Namespace, plat.Name)
+		}
+		if err := r.Delete(ctx, deploy); err != nil && !apierrors.IsNotFound(err) {
+			return err
+		}
+	} else if !apierrors.IsNotFound(err) {
+		return err
+	}
+
+	// Delete ClusterRoleBinding (check labels first)
+	binding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: bindingName},
+	}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(binding), binding); err == nil {
+		// Verify binding is labeled with this platform
+		if binding.Labels["logic.kubesmarts.org/platform-namespace"] != plat.Namespace ||
+			binding.Labels["logic.kubesmarts.org/platform-name"] != plat.Name {
+			return fmt.Errorf("cannot delete ClusterRoleBinding %s: not labeled for LogicPlatform %s/%s", bindingName, plat.Namespace, plat.Name)
+		}
+		if err := r.Delete(ctx, binding); err != nil && !apierrors.IsNotFound(err) {
+			return err
+		}
+	} else if !apierrors.IsNotFound(err) {
+		return err
+	}
+
+	// Delete ServiceAccount (check ownership first)
+	sa := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{Name: gwName, Namespace: plat.Namespace},
+	}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(sa), sa); err == nil {
+		if !hasOwner(sa, plat) {
+			return fmt.Errorf("cannot delete ServiceAccount %s/%s: not owned by LogicPlatform %s/%s", sa.Namespace, sa.Name, plat.Namespace, plat.Name)
+		}
+		if err := r.Delete(ctx, sa); err != nil && !apierrors.IsNotFound(err) {
+			return err
+		}
+	} else if !apierrors.IsNotFound(err) {
+		return err
+	}
+
+	// Remove finalizer only if it was present
+	if hasFinalizerWorkflowGateway(plat) {
+		original := plat.DeepCopy()
+		removeFinalizerWorkflowGateway(plat)
+		if err := r.Patch(ctx, plat, client.MergeFrom(original)); err != nil {
+			return err
+		}
+	}
+
+	log.V(1).Info("Gateway resources cleaned up", "platform", plat.Name)
+	return nil
+}
+
+func (r *LogicPlatformReconciler) updateWorkflowGatewayStatus(ctx context.Context, plat *logicv1.LogicPlatform) error {
+	// If gateway is disabled, clear status
+	if plat.Spec.WorkflowGateway == nil {
+		plat.Status.WorkflowGateway = nil
+		removeLogicPlatformCondition(&plat.Status.Conditions, logicv1.ConditionWorkflowGatewayReady)
+		return nil
+	}
+
+	gwName := workflowGatewayName(plat)
+	status := &logicv1.WorkflowGatewayStatus{
+		DeploymentRef:     corev1.LocalObjectReference{Name: gwName},
+		ServiceRef:        corev1.LocalObjectReference{Name: gwName},
+		ServiceAccountRef: corev1.LocalObjectReference{Name: gwName},
+	}
+
+	// Get Deployment and check readiness.
+	var deploy appsv1.Deployment
+	deployKey := client.ObjectKey{Name: gwName, Namespace: plat.Namespace}
+	deploymentFound := false
+	deploymentReady := false
+	reason := logicv1.ReasonDeploymentNotFound
+	message := "Workflow Gateway Deployment not found"
+	if err := r.Get(ctx, deployKey, &deploy); err == nil {
+		deploymentFound = true
+		if deploy.Spec.Replicas != nil {
+			status.Replicas.Desired = *deploy.Spec.Replicas
+		}
+		status.Replicas.Current = deploy.Status.Replicas
+		status.Replicas.Ready = deploy.Status.ReadyReplicas
+		status.Replicas.Updated = deploy.Status.UpdatedReplicas
+		deploymentReady = deploy.Status.ReadyReplicas > 0
+		if deploymentReady {
+			reason = logicv1.ReasonReady
+			message = "Workflow Gateway Deployment is ready"
+		} else {
+			reason = logicv1.ReasonDeploymentProgressing
+			message = "Workflow Gateway Deployment has no ready replicas"
+			for _, condition := range deploy.Status.Conditions {
+				if condition.Type == appsv1.DeploymentProgressing &&
+					condition.Status == corev1.ConditionFalse &&
+					condition.Reason == logicv1.ReasonProgressDeadlineExceeded {
+					reason = logicv1.ReasonProgressDeadlineExceeded
+					message = condition.Message
+					break
+				}
+			}
+		}
+	} else if !apierrors.IsNotFound(err) {
+		return err
+	}
+
+	// Get Service.
+	serviceFound := false
+	var svc corev1.Service
+	svcKey := client.ObjectKey{Name: gwName, Namespace: plat.Namespace}
+	if err := r.Get(ctx, svcKey, &svc); err == nil {
+		serviceFound = true
+	} else if !apierrors.IsNotFound(err) {
+		return err
+	}
+	status.Ready = deploymentFound && deploymentReady && serviceFound
+	if status.Ready {
+		reason = logicv1.ReasonReady
+		message = "Workflow Gateway is ready"
+	} else if deploymentFound && deploymentReady && !serviceFound {
+		reason = logicv1.ReasonServiceNotFound
+		message = "Workflow Gateway Service not found"
+	}
+	conditionStatus := metav1.ConditionFalse
+	if status.Ready {
+		conditionStatus = metav1.ConditionTrue
+	}
+	logicv1.SetCondition(&plat.Status.Conditions, logicv1.ConditionWorkflowGatewayReady,
+		conditionStatus, plat.Generation, reason, message)
+
+	// Get Ingress/Route URL if configured
+	if plat.Spec.WorkflowGateway.Ingress != nil && plat.Spec.WorkflowGateway.Ingress.Enabled {
+		ingressKey := client.ObjectKey{Name: gwName, Namespace: plat.Namespace}
+		url, err := ResolveIngressURL(ctx, r.Client, ingressKey, plat.Spec.WorkflowGateway.Ingress.TLS.Enabled)
+		if err != nil {
+			return err
+		}
+		status.URL = url
+
+		// Populate Ingress/Route ref
+		if utils.IsOpenShift() {
+			status.RouteRef = &corev1.LocalObjectReference{Name: gwName}
+			status.IngressRef = nil
+		} else {
+			status.IngressRef = &corev1.LocalObjectReference{Name: gwName}
+			status.RouteRef = nil
+		}
+	}
+
+	plat.Status.WorkflowGateway = status
+	return nil
+}
+
+// hasOwner checks if the given object is owned by the LogicPlatform.
+func hasOwner(obj metav1.Object, plat *logicv1.LogicPlatform) bool {
+	for _, ref := range obj.GetOwnerReferences() {
+		if ref.UID == plat.UID {
+			return true
+		}
+	}
+	return false
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *LogicPlatformReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	builder := ctrl.NewControllerManagedBy(mgr).
@@ -802,6 +1349,22 @@ func (r *LogicPlatformReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	} else {
 		builder.Owns(&networkingv1.Ingress{})
 	}
+
+	// Watch ClusterRoleBindings and map back to owning LogicPlatform by labels
+	builder.Watches(
+		&rbacv1.ClusterRoleBinding{},
+		handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []ctrl.Request {
+			binding := obj.(*rbacv1.ClusterRoleBinding)
+			ns, hasNs := binding.Labels["logic.kubesmarts.org/platform-namespace"]
+			name, hasName := binding.Labels["logic.kubesmarts.org/platform-name"]
+			if hasNs && hasName {
+				return []ctrl.Request{
+					{NamespacedName: types.NamespacedName{Namespace: ns, Name: name}},
+				}
+			}
+			return nil
+		}),
+	)
 
 	return builder.Complete(r)
 }

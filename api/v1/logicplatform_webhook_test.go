@@ -2,7 +2,6 @@ package v1
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -93,7 +92,7 @@ func TestLogicPlatformDefaulter_Default(t *testing.T) {
 				if plat.Spec.DataIndex.Application.Image == "" {
 					t.Errorf("expected default Data Index image, got empty")
 				}
-				expectedImage := fmt.Sprintf("%s/%s:%s-%s", DataIndexRegistry, DataIndexImage, DataIndexVersion, DataIndexVariant)
+				expectedImage := DefaultDataIndexImage()
 				if plat.Spec.DataIndex.Application.Image != expectedImage {
 					t.Errorf("expected image %q, got %q", expectedImage, plat.Spec.DataIndex.Application.Image)
 				}

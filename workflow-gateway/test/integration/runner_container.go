@@ -41,8 +41,8 @@ func startRunnerContainer(ctx context.Context) (testcontainers.Container, string
 		logicv1.FlowRunnerRegistry,
 		logicv1.FlowRunnerImage,
 		controller.QuarkusFlowVersion,
-		controller.ImageVariantMinimal)
-	portTCP := fmt.Sprintf("%d/tcp", controller.QuarkusPort)
+		logicv1.ImageVariantMinimal)
+	portTCP := fmt.Sprintf("%d/tcp", logicv1.QuarkusFlowRunnerHTTPPort)
 
 	// Mount local testdata workflows into the container
 	workflowSrc, err := workflowTestdataPath()

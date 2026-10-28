@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/kubesmarts/logic-operator/internal/controller"
+	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
 )
 
 // ErrWorkflowNotFound is returned when no endpoint matches the workflow identity.
@@ -43,8 +43,8 @@ type Resolver struct {
 // Option configures a Resolver.
 type Option func(*Resolver)
 
-// WithRunnerPort overrides the port used when building pod URLs. Defaults to
-// controller.QuarkusPort; integration tests set it to a mapped container port.
+// WithRunnerPort overrides the shared Quarkus Flow runner HTTP port used when
+// building pod URLs. Integration tests set it to a mapped container port.
 func WithRunnerPort(port int) Option {
 	return func(r *Resolver) { r.runnerPort = port }
 }
@@ -54,7 +54,7 @@ func NewResolver(endpoints *ExecutionEndpointStore, instances *InstanceStore, po
 		endpoints:  endpoints,
 		instances:  instances,
 		pods:       pods,
-		runnerPort: int(controller.QuarkusPort),
+		runnerPort: int(logicv1.QuarkusFlowRunnerHTTPPort),
 	}
 	for _, opt := range opts {
 		opt(r)
