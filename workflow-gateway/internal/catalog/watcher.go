@@ -17,9 +17,10 @@ import (
 // debounceInterval coalesces rapid informer events into a single recompute.
 const debounceInterval = 500 * time.Millisecond
 
-// Watcher watches LogicFlowService + LogicFlowDefinition on a shared cache and
-// rebuilds the routing.Resolver's execution endpoint table on changes. It runs
-// as a controller-runtime Runnable.
+// Watcher watches LogicFlowDefinitions and LogicFlowServices on a shared cache
+// and rebuilds the routing.Resolver's endpoint table on changes. A configured
+// LogicFlowService URL takes precedence; the referenced runtime Service is the
+// fallback when no matching LogicFlowService route exists.
 type Watcher struct {
 	cache    crcache.Cache
 	resolver *routing.Resolver
@@ -37,12 +38,12 @@ func NewWatcher(c crcache.Cache, resolver *routing.Resolver) *Watcher {
 	return &Watcher{cache: c, resolver: resolver, initialSync: make(chan struct{})}
 }
 
-// StripDefinitionSpec is a cache transform that zeroes LogicFlowDefinition.Spec
-// (the heavy flow document) before the object enters the cache. The join needs
-// only labels and status. Pass this to kube.NewManager's ByObject options.
+// StripDefinitionSpec removes the heavy flow document before the object enters
+// the cache, retaining RuntimeRef for routing. Pass this to kube.NewManager's
+// ByObject options.
 func StripDefinitionSpec(obj any) (any, error) {
 	if def, ok := obj.(*logicv1.LogicFlowDefinition); ok {
-		def.Spec = logicv1.LogicFlowDefinitionSpec{}
+		def.Spec = logicv1.LogicFlowDefinitionSpec{RuntimeRef: def.Spec.RuntimeRef}
 	}
 	return obj, nil
 }
@@ -73,23 +74,23 @@ func (w *Watcher) WaitForInitialSync(ctx context.Context) bool {
 }
 
 func (w *Watcher) setupWatchers(ctx context.Context) error {
-	svcInformer, err := w.cache.GetInformer(ctx, &logicv1.LogicFlowService{})
-	if err != nil {
-		return err
-	}
-	defInformer, err := w.cache.GetInformer(ctx, &logicv1.LogicFlowDefinition{})
-	if err != nil {
-		return err
-	}
 	eventHandler := toolscache.ResourceEventHandlerFuncs{
 		AddFunc:    func(_ any) { w.scheduleRecompute() },
 		UpdateFunc: func(_, _ any) { w.scheduleRecompute() },
 		DeleteFunc: func(_ any) { w.scheduleRecompute() },
 	}
-	if _, err := svcInformer.AddEventHandler(eventHandler); err != nil {
+	defInformer, err := w.cache.GetInformer(ctx, &logicv1.LogicFlowDefinition{})
+	if err != nil {
 		return err
 	}
 	if _, err := defInformer.AddEventHandler(eventHandler); err != nil {
+		return err
+	}
+	serviceInformer, err := w.cache.GetInformer(ctx, &logicv1.LogicFlowService{})
+	if err != nil {
+		return err
+	}
+	if _, err := serviceInformer.AddEventHandler(eventHandler); err != nil {
 		return err
 	}
 	return nil
@@ -112,31 +113,39 @@ func (w *Watcher) doRecompute(ctx context.Context) {
 	}
 	logger := log.FromContext(ctx).WithName("catalog")
 
-	services := &logicv1.LogicFlowServiceList{}
-	if err := w.cache.List(ctx, services); err != nil {
-		logger.Error(err, "failed to list LogicFlowServices")
-		return
-	}
 	definitions := &logicv1.LogicFlowDefinitionList{}
 	if err := w.cache.List(ctx, definitions); err != nil {
 		logger.Error(err, "failed to list LogicFlowDefinitions")
 		return
 	}
-	byName := make(map[string]*logicv1.LogicFlowDefinition, len(definitions.Items))
+	services := &logicv1.LogicFlowServiceList{}
+	if err := w.cache.List(ctx, services); err != nil {
+		logger.Error(err, "failed to list LogicFlowServices")
+		return
+	}
+
+	// Start with direct runtime-Service routes so gateway-only workflows work
+	// without a LogicFlowService. Overlay configured LogicFlowService URLs for
+	// workflows that have one, preserving ingress and traffic-policy behavior.
+	endpoints, errs := BuildRuntimeServiceEndpoints(definitions.Items)
+	definitionsByName := make(map[string]*logicv1.LogicFlowDefinition, len(definitions.Items))
 	for i := range definitions.Items {
 		def := &definitions.Items[i]
-		byName[def.Namespace+"/"+def.Name] = def
+		definitionsByName[def.Namespace+"/"+def.Name] = def
 	}
-	resolve := func(namespace, name string) (*logicv1.LogicFlowDefinition, error) {
-		if def, ok := byName[namespace+"/"+name]; ok {
+	serviceEndpoints, serviceErrs := BuildExecutionEndpoints(services.Items, func(namespace, name string) (*logicv1.LogicFlowDefinition, error) {
+		if def, ok := definitionsByName[namespace+"/"+name]; ok {
 			return def, nil
 		}
-		return nil, fmt.Errorf("definition %s/%s not found in cache", namespace, name)
+		return nil, fmt.Errorf("definition %s/%s not found in gateway cache", namespace, name)
+	})
+	errs = append(errs, serviceErrs...)
+	for key, endpoint := range serviceEndpoints {
+		endpoints[key] = endpoint
 	}
-	endpoints, errs := BuildExecutionEndpoints(services.Items, resolve)
 	for _, err := range errs {
 		logger.Error(err, "error building endpoints")
 	}
 	w.resolver.UpdateExecutionEndpoints(endpoints)
-	logger.V(1).Info("execution endpoint table updated", "numEndpoints", len(endpoints), "numErrors", len(errs))
+	logger.V(1).Info("workflow endpoint table updated", "numEndpoints", len(endpoints), "numErrors", len(errs))
 }

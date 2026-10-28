@@ -45,25 +45,13 @@ const (
 	TLSModeVerifyFull TLSMode = "verify-full"
 )
 
-// PersistenceOptionsSpec configures database support for platform services and flows.
+// PersistenceOptionsSpec configures PostgreSQL connectivity for Data Index or
+// a LogicFlowRuntime. Each component receives its own settings; the current
+// operator does not inherit global LogicPlatform persistence defaults. The
+// dbMigrationStrategy field is accepted for API compatibility but is not yet
+// acted on by the current controllers.
 //
-// This type is used at multiple levels with a cascading override pattern:
-//   - logicplatform.spec.persistence: Global default for all services and flows
-//   - logicplatform.spec.dataindex.persistence: Override for data index service
-//   - logicplatform.spec.runtimes.persistence: Override for all flow runtimes
-//   - Individual flow resources can also provide their own persistence config
-//
-// The operator resolves the effective configuration by checking in order:
-//  1. Flow/service-specific persistence (most specific)
-//  2. Application-type persistence (e.g., runtimes.persistence)
-//  3. Platform-level persistence (global default)
-//
-// For services, this allows configuring generic database connectivity if the service
-// does not come with its own configuration. For flows, the operator will add the
-// necessary JDBC properties to the flow's application.properties so it can communicate
-// with the persistence service.
-//
-// Example (platform-level default):
+// Example:
 //
 //	persistence:
 //	  postgresql:
@@ -82,10 +70,8 @@ type PersistenceOptionsSpec struct {
 	// +optional
 	PostgreSQL *PersistencePostgreSQL `json:"postgresql,omitempty"`
 
-	// DB Migration approach for the target application. Use the following values as described.
-	// job: use job based approach provided by the Logic operator.
-	// service: service itself shall migrate the db and will not use Logic operator.
-	// none: no database migration functionality needed.
+	// Reserved migration strategy setting. The current controllers do not create
+	// migration Jobs or otherwise act on this field.
 	// +optional
 	// +kubebuilder:default:=service
 	DBMigrationStrategy DBMigrationStrategyType `json:"dbMigrationStrategy,omitempty"`
@@ -170,7 +156,9 @@ type PostgreSQLSecretOptions struct {
 type SQLServiceOptions struct {
 	// Name of the DB k8s service.
 	Name string `json:"name"`
-	// Namespace of the DB k8s service. Defaults to the LogicPlatform's local namespace.
+	// Namespace of a Kubernetes Service. When omitted, Name is used as a hostname and Kubernetes
+	// DNS search resolves a same-namespace Service. Set Namespace to build a fully qualified
+	// address for a Service in another namespace.
 	// +optional
 	Namespace string `json:"namespace,omitempty"`
 	// Port to use when connecting to the DB k8s service.

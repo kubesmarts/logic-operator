@@ -37,7 +37,8 @@ const (
 
 // LogicFlowDefinitionSpec defines the desired state of LogicFlowDefinition.
 //
-// Immutable workflow version referencing a LogicFlowRuntime for execution.
+// Workflow document referencing a LogicFlowRuntime for execution. The target
+// runtime and logical workflow name are immutable after creation.
 type LogicFlowDefinitionSpec struct {
 	// RuntimeRef points to the LogicFlowRuntime executing this workflow.
 	// +required
@@ -91,11 +92,12 @@ type LogicFlowDefinitionStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
-// LogicFlowDefinition represents an immutable workflow version.
+// LogicFlowDefinition represents a workflow document and its runtime target.
 //
 // Each instance contains one Open Workflow Specification 1.0.0 document
 // and references the LogicFlowRuntime that executes it.
-// Optionally referenced by LogicFlowService for external HTTP traffic routing.
+// The gateway can route directly to the referenced runtime Service. A
+// LogicFlowService can optionally provide an external URL and traffic policy.
 //
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status

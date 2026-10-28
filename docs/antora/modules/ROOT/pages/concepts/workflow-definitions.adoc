@@ -3,23 +3,24 @@
 
 A `LogicFlowDefinition` is a Kubernetes custom resource that holds one complete
 https://open-workflow-specification.org/[Open Workflow Specification 1.0.0] document.
-The operator parses the document, sets labels from it, and writes the YAML into the ConfigMap
-shared by the target `LogicFlowRuntime`.
+The operator parses the document, sets workflow identity labels, and writes the YAML into a
+dedicated ConfigMap mounted by the target `LogicFlowRuntime`.
 
-== Immutability
+== Updating a definition
 
-`LogicFlowDefinition` resources are *immutable once created*. The `spec` fields cannot be changed
-after creation — this is enforced by a validating webhook.
+The validating webhook prevents changing `spec.runtimeRef` or the workflow's logical
+`flow.document.name`. Other flow fields, including `document.version` and task content, can be
+updated in place.
 
-Immutability is intentional: a workflow definition represents a specific deployed version of a
-workflow. Changing the definition in place would make it impossible to know what logic ran for
-historical workflow instances. To deploy new logic, create a new `LogicFlowDefinition` with a
-higher version.
+Although content can be edited, use a new `LogicFlowDefinition` resource and version for a released
+workflow change. This keeps the workflow version represented by the resource name and allows
+traffic to be shifted deliberately.
 
 [NOTE]
 ====
-To fix a bug, create a new `LogicFlowDefinition` with an incremented patch version
-(e.g. `payment-processor-v1-0-1`) and update the `LogicFlowService` to route traffic to it.
+The runtime file watcher can register new workflow identities, but does not replace an identity
+already loaded in a pod. If you edit content without changing the identity, roll the runtime pods
+to load the new document. A new version is a new workflow identity.
 ====
 
 == Naming Convention
@@ -137,6 +138,6 @@ When the `LogicFlowDefinition` controller reconciles the CR, it:
 3. Extracts `document.name` and `document.version` and writes them as CR labels and status fields.
 4. Serializes the (modified) document to YAML and writes it into a dedicated ConfigMap named
    `lfd-<definition-name>` (e.g. `lfd-payment-processor-v1-0-0`).
-5. The `LogicFlowRuntime` controller mounts each ConfigMap as a directory under
-   `/deployments/workflows/` in the runner pods — the runner hot-loads the file at startup
-   (or via the file watcher if enabled).
+5. The `LogicFlowRuntime` controller mounts each dedicated ConfigMap as a directory under
+   `/deployments/workflows/` in the runner pods. The runtime loads definitions at startup and can
+   register new workflow identities with its file watcher.

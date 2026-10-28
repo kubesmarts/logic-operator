@@ -1,9 +1,10 @@
 = LogicFlowDefinition
-:description: Immutable workflow version containing a complete Open Workflow Specification document.
+:description: Define an Open Workflow Specification document and bind it to a LogicFlowRuntime.
 
-`LogicFlowDefinition` represents a single immutable version of a workflow.
-It holds a full https://open-workflow-specification.org/[Open Workflow Specification 1.0.0] document
-and references the `LogicFlowRuntime` that executes it.
+`LogicFlowDefinition` stores one Open Workflow Specification (OWS) document and identifies the
+`LogicFlowRuntime` that executes it. The controller validates and materializes the document as a
+ConfigMap mounted by the runtime. A matching Workflow Gateway can route to the runtime directly;
+`LogicFlowService` is optional.
 
 == API Version and Kind
 
@@ -13,181 +14,118 @@ apiVersion: logic.kubesmarts.org/v1
 kind: LogicFlowDefinition
 ----
 
-== Spec Fields
+== Spec
 
-=== runtimeRef
+=== `runtimeRef`
 
-Type: `LocalObjectReference` — Required
-
-Name of the `LogicFlowRuntime` CR that executes this workflow.
+Required reference to a `LogicFlowRuntime` in the same namespace. The target runtime is immutable
+after creation. All versions of the same logical workflow in a namespace must use the same
+runtime.
 
 [source,yaml]
 ----
 spec:
   runtimeRef:
-    name: production-runtime
+    name: hello-runtime
 ----
 
-=== flow
+=== `flow`
 
-Type: `RawExtension` — Required
+Required complete OWS document. Admission parses the document through the OWS SDK; the schema
+preserves unknown OWS fields. The document must provide a workflow identity under `document`,
+including `name` and `version`, and a valid workflow body.
 
-The complete OWS 1.0.0 document stored as raw YAML/JSON.
-Parsed and validated via the OWS Go SDK during admission.
-Unknown fields are preserved (`PreserveUnknownFields`).
-
-The document must include at minimum:
-
-* `document.dsl` — DSL version (e.g. `"1.0.0"`)
-* `document.namespace` — logical namespace (overwritten by the operator with the CR's namespace)
-* `document.name` — workflow logical name; used as the runner identity
-* `document.version` — semantic version
-* `do` — at least one task
+The operator sets `document.namespace` to the Kubernetes namespace of the
+`LogicFlowDefinition` when it serializes the flow into the runtime ConfigMap. The logical workflow
+name is immutable on update. The version and other flow content can be updated in place, although
+creating a new CR for each released version is a useful operational convention.
 
 [source,yaml]
 ----
 spec:
   flow:
     document:
-      dsl: "1.0.0"
-      namespace: checkout
-      name: payment-processor
-      version: "1.0.0"
+      dsl: '1.0.0'
+      namespace: examples
+      name: hello-world
+      version: '1.0.0'
     do:
-      - processPayment:
-          call: http
-          with:
-            method: post
-            endpoint: https://payments.example.com/charge
-            body:
-              amount: ${ .input.amount }
-              currency: ${ .input.currency }
+      - greet:
+          set:
+            message: '${ "Hello, " + .name + "!" }'
 ----
 
-== Status Fields
+== Reconciliation and status
 
-=== workflowName
+For each definition, the controller:
 
-Type: `string` — Set by the operator
+. Parses the OWS document and extracts its logical name and version.
+. Applies workflow identity labels and writes a ConfigMap named `lfd-<CR name>` in the same
+  namespace.
+. Stores the YAML flow document in a ConfigMap data key named `<workflow-name>.yaml`.
+. Records the generated ConfigMap reference and workflow identity in status.
 
-Workflow logical name extracted from `flow.document.name`.
+The `LogicFlowRuntime` controller mounts each definition ConfigMap under
+`/deployments/workflows/<configmap-name>/`. Creating or deleting a definition changes the
+runtime Deployment's volume mounts and triggers a rollout. Updating flow content updates the
+existing ConfigMap. The runner's file watcher registers newly appearing workflow identities, but
+does not replace one already loaded in a pod. Restart the runtime pods to load changed content for
+the same workflow name and version.
 
-=== workflowVersion
+`status.conditions` reports these controller states:
 
-Type: `string` — Set by the operator
+[cols="1,3",options="header"]
+|===
+|Condition |Meaning
 
-Version extracted from `flow.document.version`.
+|`FlowParsed`
+|The OWS document parsed successfully.
 
-=== workflowNamespace
+|`ConfigMapReady`
+|The generated ConfigMap was applied.
 
-Type: `string` — Set by the operator
+|`RuntimeRefValid`
+|The referenced runtime exists.
 
-Kubernetes namespace applied to the workflow (matches the CR namespace).
+|`RuntimeConsistent`
+|Definitions for the same workflow identity use a consistent runtime.
 
-=== configMapRef
+|`Ready`
+|The definition passed parsing and reference checks and its ConfigMap was reconciled.
+|===
 
-Type: `LocalObjectReference` — Set by the operator
+Other status fields include `observedGeneration`, `workflowName`, `workflowVersion`,
+`workflowNamespace`, and `configMapRef`.
 
-Reference to the ConfigMap the operator created to hold the serialized flow document.
-Named `lfd-<cr-name>` (e.g. `lfd-payment-processor-v1-0-0`).
-
-=== conditions
-
-Type: `[]Condition`
-
-| Condition | Meaning |
-|-----------|---------|
-| `FlowParsed=True` | Document parsed successfully by the OWS SDK |
-| `ConfigMapReady=True` | ConfigMap written and ready to be mounted by the runtime |
-| `Ready=True` | All conditions healthy |
-
-== Full Example
+== Example
 
 [source,yaml]
 ----
 apiVersion: logic.kubesmarts.org/v1
 kind: LogicFlowDefinition
 metadata:
-  name: payment-processor-v1-0-0
-  namespace: checkout
+  name: hello-world-v1-0-0
+  namespace: default
 spec:
   runtimeRef:
-    name: payments-runtime
+    name: hello-runtime
   flow:
     document:
-      dsl: "1.0.0"
-      namespace: checkout           # <1>
-      name: payment-processor
-      version: "1.0.0"
-      title: Payment Processor
-      summary: Validates and charges a payment method, then emits an event.
-    use:
-      secrets:
-        - payment-api-key
-      errors:
-        invalidCard:
-          type: https://errors.example.com/invalid-card
-          status: 422
-        paymentDeclined:
-          type: https://errors.example.com/payment-declined
-          status: 402
-      retries:
-        default:
-          limit:
-            attempt:
-              count: 3
-          delay: PT1S
-          backoff:
-            exponential: {}
+      dsl: '1.0.0'
+      namespace: examples
+      name: hello-world
+      version: '1.0.0'
     do:
-      - validateCard:                 # <2>
-          call: http
-          with:
-            method: post
-            endpoint: https://validation.example.com/validate
-            headers:
-              Authorization: ${ "Bearer " + $secrets.payment-api-key }
-            body:
-              card: ${ .input.card }
-      - chargeCard:                   # <3>
-          call: http
-          with:
-            method: post
-            endpoint: https://payments.example.com/charge
-            headers:
-              Authorization: ${ "Bearer " + $secrets.payment-api-key }
-            body:
-              amount: ${ .input.amount }
-              currency: ${ .input.currency }
-              token: ${ .validateCard.token }
-      - emitReceipt:                  # <4>
-          emit:
-            event:
-              with:
-                type: com.example.payment.completed
-                source: /checkout/payment-processor
-                data:
-                  orderId: ${ .input.orderId }
-                  amount: ${ .input.amount }
-
-status:
-  workflowName: payment-processor
-  workflowVersion: "1.0.0"
-  workflowNamespace: checkout
-  configMapRef:
-    name: lfd-payment-processor-v1-0-0
-  conditions:
-  - type: FlowParsed
-    status: "True"
-    reason: Ready
-  - type: ConfigMapReady
-    status: "True"
-    reason: Ready
-  - type: Ready
-    status: "True"
-    reason: Ready
+      - greet:
+          set:
+            message: '${ "Hi, " + .name + "!" }'
 ----
-<1> The operator overwrites this with the CR's `.metadata.namespace` at reconciliation time.
-<2> HTTP task — calls the card validation service and stores the response as `validateCard`.
-<3> HTTP task — uses the token from step (2) to charge the card.
-<4> Emit task — publishes a CloudEvent when payment succeeds.
+
+The CR name is a Kubernetes identifier and may include the workflow version. Routing uses the
+identity parsed from the flow and stored on the resource, not the CR name.
+
+== Related documentation
+
+* xref:concepts/workflow-definitions.adoc[Workflow Definitions]
+* xref:concepts/configmap-propagation.adoc[ConfigMap Propagation]
+* xref:crd-reference/logicflowruntime.adoc[LogicFlowRuntime]

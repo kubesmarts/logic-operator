@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"gopkg.in/yaml.v3"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
+	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/dataindex"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/definitions"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/routing"
@@ -31,7 +33,7 @@ type Config struct {
 
 func DefaultConfig() Config {
 	return Config{
-		Addr:            ":8080",
+		Addr:            ":" + strconv.Itoa(int(logicv1.WorkflowGatewayHTTPPort)),
 		ReadTimeout:     15 * time.Second,
 		WriteTimeout:    15 * time.Second,
 		IdleTimeout:     60 * time.Second,
@@ -91,6 +93,7 @@ func (s *Server) registerRoutes() {
 			r.Post("/{version}/instance/{id}/cancel", s.cancelHandler)
 		})
 		r.Get("/openapi.json", s.openapiHandler)
+		r.Get("/openapi", s.openapiHandler)
 	})
 }
 
@@ -114,10 +117,9 @@ func (s *Server) listDefinitionsHandler(w http.ResponseWriter, _ *http.Request) 
 	_ = json.NewEncoder(w).Encode(keys)
 }
 
-// getDefinitionHandler is a stub. Returning a specific definition requires the
-// full flow document, which is not cached in memory (LogicFlowDefinition.Spec
-// is stripped by the informer transform to reduce memory footprint). A live
-// K8s API call is needed; tracked as a future issue.
+// getDefinitionHandler fetches a specific flow document on demand. The informer
+// cache omits LogicFlowDefinition.Spec.Flow to reduce memory use, so the reader
+// retrieves the full resource from the API server when this endpoint is called.
 func (s *Server) getDefinitionHandler(w http.ResponseWriter, r *http.Request) {
 	ns, name, version := workflowParams(r)
 

@@ -1,11 +1,13 @@
 # Workflow Gateway CRD Discovery & Watching
 
-**Status:** Design Document
+**Status:** Historical design; current route selection is superseded by the 2026-10-27 implementation note below
 **Version:** v1.0
 **Last Updated:** 2026-10-05
 **Related:** [ADR-0002: Workflow Gateway Architecture](workflow-gateway-architecture.md), Issue [#34](https://github.com/kubesmarts/logic-operator/issues/34)
 
-> **⚠️ PARTIALLY SUPERSEDED (2026-10-16):** Decision 2 (No Cross-Pod Clustering, as it pertains to the forwarding path) and Decision 3 (Forward Through Ingress) are superseded by [Workflow Gateway — Lease-Based Instance Routing](workflow-gateway-instance-routing.md). The gateway now routes **directly to the owning runtime pod** (resolved via lease → pod), bypassing the Ingress for workflow start and instance-addressed operations.
+> **Implementation update (2026-10-27):** This document records the original LogicFlowService-based discovery design. Current execution routing prefers a matching `LogicFlowService.status.url`, then falls back to the Kubernetes Service named by `LogicFlowDefinition.spec.runtimeRef` if no matching LogicFlowService exists. Instance follow-up requests still route directly to the lease-owning pod. See [Workflow Gateway Managed by LogicPlatform](workflow-gateway-logicplatform-management.md) and [Workflow Gateway — Lease-Based Instance Follow-Up Routing](workflow-gateway-instance-routing.md).
+
+> **⚠️ PARTIALLY SUPERSEDED (2026-10-16):** Decision 2 (No Cross-Pod Clustering, as it pertains to the forwarding path) and Decision 3 (Forward Through Ingress) were superseded by the instance-routing design. Issue #42 now makes the LogicFlowService route optional by adding a runtime-Service fallback.
 
 ## Overview
 
@@ -81,7 +83,7 @@ LogicFlowRuntime is intentionally excluded: `Definition.spec.runtimeRef` identif
 
 The informer does one initial `List` (full sync) then streams deltas via `Watch`; lookups become O(1) map reads. The only cost is a small eventual-consistency window (typically single-digit milliseconds behind the API server).
 
-**Keep the cache lean — strip `Definition.Spec` on ingest.** `LogicFlowDefinition.Spec.Flow` is an arbitrarily large Open Workflow Spec document the routing join never reads; with hundreds of workflows, caching every full Definition would waste significant per-pod memory. controller-runtime's cache applies a per-object transform before an object is committed to the informer store (`cache.Options.ByObject[&LogicFlowDefinition{}].Transform`). The gateway uses this to zero `Spec` on every Definition as it enters the cache, so the flow document is never held in memory on any pod. LogicFlowService is cached in full (it is lightweight and the join needs both its spec and status). Both resources are listed from the cache during recompute; Definitions referenced by Services are resolved from an in-memory namespace/name index. No per-request or per-recompute API calls. The routing table needs only Service spec/status plus Definition labels, all of which survive the transform.
+**Keep the cache lean — strip the flow document on ingest.** `LogicFlowDefinition.Spec.Flow` is an arbitrarily large Open Workflow Spec document that routing does not read; with hundreds of workflows, caching every full flow would waste significant per-pod memory. The gateway's cache transform removes `Spec.Flow` but retains `Spec.RuntimeRef` and identity labels, because the runtime Service is the fallback when a workflow has no matching LogicFlowService. LogicFlowService is cached in full when present so its spec and status can provide the preferred external route. The watcher lists both kinds from the cache and joins service references to definitions through an in-memory namespace/name index. The flow document is fetched on demand through the API reader for definition retrieval.
 
 **Routing table ≠ Discovery API.** Serving full workflow definitions to clients (list/get) is a *separate* concern — ADR-0002's "CRD Discovery → Kubernetes API" row — handled by a direct `List`/`Get` against the API server, not from this cache. That is tracked as issue #36. This document and issue #34 cover only the routing table.
 

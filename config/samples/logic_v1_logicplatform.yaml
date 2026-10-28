@@ -1,9 +1,19 @@
 apiVersion: logic.kubesmarts.org/v1
 kind: LogicPlatform
 metadata:
-  labels:
-    app.kubernetes.io/name: logic-operator
-    app.kubernetes.io/managed-by: kustomize
   name: logicplatform-sample
+  namespace: default
 spec:
-  # TODO(user): Add fields here
+  # Minimal config: gateway only, no Data Index.
+  dataIndex:
+    enabled: false
+
+  workflowGateway:
+    application:
+      # Keep aligned with GATEWAY_VERSION in versions.mk; kind-demo builds and loads this tag.
+      image: kubesmarts.org/workflow-gateway:v2.0.0-Alpha1
+      replicas: 1
+    ingress:
+      enabled: true
+      host: gateway.lvh.me
+      ingressClassName: nginx

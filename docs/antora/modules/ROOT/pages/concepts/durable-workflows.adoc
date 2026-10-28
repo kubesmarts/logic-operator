@@ -1,3 +1,5 @@
+include::partial$versions.adoc[]
+
 = Durable Workflows
 :description: How Logic Operator enables stateful, crash-resilient workflow execution with PostgreSQL and Kubernetes Leases.
 
@@ -10,7 +12,7 @@ failures.
 
 Set `spec.persistence` on the `LogicFlowRuntime` to switch the runtime to durable mode:
 
-[source,yaml]
+[source,yaml,subs="attributes+"]
 ----
 apiVersion: logic.kubesmarts.org/v1
 kind: LogicFlowRuntime
@@ -19,7 +21,7 @@ metadata:
   namespace: my-namespace
 spec:
   replicas: 2
-  image: quay.io/quarkiverse/quarkus-flow-runner:1.0.0-standard      # <1>
+  image: quay.io/quarkiverse/quarkus-flow-runner:{quarkus-flow-runner-version}-standard      # <1>
   persistence:
     postgresql:
       secretRef:
@@ -36,7 +38,7 @@ spec:
 
 [NOTE]
 ====
-The `standard` image (`quay.io/quarkiverse/quarkus-flow-runner:1.0.0-standard`) must be used for
+The `standard` image (`quay.io/quarkiverse/quarkus-flow-runner:{quarkus-flow-runner-version}-standard`) must be used for
 durable workflows. The `minimal` image does not include the database extensions.
 ====
 
@@ -106,8 +108,7 @@ is configured:
 | From the Secret specified in `spec.persistence.postgresql.secretRef`.
 
 | `QUARKUS_DATASOURCE_JDBC_URL`
-| Built from `spec.persistence.postgresql.serviceRef`, or taken directly from an explicit
-  `jdbcUrl` field.
+| Built from `spec.persistence.postgresql.serviceRef`.
 |===
 
 == Deployment Strategy in Durable Mode
@@ -205,10 +206,16 @@ spec:
           name: postgresql-secret
         serviceRef:
           name: postgresql
+        databaseName: logicflow
+        databaseSchema: logicflow_dataindex
     vector:
       enabled: true
 ----
 
 This enables GraphQL queries over the workflow execution history while maintaining durability for in-flight instances.
+
+The `dbMigrationStrategy` field is present in the persistence schema, but the current operator does
+not create migration Jobs or otherwise act on that field. Database initialization is handled by
+the runtime or component image.
 
 See xref:samples/persistence.adoc[Persistence & Data Index sample] for a complete example.

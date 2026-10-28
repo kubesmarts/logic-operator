@@ -1,0 +1,205 @@
+include::partial$versions.adoc[]
+
+= Workflow Gateway
+:description: User guide to routing workflow execution and instance operations through the Logic Platform Workflow Gateway.
+
+The Workflow Gateway is an HTTP entry point for workflows managed by Logic Operator. It discovers
+`LogicFlowDefinition` resources, resolves the runtime for each workflow, and forwards execution
+and instance lifecycle requests to Quarkus Flow Runner. It can also expose workflow definitions
+and query workflow instances through Data Index.
+
+The gateway is a standalone component with its own API and container image. In a Kubernetes
+installation, the supported operator-managed deployment is configured through
+`LogicPlatform.spec.workflowGateway`; see xref:crd-reference/logicplatform.adoc[LogicPlatform]. A
+`LogicFlowService` is optional: without one, the gateway routes directly to the runtime named by
+the workflow definition's `spec.runtimeRef`.
+
+The namespace in gateway routes is the Kubernetes namespace of the `LogicFlowDefinition`. The
+definition controller replaces `flow.document.namespace` with that namespace when it materializes
+the workflow, so route paths use the CR namespace rather than any namespace written in the source
+document.
+
+== Request routing
+
+At startup, the gateway watches `LogicFlowDefinition` and `LogicFlowService` resources and builds
+an in-memory routing table. It waits for its Kubernetes cache to synchronize and the initial
+table to be populated before its readiness probe succeeds. Updates to definitions and services
+refresh the table.
+
+For execution requests, a matching `LogicFlowService.status.url` takes precedence. The gateway
+forwards the rewritten runner request to that URL, preserving the service's Ingress, Route, or
+Gateway API traffic policy. When there is no matching service URL, it uses
+`LogicFlowDefinition.spec.runtimeRef.name` and calls that runtime's Kubernetes Service on port 80
+(the Service forwards to runner port 8080).
+
+Asynchronous execution returns the runner's accepted response and records an in-memory mapping
+from the returned instance ID to the runner's lease/application identity. Suspend, resume, and
+cancel requests use that mapping to resolve the current lease holder and call the pod directly on
+port 8080. If the mapping or lease holder is unavailable, the gateway falls back to the workflow's
+runtime Service.
+
+== HTTP API
+
+All public API paths are under `/v1`. The API listener uses container port 8080 and the Kubernetes
+Service exposes port 80.
+
+[cols="1,3",options="header"]
+|===
+|Method and path |Purpose
+
+|`GET /v1/definitions/`
+|List discovered workflow identities (namespace, name, and version).
+
+|`GET /v1/definitions/\{namespace}/\{name}/\{version}`
+|Fetch one workflow document from the Kubernetes API. JSON is returned by default; send
+`Accept: application/yaml` or `application/x-yaml` for YAML.
+
+|`POST /v1/runtime/\{namespace}/\{name}`
+|Start an asynchronous execution of the latest version.
+
+|`POST /v1/runtime/\{namespace}/\{name}/\{version}`
+|Start an asynchronous execution of a specific version.
+
+|`POST /v1/runtime/\{namespace}/\{name}/sync`
+|Execute the latest version synchronously and return the runner response.
+
+|`POST /v1/runtime/\{namespace}/\{name}/\{version}/sync`
+|Execute a specific version synchronously.
+
+|`POST /v1/runtime/\{namespace}/\{name}/instance/\{id}/\{operation}`
+|Suspend, resume, or cancel an instance. A versioned form inserts `/\{version}` before `/instance`.
+
+|`GET /v1/instances` and `GET /v1/instances/\{id}`
+|List or fetch workflow instances through Data Index. The list endpoint accepts optional
+`namespace`, `name`, `version`, and `status` query parameters.
+
+|`GET /v1/openapi` or `GET /v1/openapi.json`
+|Return the OpenAPI specification.
+|===
+
+Execution and lifecycle request and response bodies follow the link:https://docs.quarkiverse.io/quarkus-flow/dev/runner.html[Quarkus Flow Runner API]. The
+gateway forwards authorization headers and upstream responses; runtime security continues to be
+configured on `LogicFlowRuntime`.
+
+== Data Index integration
+
+The instance endpoints use the GraphQL endpoint published by a `LogicPlatform` in the same
+namespace as the gateway. If Data Index is disabled or its endpoint has not been discovered,
+instance queries return `503 Service Unavailable`. Upstream Data Index failures return
+`502 Bad Gateway`. Workflow execution does not require Data Index.
+
+== Health and diagnostics
+
+The management listener uses container port 8081. It is used by Kubernetes probes and is not
+exposed by the gateway's public Service.
+
+[cols="1,3",options="header"]
+|===
+|Path |Behavior
+
+|`GET /health`
+|Liveness check; returns `200` while the process is responding.
+
+|`GET /ready`
+|Readiness check; returns `200` after the cache and initial routing table are synchronized,
+otherwise `503`.
+
+|`GET /debug/routes`
+|Return the current execution endpoint table for diagnostics.
+|===
+
+== How LogicPlatform manages the gateway
+
+Adding `workflowGateway` to a `LogicPlatform` enables reconciliation of the following resources:
+
+* a Deployment named `<platform-name>-workflow-gateway`;
+* a ClusterIP Service with the same name, port 80 targeting container port 8080;
+* a dedicated ServiceAccount;
+* a ClusterRoleBinding that grants that ServiceAccount read access to workflow definitions,
+  workflow services, platform resources, and the Leases needed for instance routing;
+* an optional Kubernetes Ingress or OpenShift Route, also named after the gateway.
+
+For this release, the default image is
+`kubesmarts.org/workflow-gateway:v{workflow-gateway-version}`. The admission webhook writes the
+gateway image version embedded in its build into the LogicPlatform spec unless
+`workflowGateway.application.image` overrides it. The replica field is left unset when omitted.
+The resulting Kubernetes Deployment starts at one replica, and leaving the field unset lets an
+HPA manage its scale. The operator updates `status.workflowGateway` with readiness, child resource
+references, replica counts, and the external URL when one is configured and resolved.
+`LogicPlatform` aggregate readiness includes the gateway whenever `workflowGateway` is present.
+The resolved image tag is stored in the LogicPlatform spec and will not automatically advance when
+the operator image is upgraded; update it explicitly to upgrade the gateway.
+
+Removing `workflowGateway` causes the controller to delete its managed resources. The gateway
+requires its cluster-wide ClusterRole to be installed with Logic Operator; the platform-specific
+ClusterRoleBinding is created by the controller.
+
+=== Example configuration
+
+Data Index is enabled by default and requires PostgreSQL configuration. Set it to `false` for a
+gateway-only platform:
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicPlatform
+metadata:
+  name: workflow-platform
+  namespace: default
+spec:
+  dataIndex:
+    enabled: false
+  workflowGateway:
+    ingress:
+      enabled: true
+      host: gateway.example.com
+      ingressClassName: nginx
+----
+
+The cluster needs a compatible Ingress controller for a Kubernetes Ingress, or an OpenShift router
+for a Route. DNS for the configured host must resolve to that entry point. The gateway's component
+readiness checks its Deployment and Service; it does not check external DNS or whether the runtime
+workflows are reachable.
+
+== Known limitations
+
+* **Keep gateway `maxReplicas` at 1.** Async instance-to-lease mappings live in process memory.
+  Multiple replicas do not share this state, and a process restart loses its mappings. HPA is
+  supported for now only with `maxReplicas: 1`; broader scaling requires shared runtime state.
+* **Instance operations can fall back to the Service.** When the instance mapping or lease holder
+  cannot be resolved, the gateway routes to the runtime Service. With multiple runtime replicas,
+  that fallback may not select the pod holding an in-memory instance. Durable runtime persistence
+  and leases improve recovery, but the gateway's own mapping is still local to its process.
+* **Instance queries require Data Index.** Definition discovery and workflow execution do not;
+  `/v1/instances` endpoints return 503 when Data Index is not configured or available.
+* **Traffic policies come from `LogicFlowService`.** Without a matching service URL, execution
+  goes directly to the runtime Service and does not use an external routing policy.
+* **The gateway does not define a separate authentication policy.** It forwards requests to the
+  runner; configure runtime authentication and protect the public Ingress/Route according to your
+  cluster's access requirements.
+
+== Example request
+
+The hello-world example can be invoked synchronously through the gateway:
+
+[source,bash]
+----
+curl -X POST http://gateway.example.com/v1/runtime/default/hello-world/1.0.0/sync \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"World"}'
+----
+
+To inspect the deployed component, see `status.workflowGateway` on the LogicPlatform and its
+generated Deployment and Service:
+
+[source,bash]
+----
+kubectl get logicplatform workflow-platform -o yaml
+kubectl get deployment,service workflow-platform-workflow-gateway
+----
+
+== Related documentation
+
+* xref:crd-reference/logicplatform.adoc[LogicPlatform configuration and status]
+* xref:crd-reference/logicflowservice.adoc[LogicFlowService routing and traffic policy]
+* xref:deployment/kind-local.adoc[Running the gateway on KIND]

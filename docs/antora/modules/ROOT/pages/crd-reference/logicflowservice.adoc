@@ -1,219 +1,88 @@
 = LogicFlowService
-:description: Provides stable external HTTP access to workflows with traffic splitting and TLS.
+:description: Expose workflow versions through an Ingress, OpenShift Route, or Gateway API HTTPRoute.
 
-LogicFlowService provides stable external HTTP access to workflows with traffic splitting for canary deployments and gradual rollouts. It uses a forward reference pattern (Service → Definition) and discovers the runtime transitively from the referenced definitions. Supports Kubernetes Ingress, OpenShift Route, and Gateway API HTTPRoute.
+`LogicFlowService` provides a stable external endpoint for one workflow identity and its
+`LogicFlowDefinition` version or versions. The controller resolves the referenced definitions
+and runtime; all referenced definitions must be in the service's namespace, use the same logical
+workflow name, and target the same runtime.
 
-== API Version and Kind
+== Spec
 
-[source,yaml]
-----
-apiVersion: logic.kubesmarts.org/v1
-kind: LogicFlowService
-----
+Set exactly one of `defaultDefinition` or `traffic`.
 
-== Spec Fields
+=== `defaultDefinition`
 
-=== defaultDefinition
-
-Type: `LocalObjectReference` — Optional
-
-Routes 100% traffic to a single LogicFlowDefinition. Mutually exclusive with `traffic`.
+Routes all requests to one `LogicFlowDefinition`:
 
 [source,yaml]
 ----
 spec:
   defaultDefinition:
-    name: order-workflow-v1
+    name: hello-world-v1-0-0
 ----
 
-=== traffic
+=== `traffic`
 
-Type: `[]TrafficSpec` — Optional
-
-Distributes requests across workflow versions. Mutually exclusive with `defaultDefinition`. Weights must sum to 100.
+Splits requests among versions. Weights must sum to 100. Kubernetes Ingress mode uses nginx and
+supports at most two traffic entries. OpenShift Route traffic splitting requires Gateway API mode.
+Gateway API mode requires Gateway API CRDs to be installed in the cluster.
 
 [source,yaml]
 ----
 spec:
   traffic:
-  - definitionRef:
-      name: order-workflow-v1
-    weight: 80
-  - definitionRef:
-      name: order-workflow-v2
-    weight: 20
+    - definitionRef:
+        name: order-v1-0-0
+      weight: 80
+    - definitionRef:
+        name: order-v1-1-0
+      weight: 20
 ----
 
-==== traffic[].definitionRef
+=== `ingress`
 
-Type: `LocalObjectReference` — Required
+Required configuration. The controller creates an Ingress on Kubernetes, a Route on OpenShift,
+or an HTTPRoute when `gatewayRef` is set.
 
-References a LogicFlowDefinition (workflow version).
+`host` is required for Kubernetes Ingress mode unless a Gateway API reference is supplied. The
+OpenShift router can assign a host when one is omitted. `ingressClassName` is supported only for
+nginx Ingress mode.
 
-==== traffic[].weight
+`gatewayRef.name` selects a Gateway API `Gateway`; optional `gatewayRef.namespace` defaults to
+the LogicFlowService namespace. The presence or absence of `gatewayRef` cannot be changed after
+the LogicFlowService is created. Its name and namespace may be updated.
 
-Type: `int32` — Required
-
-Percentage of traffic (0-100).
-
-=== ingress
-
-Type: `IngressSpec` — Required
-
-External HTTP/HTTPS access configuration. Creates an Ingress (Kubernetes), Route (OpenShift), or HTTPRoute (Gateway API).
+`annotations` are copied to the generated Ingress, Route, or HTTPRoute where supported. TLS can
+use either `secretRef` or a cert-manager issuer; the two options are mutually exclusive.
 
 [source,yaml]
 ----
 spec:
+  defaultDefinition:
+    name: order-v1-0-0
   ingress:
-    host: order-api.example.com
+    host: order.example.com
     ingressClassName: nginx
-    annotations:
-      cert-manager.io/cluster-issuer: letsencrypt
     tls:
       enabled: true
-      secretRef:
-        name: order-api-tls
+      certManager:
+        issuerRef:
+          name: letsencrypt-prod
+          kind: ClusterIssuer
 ----
 
-==== ingress.host
+== Status
 
-Type: `string` — Optional
+The controller reports `observedGeneration`, the discovered `runtimeRef`, the created resource
+reference (`ingressRef`, `routeRef`, or `httpRouteRef`), the external `url`, and the configured
+traffic entries. Each traffic entry's `ready` value reflects whether the shared runtime has ready
+replicas; it is not a separate health check for that workflow version.
 
-External hostname. Required when `gatewayRef` is not set.
+The controller sets the `IngressReady` condition. It does not currently publish a condition named
+`Ready`, even though the CRD's kubectl print-column selector looks for that name. Inspect
+`status.conditions[type=IngressReady]` when diagnosing the service.
 
-==== ingress.ingressClassName
-
-Type: `string` — Optional
-
-Selects the Ingress controller (Kubernetes Ingress mode).
-
-==== ingress.gatewayRef
-
-Type: `GatewayRef` — Optional
-
-Selects the Gateway for HTTPRoute creation (Gateway API mode). When set, an HTTPRoute is created instead of Ingress/Route. Required for traffic splitting on OpenShift.
-
-===== ingress.gatewayRef.name
-
-Type: `string` — Required
-
-Name of the Gateway.
-
-===== ingress.gatewayRef.namespace
-
-Type: `string` — Optional
-
-Namespace of the Gateway (defaults to the service's namespace).
-
-==== ingress.annotations
-
-Type: `map[string]string` — Optional
-
-Annotations for the Ingress/Route/HTTPRoute resource (user-provided).
-
-==== ingress.tls
-
-Type: `TLSSpec` — Optional
-
-HTTPS/TLS configuration.
-
-===== ingress.tls.enabled
-
-Type: `boolean` — Optional — Default: `false`
-
-Determines whether to use HTTPS.
-
-===== ingress.tls.secretRef
-
-Type: `LocalObjectReference` — Optional
-
-References an existing TLS Secret. Mutually exclusive with `certManager`.
-
-===== ingress.tls.certManager
-
-Type: `CertManagerSpec` — Optional
-
-Configures automatic certificate generation via cert-manager. Mutually exclusive with `secretRef`.
-
-====== ingress.tls.certManager.issuerRef
-
-Type: `CertManagerIssuerRef` — Required
-
-References a cert-manager Issuer or ClusterIssuer.
-
-======= ingress.tls.certManager.issuerRef.name
-
-Type: `string` — Required
-
-Name of the Issuer/ClusterIssuer.
-
-======= ingress.tls.certManager.issuerRef.kind
-
-Type: `string` — Optional — Default: `ClusterIssuer`
-
-Kind is either "Issuer" or "ClusterIssuer".
-
-======= ingress.tls.certManager.issuerRef.group
-
-Type: `string` — Optional — Default: `cert-manager.io`
-
-API group of the Issuer.
-
-== Status Fields
-
-=== observedGeneration
-
-Type: `int64` — Optional
-
-Tracks the last reconciled spec generation.
-
-=== runtimeRef
-
-Type: `LocalObjectReference` — Optional
-
-The discovered LogicFlowRuntime from the referenced definitions.
-
-=== ingressRef
-
-Type: `LocalObjectReference` — Optional
-
-References the created Ingress resource.
-
-=== routeRef
-
-Type: `LocalObjectReference` — Optional
-
-References the created Route (OpenShift only).
-
-=== httpRouteRef
-
-Type: `LocalObjectReference` — Optional
-
-References the created HTTPRoute (Gateway API).
-
-=== url
-
-Type: `string` — Optional
-
-The full external URL for this service.
-
-=== traffic
-
-Type: `[]TrafficStatus` — Optional
-
-Shows the current traffic distribution. Each entry contains:
-- `definitionRef`: Reference to the workflow version
-- `weight`: Configured traffic percentage
-- `ready`: Whether the version is ready to serve traffic
-
-=== conditions
-
-Type: `[]Condition` — Optional
-
-Detailed service state conditions (Ready, ReconciliationFailed, etc.).
-
-== Full Example
+== Example
 
 [source,yaml]
 ----
@@ -223,55 +92,19 @@ metadata:
   name: order-api
   namespace: default
 spec:
-  # Canary rollout: 80% to v1, 20% to v2
   traffic:
-  - definitionRef:
-      name: order-workflow-v1
-    weight: 80
-  - definitionRef:
-      name: order-workflow-v2
-    weight: 20
-
+    - definitionRef:
+        name: order-v1-0-0
+      weight: 80
+    - definitionRef:
+        name: order-v1-1-0
+      weight: 20
   ingress:
-    host: order-api.example.com
+    host: order.example.com
     ingressClassName: nginx
-    annotations:
-      cert-manager.io/cluster-issuer: letsencrypt-prod
-      nginx.ingress.kubernetes.io/rate-limit: "100"
-    tls:
-      enabled: true
-      certManager:
-        issuerRef:
-          name: letsencrypt-prod
-          kind: ClusterIssuer
-          group: cert-manager.io
-
-status:
-  observedGeneration: 1
-  runtimeRef:
-    name: production-runtime
-  ingressRef:
-    name: order-api
-  url: https://order-api.example.com
-  traffic:
-  - definitionRef:
-      name: order-workflow-v1
-    weight: 80
-    ready: true
-  - definitionRef:
-      name: order-workflow-v2
-    weight: 20
-    ready: true
-  conditions:
-  - type: Ready
-    status: "True"
-    observedGeneration: 1
-    reason: IngressReady
-    message: Ingress is ready and accepting traffic
-  - type: RoutingConfigured
-    status: "True"
-    observedGeneration: 1
-    reason: TrafficSplitReady
-    message: Traffic split configured successfully
 ----
 
+== Related documentation
+
+* xref:concepts/traffic-splitting.adoc[Traffic Splitting & Canary]
+* xref:components/workflow-gateway.adoc[Workflow Gateway]

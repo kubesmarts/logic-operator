@@ -6,12 +6,15 @@ A Kubernetes operator for managing Serverless Logic workflows powered by Quarkus
 
 The Logic Operator provides a Kubernetes-native way to deploy, manage, and scale Serverless Logic workflows. Built on top of Quarkus Flow, it offers four core CRDs for defining and orchestrating workflow-based applications:
 
-- **LogicPlatform**: Platform-wide configuration and shared services
-- **LogicFlowService**: Application definitions for workflow deployments
+- **LogicPlatform**: Data Index, optional Vector, and optional Workflow Gateway management
+- **LogicFlowService**: External workflow endpoint and optional traffic-split policy
 - **LogicFlowDefinition**: Workflow definitions and specifications
 - **LogicFlowRuntime**: Runtime instances of deployed workflows
 
-This is v2.0 of the operator, representing a complete architectural overhaul with modern Kubernetes patterns and improved scalability
+This repository tracks the 2.0 development line. Operator and component versions are declared in `versions.mk`.
+
+The standalone Workflow Gateway accepts execution and lifecycle requests and can route directly
+to a workflow's runtime Service. See the [Workflow Gateway guide](docs/antora/modules/ROOT/pages/components/workflow-gateway.adoc) for its API, LogicPlatform integration, and current scaling limitations.
 
 ## Getting Started
 
@@ -29,38 +32,33 @@ Get a fully working operator with sample workflows in three commands:
 ```sh
 make kind-create    # create KIND cluster with ingress-nginx + cert-manager
 make kind-deploy    # build, load, and deploy the operator
-make kind-demo      # apply sample CRs (Runtime + Definition + Service)
+make kind-demo      # build/load the gateway image and apply Platform + Runtime + Definition
 ```
 
 Check that everything is running:
 
 ```sh
-kubectl get logicflowruntimes,logicflowdefinitions,logicflowservices
+kubectl get logicplatforms,logicflowruntimes,logicflowdefinitions
 ```
 
-The sample deploys a `hello-world` workflow you can invoke once the runtime pod is ready:
+The sample deploys a `hello-world` workflow. Because it does not create a `LogicFlowService`, the gateway routes directly to the runtime's Kubernetes Service:
 
 ```sh
 kubectl wait --for=condition=available deployment/hello-runtime --timeout=120s
-curl -X POST http://hello.lvh.me/ \
+kubectl wait --for=condition=available deployment/logicplatform-sample-workflow-gateway --timeout=120s
+curl -X POST http://gateway.lvh.me/v1/runtime/default/hello-world/1.0.0/sync \
   -H "Content-Type: application/json" \
   -d '{"name": "World"}'
 ```
 
 > `lvh.me` resolves to `127.0.0.1` — no `/etc/hosts` editing needed.
 
-The runtime is also exposed directly at `http://runtime.lvh.me/` for accessing OpenAPI specs, health checks, and dashboards:
-
-```sh
-curl http://runtime.lvh.me/q/openapi   # OpenAPI spec
-curl http://runtime.lvh.me/q/health    # health checks
-```
-
-Alternatively, you can port-forward the runtime service without ingress:
+To inspect the runtime's OpenAPI spec or health checks, start this port-forward in a separate terminal:
 
 ```sh
 kubectl port-forward svc/hello-runtime 8080:80
-curl http://localhost:8080/q/openapi
+curl http://localhost:8080/q/openapi   # OpenAPI spec
+curl http://localhost:8080/q/health    # health checks
 ```
 
 ### Enable API-KEY Authentication
@@ -76,7 +74,7 @@ kubectl rollout status deployment/hello-runtime --timeout=120s
 Unauthenticated requests are now rejected:
 
 ```sh
-curl -s -o /dev/null -w "%{http_code}" -X POST http://hello.lvh.me/ \
+curl -s -o /dev/null -w "%{http_code}" -X POST http://gateway.lvh.me/v1/runtime/default/hello-world/1.0.0/sync \
   -H "Content-Type: application/json" -d '{"name": "World"}'
 # 401
 ```
@@ -84,7 +82,7 @@ curl -s -o /dev/null -w "%{http_code}" -X POST http://hello.lvh.me/ \
 Pass the API key as a Bearer token:
 
 ```sh
-curl -X POST http://hello.lvh.me/ \
+curl -X POST http://gateway.lvh.me/v1/runtime/default/hello-world/1.0.0/sync \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer logic-operator-dev-token" \
   -d '{"name": "World"}'

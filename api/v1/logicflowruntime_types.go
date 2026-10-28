@@ -29,7 +29,6 @@ const (
 // LogicFlowRuntimeSpec defines the desired state of LogicFlowRuntime.
 //
 // Shared Quarkus Flow runner that executes multiple workflow definitions.
-// Configuration precedence: LogicFlowRuntime.spec > LogicPlatform.spec.runtimeDefaults > operator defaults
 type LogicFlowRuntimeSpec struct {
 	RuntimeSpec `json:",inline"`
 	Security    RuntimeSecuritySpec    `json:"security,omitempty"`

@@ -64,7 +64,6 @@ spec:
               LogicFlowRuntimeSpec defines the desired state of LogicFlowRuntime.
 
               Shared Quarkus Flow runner that executes multiple workflow definitions.
-              Configuration precedence: LogicFlowRuntime.spec > LogicPlatform.spec.runtimeDefaults > operator defaults
             properties:
               container:
                 description: Container configures the application container.
@@ -1439,10 +1438,8 @@ spec:
                   dbMigrationStrategy:
                     default: service
                     description: |-
-                      DB Migration approach for the target application. Use the following values as described.
-                      job: use job based approach provided by the Logic operator.
-                      service: service itself shall migrate the db and will not use Logic operator.
-                      none: no database migration functionality needed.
+                      Reserved migration strategy setting. The current controllers do not create
+                      migration Jobs or otherwise act on this field.
                     type: string
                   postgresql:
                     description: Connect configured services to a postgresql database.
@@ -1480,8 +1477,10 @@ spec:
                             description: Name of the DB k8s service.
                             type: string
                           namespace:
-                            description: Namespace of the DB k8s service. Defaults
-                              to the LogicPlatform's local namespace.
+                            description: |-
+                              Namespace of a Kubernetes Service. When omitted, Name is used as a hostname and Kubernetes
+                              DNS search resolves a same-namespace Service. Set Namespace to build a fully qualified
+                              address for a Service in another namespace.
                             type: string
                           port:
                             description: Port to use when connecting to the DB k8s

@@ -1,106 +1,92 @@
+include::partial$versions.adoc[]
+
 = Deployment Overview
-:description: What gets deployed when you install Logic Operator and how the components fit together.
+:description: How Logic Operator, its four custom resources, and managed workflow components fit together.
 
-Logic Operator is a Kubernetes operator that manages Open Workflow (OWS) workflows powered by Quarkus Flow.
-It follows the standard operator pattern: a controller pod watches custom resources and reconciles the cluster state to match the declared spec.
+Logic Operator watches its custom resources and reconciles Kubernetes resources to match their
+specifications. The CRDs are cluster-scoped definitions; each LogicPlatform, LogicFlowRuntime,
+LogicFlowDefinition, and LogicFlowService object is namespaced.
 
-== Installed Components
+== Installed components
 
-When you deploy Logic Operator, the following components land in your cluster:
+The operator runs as a Deployment, typically in `logic-operator-system`. Installing the operator
+also installs the CRDs, admission webhooks, and RBAC.
 
-`logic-operator-system` namespace::
-The operator itself runs here as a `Deployment` named `logic-operator-controller-manager`.
-
-Custom Resource Definitions (CRDs)::
-Four CRDs are installed cluster-wide:
-+
-[cols="1,2"]
+[cols="1,3",options="header"]
 |===
-|CRD |Purpose
+|Custom resource |Managed behavior
 
 |`LogicPlatform`
-|Manages Data Index (GraphQL service) and Vector (log collection DaemonSet)
+|Manages Data Index, optional Vector log collection, and optional Workflow Gateway resources.
 
 |`LogicFlowRuntime`
-|Manages the Quarkus Flow Runner pod(s) and their configuration
+|Manages a Quarkus Flow Runner Deployment and Service. When persistence is configured, it also
+manages Lease coordination and runtime RBAC.
 
 |`LogicFlowDefinition`
-|Stores an OWS 1.0.0 document and links it to a runtime
+|Stores one OWS workflow document and creates a per-definition ConfigMap mounted by its runtime.
 
 |`LogicFlowService`
-|Exposes a workflow as an HTTP endpoint via an Ingress
+|Creates an external workflow endpoint using Kubernetes Ingress, OpenShift Route, or Gateway API
+HTTPRoute, with optional traffic splitting.
 |===
 
-RBAC::
-ClusterRoles and ClusterRoleBindings that allow the operator to watch and manage pods, deployments, services, ingresses, configmaps, secrets, and leases across all namespaces.
+Mutating and validating admission webhooks cover LogicPlatform, LogicFlowRuntime,
+LogicFlowDefinition, and LogicFlowService. The operator's service account manages its child
+resources. The gateway has a separate ServiceAccount and receives cluster-wide read permissions
+through a platform-specific ClusterRoleBinding when enabled.
 
-Webhooks::
-Validating and mutating admission webhooks for `LogicFlowRuntime` and `LogicFlowDefinition`.
-These are served by the operator pod and secured by cert-manager.
-A `Certificate` and `Issuer` are created automatically.
-
-== Architecture
-
-The diagram below shows how the components relate at runtime.
+== Resource relationships
 
 ----
-  kubectl / CI                   Operator Pod (logic-operator-system)
-       |                               |
-       | apply LogicPlatform           | watches CRDs
-       | apply LogicFlowRuntime        |
-       |-----> kube-apiserver <--------|
-               |       |              |
-               |       | webhook TLS  |   cert-manager
-               |       |<-------------|---[ Certificate ]
-               |
-               | reconcile
-               v
-         LogicPlatform:
-         ├─ Data Index Deployment
-         ├─ Vector DaemonSet
-         └─ Ingress/Route
+LogicPlatform (optional platform services)
+  ├── Data Index Deployment + Service
+  ├── Vector DaemonSet (optional)
+  └── Workflow Gateway Deployment + Service (optional)
+        └── Ingress or Route (optional)
 
-         LogicFlowRuntime:
-         ├─ Deployment (hello-runtime)
-         │  └─ Pod: quarkus-flow-runner
-         │     ├─ /q/metrics  /q/health
-         │     ├─ /q/flow/exec/<ns>/<workflow>/<version>
-         │     └─ JSON logs (structured logging)
-         │
-         ├─ Service
-         └─ Ingress --> hello.lvh.me
-
-         Data Flow:
-         quarkus-flow-runner (JSON logs)
-           → Vector DaemonSet
-           → PostgreSQL
-           → Data Index (GraphQL)
+LogicFlowRuntime
+  ├── Deployment + Service (port 80 → container port 8080)
+  └── LogicFlowDefinition(s) → one ConfigMap mount each
+        └── LogicFlowService (optional ingress and traffic policy)
 ----
 
-The runner image tag controls capabilities:
+The Workflow Gateway can invoke a workflow directly through the runtime Service named by
+`LogicFlowDefinition.spec.runtimeRef`. If a matching `LogicFlowService` publishes
+`status.url`, the gateway uses that URL instead, preserving its external routing and traffic
+policy. Gateway execution does not require Data Index; gateway instance queries do.
 
-* `quay.io/quarkiverse/quarkus-flow-runner:1.0.0-minimal` — stateless, no persistence, no structured logging
-* `quay.io/quarkiverse/quarkus-flow-runner:1.0.0-standard` — PostgreSQL persistence, lease-based sharding, structured logging
+== Data and request paths
+
+* Workflow execution: client → Workflow Gateway or LogicFlowService endpoint → runner.
+* Optional workflow history: runner structured logs → Vector → PostgreSQL and Data Index GraphQL.
+* Durable runtime state: runner → PostgreSQL, coordinated by Kubernetes Leases.
+
+These are separate capabilities. Workflows can run without Data Index, Vector, or runtime
+persistence. Enable the components required by your use case.
+
+== Image versions
+
+The operator build carries independent version settings for its own image, Workflow Gateway,
+Data Index, and Quarkus Flow Runner: `{operator-version}`, `{workflow-gateway-version}`,
+`{data-index-version}`, and `{quarkus-flow-runner-version}`, respectively. A LogicFlowRuntime with
+no explicit image uses the runner version embedded in the current operator. LogicPlatform
+admission defaults component image values when a platform is created; those values are stored in
+its spec. Review and update pinned LogicPlatform images explicitly during upgrades. See
+xref:deployment/production.adoc[Production Checklist].
 
 == Prerequisites
 
-All environments require:
+* Kubernetes {k8s-min-version} or later.
+* cert-manager for the admission webhook TLS certificate.
+* An Ingress controller or OpenShift router if exposing services externally.
+* PostgreSQL only for Data Index or durable runtime state.
 
-* Kubernetes {k8s-min-version}+
-* cert-manager (manages TLS for admission webhooks)
+Local KIND development additionally uses Docker, KIND, kubectl, and ingress-nginx. See
+xref:deployment/kind-local.adoc[Local Development with KIND].
 
-Local development additionally requires:
+== Next steps
 
-* KIND v0.20+
-* Docker v17.03+
-* kubectl v1.30+
-* Go v1.26+ (to build the operator image)
-* ingress-nginx (installed automatically by `make kind-create`)
-
-== Next Steps
-
-xref:deployment/kind-local.adoc[Local development with KIND]::
-Full walkthrough for running the operator on your laptop.
-
-xref:deployment/production.adoc[Production checklist]::
-What to verify before deploying to a real cluster.
+* xref:getting-started.adoc[Getting Started]
+* xref:components/workflow-gateway.adoc[Workflow Gateway]
+* xref:deployment/production.adoc[Production Checklist]

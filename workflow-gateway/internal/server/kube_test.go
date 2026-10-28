@@ -213,8 +213,12 @@ func TestE2EDataIndexDiscoveryAndProxy(t *testing.T) {
 	}
 	require.NoError(t, c.Create(ctx, lp))
 
-	// Update status with endpoint — triggers watcher's UpdateFunc
-	lp.Status.DataIndex.Service.GraphQLEndpoint = diServer.URL + "/graphql"
+	// Initialize status with DataIndex before updating
+	lp.Status.DataIndex = &logicv1.DataIndexStatus{
+		Service: logicv1.DataIndexServiceStatus{
+			GraphQLEndpoint: diServer.URL + "/graphql",
+		},
+	}
 	require.NoError(t, c.Status().Update(ctx, lp))
 
 	// Verify endpoint is discovered via event-driven sync

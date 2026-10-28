@@ -256,8 +256,8 @@ func TestSecurityEnvVars_OIDC(t *testing.T) {
 
 func TestDefaultRunnerImage_AutoSelect(t *testing.T) {
 	g := gomega.NewWithT(t)
-	minimalExpected := fmt.Sprintf("%s/%s:%s-%s", QuarkusFlowRegistry, QuarkusFlowRunner, QuarkusFlowVersion, ImageVariantMinimal)
-	standardExpected := fmt.Sprintf("%s/%s:%s-%s", QuarkusFlowRegistry, QuarkusFlowRunner, QuarkusFlowVersion, ImageVariantStandard)
+	minimalExpected := fmt.Sprintf("%s/%s:%s-%s", logicv1.FlowRunnerRegistry, logicv1.FlowRunnerImage, QuarkusFlowVersion, logicv1.ImageVariantMinimal)
+	standardExpected := fmt.Sprintf("%s/%s:%s-%s", logicv1.FlowRunnerRegistry, logicv1.FlowRunnerImage, QuarkusFlowVersion, logicv1.ImageVariantStandard)
 
 	t.Run("no persistence selects minimal", func(t *testing.T) {
 		g = gomega.NewWithT(t)
@@ -359,10 +359,10 @@ func TestDeploymentAndServiceAreWiredTogether(t *testing.T) {
 	g.Expect(*svc.OwnerReferences[0].Name).To(gomega.Equal(rt.Name))
 	g.Expect(*svc.OwnerReferences[0].Kind).To(gomega.Equal(logicv1.LogicFlowRuntimeKind))
 
-	// Service exposes port 80 targeting QuarkusPort
+	// Service exposes port 80 targeting the Quarkus Flow runner HTTP port.
 	g.Expect(svc.Spec.Ports).To(gomega.HaveLen(1))
 	g.Expect(*svc.Spec.Ports[0].Port).To(gomega.Equal(int32(80)))
-	g.Expect(svc.Spec.Ports[0].TargetPort.IntValue()).To(gomega.Equal(int(QuarkusPort)))
+	g.Expect(svc.Spec.Ports[0].TargetPort.IntValue()).To(gomega.Equal(int(logicv1.QuarkusFlowRunnerHTTPPort)))
 	g.Expect(*svc.Spec.Ports[0].Name).To(gomega.Equal("http"))
 }
 

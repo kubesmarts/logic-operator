@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -41,8 +42,8 @@ func main() {
 		shutdownTimeout time.Duration
 	)
 
-	flag.StringVar(&bindAddr, "bind-address", ":8080", "The address the server binds to.")
-	flag.StringVar(&managementAddr, "management-bind-address", ":8081", "The address the management server binds to.")
+	flag.StringVar(&bindAddr, "bind-address", ":"+strconv.Itoa(int(logicv1.WorkflowGatewayHTTPPort)), "The address the server binds to.")
+	flag.StringVar(&managementAddr, "management-bind-address", ":"+strconv.Itoa(int(logicv1.WorkflowGatewayManagementPort)), "The address the management server binds to.")
 	flag.DurationVar(&readTimeout, "read-timeout", 15*time.Second, "Read timeout for HTTP connections.")
 	flag.DurationVar(&writeTimeout, "write-timeout", 15*time.Second, "Write timeout for HTTP connections.")
 	flag.DurationVar(&idleTimeout, "idle-timeout", 60*time.Second, "Idle timeout for HTTP connections.")
@@ -73,7 +74,8 @@ func main() {
 	utilruntime.Must(logicv1.AddToScheme(scheme))
 
 	// Build the shared controller-runtime manager. Its cache is shared by all
-	// watchers; LogicFlowDefinition.Spec is stripped before entering the cache.
+	// watchers; the flow document is stripped from LogicFlowDefinitions while
+	// RuntimeRef and workflow identity labels remain available for routing.
 	mgr, err := kube.NewManager(restCfg, scheme, map[client.Object]crcache.ByObject{
 		&logicv1.LogicFlowDefinition{}: {Transform: catalog.StripDefinitionSpec},
 	})

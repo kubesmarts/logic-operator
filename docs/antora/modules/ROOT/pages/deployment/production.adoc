@@ -1,111 +1,70 @@
+include::partial$versions.adoc[]
+
 = Production Checklist
-:description: Key decisions and requirements before deploying Logic Operator to a production cluster.
+:description: Production considerations for Logic Operator runtimes, platform components, and gateway access.
 
-This page is a concise checklist, not a step-by-step guide.
-Each item describes what to verify and why.
+This page records configuration decisions to review before deploying Logic Operator in a
+production cluster.
 
-== Security
+== Secure workflow endpoints
 
-[WARNING]
-====
-The default `LogicFlowRuntime` spec uses `security.type: NONE`.
-This disables all authentication and must never be used in production.
-====
+`LogicFlowRuntime.spec.security.type` defaults to `NONE`. Configure `API_KEY` or `OIDC` for
+authenticated runtime endpoints, store credentials in Kubernetes Secrets, and restrict network
+access to the runner Service.
 
-Choose an appropriate security mode in `LogicFlowRuntime.spec.security`:
+The Workflow Gateway forwards authorization headers and responses to the runner and does not
+define a separate authentication policy. Protect its Ingress or Route and configure runtime
+authentication. The gateway can route workflows without a `LogicFlowService`.
 
-`API_KEY`::
-Suitable for machine-to-machine integrations.
-Store the key value in a Kubernetes `Secret` and reference it via `spec.security.apiKey.keys[*].secretRef`.
-Rotate secrets independently of the runtime pod.
+== Configure persistence for durable execution
 
-`OIDC`::
-Suitable for enterprise SSO.
-Configure the OIDC issuer URL and audience in `spec.security.oidc`.
+The default runtime image is the Quarkus Flow Runner `minimal` variant when persistence is
+omitted. Workflows that must survive pod restarts need PostgreSQL persistence and the `standard`
+runner image. The operator creates Lease coordination resources when persistence is configured.
 
-== Persistence
+* Use a production-grade PostgreSQL service.
+* Keep runtime and Data Index schemas separate.
+* Store credentials in a Secret and grant only the required database permissions.
+* Use the standard runner image when overriding `LogicFlowRuntime.spec.image` for durable
+  workflows.
+* Configure `LogicFlowRuntime.spec.replicas` or an HPA targeting the `LogicFlowRuntime` CR. Do not
+  target its Deployment directly, because the operator also reconciles the lease pool.
 
-Stateless runtimes (`1.0.0-minimal` image) lose all in-flight workflow state if a pod restarts.
-For workflows that use `wait`, timers, or multi-step coordination, use the `1.0.0-standard` image with PostgreSQL.
+== Enable workflow history only when needed
 
-Checklist:
+Data Index and Vector are optional platform components. When Data Index is enabled, the admission
+webhook requires PostgreSQL connection settings with Secret, Service, database, and schema. Vector
+is configured independently under `dataIndex.vector`; workflow execution does not require either
+component.
 
-* Deploy a production-grade PostgreSQL instance (managed service recommended)
-  ** Can be a single instance shared by both runtimes and Data Index
-  ** LogicFlowRuntime uses the default `public` schema (no pre-creation needed)
-  ** Data Index uses `logicflow_dataindex` schema (created automatically by Flyway migrations)
-* Create a `Secret` with `POSTGRESQL_USER` and `POSTGRESQL_PASSWORD` keys
-* Set `spec.persistence.postgresql.secretRef` and `spec.persistence.postgresql.serviceRef` in `LogicFlowRuntime`
-* Set `spec.replicas` to 3 or more — the operator uses Kubernetes leases for sharded coordination
+Vector currently receives a filter for only the first exact namespace in
+`dataIndex.vector.watchNamespaces`. Omit the field to default to the LogicPlatform namespace. A
+wildcard or multiple namespace entries are not supported by the current filter implementation.
 
-== Workflow Data Integration (Data Index & Vector)
+Structured logging is configured on each runtime. Keep workflow and task payload logging disabled
+unless it is required, since payloads may contain sensitive data and increase storage volume.
 
-For visibility into completed workflow executions and their history, deploy LogicPlatform to enable:
+== Right-size workloads
 
-* **Vector DaemonSet** — Collects structured logs from workflow pods
-* **Data Index Service** — Exposes GraphQL API for workflow instance queries
-
-Checklist:
-
-* Deploy `LogicPlatform` in a central namespace (e.g., `data-index-system`)
-* Set `dataIndex.enabled: true` and `dataIndex.vector.enabled: true`
-* Configure `dataIndex.persistence.postgresql` to point to the same PostgreSQL instance as your runtimes
-  ** Set `serviceRef.databaseSchema: logicflow_dataindex` (required; the operator does not create a default schema)
-* Set `vector.watchNamespaces` appropriately (Vector watches only the LogicPlatform namespace by default):
-  ** `["*"]` to collect logs from all namespaces
-  ** `["workflows-prod"]` to collect logs from one specific namespace (only the first list entry is currently honored)
-  ** Omit for single-namespace deployments (defaults to LogicPlatform namespace)
-* Allocate sufficient Vector DaemonSet resources (default: 100m CPU, 128Mi memory)
-  ** Monitor actual usage; increase for high-volume environments (> 1000 events/sec)
-* Enable structured logging on runtimes: `spec.logging.enabled: true`
-  ** Start with `includeWorkflowPayloads: false` to reduce log volume
-  ** Enable only if you need input/output data in Data Index
-
-[WARNING]
-====
-Data Index and Vector require PostgreSQL. Workflows will execute normally without them, but no history or querying capability is available.
-====
-
-== Resource Limits
-
-The `config/samples/` CRs omit resource requests and limits.
-Set them on `LogicFlowRuntime.spec.podTemplate` before going to production to prevent noisy-neighbour issues.
-
-Recommended starting point for a medium-traffic runtime:
-
-[source,yaml]
-----
-spec:
-  podTemplate:
-    spec:
-      containers:
-        - name: runner
-          resources:
-            requests:
-              cpu: "250m"
-              memory: "512Mi"
-            limits:
-              memory: "1Gi"
-----
+Set requests and limits for the runner under `LogicFlowRuntime.spec.resources`. Use
+`spec.podTemplate` for scheduling, sidecars, volumes, and pod-level settings; fields such as
+`nodeSelector` and `imagePullSecrets` are directly under `podTemplate`, not under a nested `spec`.
+Set resource requests for Data Index and Vector through their `application` settings.
 
 == Horizontal Pod Autoscaling
 
-The operator exposes the Kubernetes scale subresource on LogicFlowRuntime and does not enforce default replicas on LogicPlatform.DataIndex, enabling HPA management for both.
+=== LogicFlowRuntime
 
-=== LogicFlowRuntime Autoscaling
-
-Target LogicFlowRuntime directly (not the Deployment).
-HPA updates `spec.replicas` on the CR, which the operator uses to reconcile both the Deployment AND lease pool.
-If you target the Deployment directly, leases won't track replica changes.
-
-Example HPA for a LogicFlowRuntime named `hello-runtime`:
+`LogicFlowRuntime` exposes a scale subresource. Target the CR itself so replica updates are
+reconciled with the runner Deployment and, when persistence is configured, the Lease pool. The
+admission webhook defaults `spec.replicas` to one; an HPA can subsequently update this field.
 
 [source,yaml]
 ----
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: hello-runtime-autoscaler
+  name: hello-runtime
   namespace: default
 spec:
   scaleTargetRef:
@@ -115,76 +74,53 @@ spec:
   minReplicas: 1
   maxReplicas: 10
   metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 70
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
 ----
 
-[NOTE]
-====
-When PostgreSQL persistence is enabled, scale-up is safe — leases ensure each workflow instance is owned by exactly one pod.
-Without persistence, scale-up creates duplicate in-memory state for in-flight workflows.
+Durable persistence and leases coordinate active workflow instances across runtime replicas.
+Without persistence, active execution state is held in memory and pod scaling can interrupt work.
 
-The operator manages lease assignment/cleanup automatically when replica count changes.
-====
+=== Workflow Gateway
 
-=== Data Index Autoscaling
+The gateway Deployment can be targeted by an HPA when `workflowGateway.application.replicas` is
+left unset. For this release, set the HPA's `maxReplicas` to `1`: async instance routing state is
+held in memory and is not shared between gateway replicas. See
+xref:components/workflow-gateway.adoc[Workflow Gateway limitations].
 
-Target the generated Data Index Deployment directly (`flow-platform-data-index` or similar).
-Leave `spec.dataIndex.application.replicas` unset in LogicPlatform so the operator doesn't enforce a value.
+=== Data Index and Vector
 
-Example HPA for Data Index:
+The LogicPlatform webhook defaults Data Index to one replica and the operator reconciles the
+configured count. No HPA contract is provided for Data Index. Vector is a DaemonSet and is not
+scaled through HPA.
 
-[source,yaml]
-----
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: data-index-autoscaler
-  namespace: data-index-system
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: flow-platform-data-index  # Deployment created by operator
-  minReplicas: 1
-  maxReplicas: 5
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 75
-----
+== TLS and ingress
 
-[NOTE]
-====
-Do not set `spec.dataIndex.application.replicas` when using HPA.
-The operator respects the value if set, but will override HPA scaling.
-====
+The platform can create Ingresses on Kubernetes or Routes on OpenShift for Data Index and the
+Workflow Gateway. Configure an explicit host when enabling either ingress. TLS can use a Secret or
+cert-manager issuer, but not both. `LogicFlowService` supports Ingress, OpenShift Route, and
+Gateway API HTTPRoute modes; review its routing restrictions before choosing a traffic-split
+strategy.
 
-== cert-manager
+== Platform readiness
 
-The admission webhooks require a valid TLS certificate.
-In production:
+`LogicPlatform.status.conditions[type=Ready]` is an aggregate of enabled components. A configured
+gateway, Data Index, or Vector component that is not ready makes the platform not ready. The
+component status fields show which one is still progressing. A configured external ingress host
+is not required for the gateway's component readiness condition.
 
-* Ensure cert-manager v1.16+ is installed
-* The operator automatically creates a self-signed `Issuer` and `Certificate`
-* For corporate PKI, replace the `Issuer` with a `ClusterIssuer` referencing your CA
+== Operator upgrades
 
-== Image Pull Secrets
-
-If your cluster cannot reach `quay.io` directly, mirror the runner image to a private registry and set `spec.podTemplate.spec.imagePullSecrets` accordingly.
-
-== Operator Upgrade
-
-The operator manages its own CRDs.
-When upgrading:
-
-. Apply the new CRD manifests: `make install IMG=<new-version>`
-. Roll out the new operator image: `make deploy IMG=<new-version>`
-. Verify the operator pod restarts cleanly and webhooks become healthy before applying workload changes.
+The operator image version and component image versions are separate version streams: operator
+`{operator-version}`, Workflow Gateway `{workflow-gateway-version}`, Data Index
+`{data-index-version}`, and Quarkus Flow Runner `{quarkus-flow-runner-version}`. The operator build
+embeds its default gateway, Data Index, and Quarkus Flow Runner versions. On admission,
+LogicPlatform defaults the gateway and Data Index images into the resource spec; those values are
+then reconciled as configured and are not automatically advanced when the operator is upgraded.
+Review and update these image fields deliberately when upgrading platform components. A
+LogicFlowRuntime with an empty image uses the runner version embedded in the current operator, so
+upgrading the operator can change the runtime image on its next reconciliation.

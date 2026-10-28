@@ -17,18 +17,40 @@
 
 package version
 
-// Don't change it manually, use the make bump-version <version>
-const operatorVersion = "0.0.0"
+// These values are populated by the Go linker from versions.mk. Keep defaults
+// useful for builds that bypass the Makefile, but don't use them for releases.
+var (
+	gitCommit                = "unknown"
+	operatorVersion          = "unknown"
+	workflowGatewayVersion   = "unknown"
+	dataIndexVersion         = "unknown"
+	quarkusFlowRunnerVersion = "unknown"
+)
 
-// Don't change it manually, it depends on the bump-version recipe
-const platformTagVersion = "main"
+// GetGitCommit gets the source revision used to build the operator.
+func GetGitCommit() string {
+	return gitCommit
+}
 
-// GetOperatorVersion gets the current operator version
+// GetOperatorVersion gets the current operator release version.
 func GetOperatorVersion() string {
 	return operatorVersion
 }
 
-// GetImageTagVersion gets the current tag version for the published images
-func GetImageTagVersion() string {
-	return platformTagVersion
+// GetWorkflowGatewayVersion gets the workflow-gateway image version bundled
+// with this operator release.
+func GetWorkflowGatewayVersion() string {
+	return workflowGatewayVersion
+}
+
+// GetDataIndexVersion gets the Data Index image version bundled with this
+// operator release.
+func GetDataIndexVersion() string {
+	return dataIndexVersion
+}
+
+// GetQuarkusFlowRunnerVersion gets the Quarkus Flow runner image version
+// bundled with this operator release.
+func GetQuarkusFlowRunnerVersion() string {
+	return quarkusFlowRunnerVersion
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/kubesmarts/logic-operator/api/version"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -20,8 +21,6 @@ var _ admission.Defaulter[*LogicPlatform] = &LogicPlatformDefaulter{}
 const (
 	DataIndexRegistry = "quay.io/kubesmarts"
 	DataIndexImage    = "data-index-service"
-	DataIndexVersion  = "2.0.0-SNAPSHOT"
-	DataIndexVariant  = "postgresql"
 
 	VectorRegistry       = "timberio"
 	VectorImage          = "vector"
@@ -31,12 +30,18 @@ const (
 
 // DefaultDataIndexImage returns the default Data Index service image
 func DefaultDataIndexImage() string {
-	return fmt.Sprintf("%s/%s:%s-%s", DataIndexRegistry, DataIndexImage, DataIndexVersion, DataIndexVariant)
+	return fmt.Sprintf("%s/%s:%s", DataIndexRegistry, DataIndexImage, version.GetDataIndexVersion())
 }
 
 // DefaultVectorImage returns the default Vector service image
 func DefaultVectorImage() string {
 	return fmt.Sprintf("%s/%s:%s", VectorRegistry, VectorImage, VectorVersion)
+}
+
+// DefaultGatewayImage returns the workflow-gateway image version bundled with
+// this operator release.
+func DefaultGatewayImage() string {
+	return fmt.Sprintf("kubesmarts.org/workflow-gateway:v%s", version.GetWorkflowGatewayVersion())
 }
 
 // DefaultDataIndexResources returns default resource requirements for Data Index based on helm values.
@@ -123,6 +128,14 @@ func (d *LogicPlatformDefaulter) Default(_ context.Context, plat *LogicPlatform)
 		plat.Spec.DataIndex.Vector.Application.PodTemplate.ServiceAccountName = VectorServiceAccount
 	}
 
+	// Default gateway image if enabled and image not set
+	if plat.Spec.WorkflowGateway != nil {
+		if plat.Spec.WorkflowGateway.Application.Image == "" {
+			plat.Spec.WorkflowGateway.Application.Image = DefaultGatewayImage()
+		}
+		// Do NOT default replicas — let Deployment default to 1 and allow HPA ownership
+	}
+
 	return nil
 }
 
@@ -153,25 +166,28 @@ func (v *LogicPlatformValidator) validate(ctx context.Context, obj *LogicPlatfor
 		return err
 	}
 
-	if !obj.Spec.DataIndex.Enabled {
-		// If Data Index is disabled, no validation needed
-		return nil
-	}
+	// Validate DataIndex if enabled
+	if obj.Spec.DataIndex.Enabled {
+		// Validate PostgreSQL persistence configuration
+		if err := v.validatePostgreSQLPersistence(&obj.Spec.DataIndex); err != nil {
+			return err
+		}
 
-	// Validate PostgreSQL persistence configuration
-	if err := v.validatePostgreSQLPersistence(&obj.Spec.DataIndex); err != nil {
-		return err
-	}
+		// Validate image format if provided
+		if obj.Spec.DataIndex.Application.Image != "" {
+			if err := ValidateImageFormat(obj.Spec.DataIndex.Application.Image); err != nil {
+				return err
+			}
+		}
 
-	// Validate image format if provided
-	if obj.Spec.DataIndex.Application.Image != "" {
-		if err := ValidateImageFormat(obj.Spec.DataIndex.Application.Image); err != nil {
+		// Validate ingress configuration if provided
+		if err := v.validateIngress(obj.Spec.DataIndex.Ingress); err != nil {
 			return err
 		}
 	}
 
-	// Validate ingress configuration if provided
-	if err := v.validateIngress(obj.Spec.DataIndex.Ingress); err != nil {
+	// Validate WorkflowGateway if configured (runs even if DataIndex is disabled)
+	if err := v.validateWorkflowGateway(obj.Spec.WorkflowGateway); err != nil {
 		return err
 	}
 
@@ -216,6 +232,42 @@ func (v *LogicPlatformValidator) validateIngress(ingress *DataIndexIngressSpec) 
 
 		if hasCertManager && ingress.TLS.CertManager.IssuerRef.Name == "" {
 			return fmt.Errorf("spec.dataIndex.ingress.tls.certManager.issuerRef.name is required")
+		}
+	}
+
+	return nil
+}
+
+func (v *LogicPlatformValidator) validateWorkflowGateway(gwSpec *WorkflowGatewaySpec) error {
+	if gwSpec == nil {
+		return nil
+	}
+
+	// Validate image format if provided
+	if gwSpec.Application.Image != "" {
+		if err := ValidateImageFormat(gwSpec.Application.Image); err != nil {
+			return err
+		}
+	}
+
+	// Validate ingress configuration if enabled
+	if gwSpec.Ingress != nil && gwSpec.Ingress.Enabled {
+		if gwSpec.Ingress.Host == "" {
+			return fmt.Errorf("spec.workflowGateway.ingress.host is required when ingress is enabled")
+		}
+
+		// Validate TLS configuration
+		if gwSpec.Ingress.TLS.Enabled {
+			hasSecret := gwSpec.Ingress.TLS.SecretRef.Name != ""
+			hasCertManager := gwSpec.Ingress.TLS.CertManager != nil
+
+			if hasSecret && hasCertManager {
+				return fmt.Errorf("spec.workflowGateway.ingress.tls.secretRef and spec.workflowGateway.ingress.tls.certManager are mutually exclusive")
+			}
+
+			if hasCertManager && gwSpec.Ingress.TLS.CertManager.IssuerRef.Name == "" {
+				return fmt.Errorf("spec.workflowGateway.ingress.tls.certManager.issuerRef.name is required")
+			}
 		}
 	}
 
