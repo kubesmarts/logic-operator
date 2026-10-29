@@ -1,0 +1,90 @@
+name: Publish one image
+
+on:
+  workflow_call:
+    inputs:
+      image_name:
+        description: Image name under quay.io (for example, kubesmarts/logic-operator).
+        required: true
+        type: string
+      image_tag:
+        description: Image tag to publish.
+        required: true
+        type: string
+      artifact_name:
+        description: Uploaded OCI archive artifact name.
+        required: true
+        type: string
+    secrets:
+      QUAY_ROBOT_ACCOUNT:
+        required: true
+      QUAY_ROBOT_TOKEN:
+        required: true
+    outputs:
+      digest:
+        description: Digest returned by Quay after publishing.
+        value: ${{ jobs.publish.outputs.digest }}
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Push and verify ${{ inputs.image_name }}
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.verify.outputs.digest }}
+    steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+
+      - name: Install skopeo
+        run: sudo apt-get update && sudo apt-get install -y skopeo
+
+      - name: Extract OCI archive
+        env:
+          ARTIFACT_NAME: ${{ inputs.artifact_name }}
+        run: gunzip "${ARTIFACT_NAME}.tar.gz"
+
+      - name: Log in to Quay.io
+        env:
+          QUAY_ROBOT_ACCOUNT: ${{ secrets.QUAY_ROBOT_ACCOUNT }}
+          QUAY_ROBOT_TOKEN: ${{ secrets.QUAY_ROBOT_TOKEN }}
+        run: |
+          mkdir -p "$HOME/.config/containers"
+          printf '%s' "$QUAY_ROBOT_TOKEN" | skopeo login quay.io \
+            --username "$QUAY_ROBOT_ACCOUNT" \
+            --password-stdin \
+            --authfile "$HOME/.config/containers/auth.json"
+
+      - name: Push image to Quay.io
+        env:
+          ARTIFACT_NAME: ${{ inputs.artifact_name }}
+          IMAGE_NAME: ${{ inputs.image_name }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          skopeo copy --multi-arch all \
+            --authfile "$HOME/.config/containers/auth.json" \
+            --dest-tls-verify=true \
+            "oci-archive:${ARTIFACT_NAME}.tar" \
+            "docker://quay.io/${IMAGE_NAME}:${IMAGE_TAG}"
+
+      - name: Verify platforms and capture digest
+        id: verify
+        env:
+          IMAGE_NAME: ${{ inputs.image_name }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          IMAGE="docker://quay.io/${IMAGE_NAME}:${IMAGE_TAG}"
+          MANIFEST=$(skopeo inspect --raw --authfile "$HOME/.config/containers/auth.json" "$IMAGE")
+          for arch in amd64 arm64; do
+            if ! echo "$MANIFEST" | jq -e --arg arch "$arch" \
+              '.manifests[] | select(.platform.os == "linux" and .platform.architecture == $arch)' >/dev/null; then
+              echo "Missing linux/${arch} in published manifest"
+              exit 1
+            fi
+          done
+          DIGEST=$(skopeo inspect --authfile "$HOME/.config/containers/auth.json" "$IMAGE" | jq -r '.Digest')
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"

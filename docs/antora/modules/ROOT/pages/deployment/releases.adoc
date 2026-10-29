@@ -1,0 +1,169 @@
+include::partial$versions.adoc[]
+
+= Creating Releases and Publishing Images
+:description: Workflow for releasing the operator and gateway, and publishing images to Quay.io
+
+The release process uses two independent workflows to separate validation from image publishing. The Release workflow validates code and creates a tag; the Publish Images workflow builds and pushes multi-architecture images to Quay. This separation allows rebuilding images from the same release tag if upstream base images receive security updates.
+
+== Release workflow
+
+The *Release* workflow validates the source code, runs all test suites, creates a Git tag, and creates a GitHub Release.
+
+To create a release:
+
+1. Navigate to https://github.com/kubesmarts/logic-operator/actions/workflows/release.yaml[Actions → Release]
+2. Click **Run workflow**
+3. Accept the default branch and click **Run workflow**
+
+The Release workflow will:
+
+* Read the operator and gateway versions from `versions.mk`
+* Validate that the operator version is not a SNAPSHOT build
+* Run all validation checks: formatting, generated code, linting, unit tests, gateway integration tests, and E2E tests
+* Create an annotated Git tag: `v${OPERATOR_VERSION}`
+* Create a GitHub Release with auto-generated release notes
+* Provide the release tag in the workflow summary for use in the next step
+
+Example release tag: `v2.0.0-Alpha1`
+
+=== What gets validated
+
+* Code formatting (`go fmt`)
+* Generated manifests and code are current
+* Golangci-lint passes
+* Unit tests pass
+* Gateway integration tests pass
+* End-to-end tests pass on a KIND cluster
+* No pre-existing tag with the same name
+
+=== Version configuration
+
+Operator and gateway versions are independent and configured in `versions.mk`:
+
+[source,makefile]
+----
+OPERATOR_VERSION ?= 2.0.0-Alpha1
+GATEWAY_VERSION ?= 2.0.0-Alpha1
+DATA_INDEX_VERSION ?= 2.0.0-SNAPSHOT-postgresql
+QUARKUS_FLOW_RUNNER_VERSION ?= 1.3.0
+----
+
+Update these values before running the Release workflow. The workflow creates a single Git tag using `OPERATOR_VERSION`, but both versions are embedded in the operator image build arguments.
+
+== Image publishing workflow
+
+The *Publish Images* workflow builds multi-architecture images (linux/amd64, linux/arm64) for the operator and gateway, and pushes them to Quay.io.
+
+To publish images:
+
+1. Note the release tag created by the Release workflow (e.g., `v2.0.0-Alpha1`)
+2. Navigate to https://github.com/kubesmarts/logic-operator/actions/workflows/publish-images.yaml[Actions → Publish Images]
+3. Click **Run workflow**
+4. Enter the release tag in `source_tag` (e.g., `v2.0.0-Alpha1`)
+5. Leave `image_tag` empty to use component-specific versions, or provide a custom tag to apply to both images
+6. Click **Run workflow**
+
+The Publish Images workflow will:
+
+* Check out the exact Git tag
+* Read operator and gateway versions from the tag's `versions.mk`
+* Build multi-architecture images with the required version build arguments
+* Pull fresh base images (`pull: true`) to pick up patched upstream images
+* Log in to Quay.io using robot account credentials
+* Push images to:
+  - `quay.io/kubesmarts/logic-operator:<resolved operator tag>`
+  - `quay.io/kubesmarts/workflow-gateway:<resolved gateway tag>`
+* Verify the multi-architecture manifest contains both platforms
+* Report published image digests and source tag in the workflow summary
+
+=== Image tag defaults
+
+When `image_tag` is empty:
+
+* Operator image: `v${OPERATOR_VERSION}` (from the tag's `versions.mk`)
+* Gateway image: `v${GATEWAY_VERSION}` (from the tag's `versions.mk`)
+
+When `image_tag` is provided:
+
+* Both images use the supplied tag exactly as specified
+
+For example, if the tag's `versions.mk` defines:
+[source]
+----
+OPERATOR_VERSION=2.0.0-Alpha1
+GATEWAY_VERSION=2.0.0-Alpha1
+----
+
+Running with `image_tag` empty publishes:
+- `quay.io/kubesmarts/logic-operator:v2.0.0-Alpha1`
+- `quay.io/kubesmarts/workflow-gateway:v2.0.0-Alpha1`
+
+Running with `image_tag: v2.0.0` publishes both to their respective `v2.0.0` tags.
+
+=== Rebuilding images from a release tag
+
+To rebuild and republish images from an existing release tag (for example, after upstream base images receive CVE fixes):
+
+1. Navigate to https://github.com/kubesmarts/logic-operator/actions/workflows/publish-images.yaml[Actions → Publish Images]
+2. Click **Run workflow**
+3. Enter the existing release tag in `source_tag` (e.g., `v2.0.0-Alpha1`)
+4. Leave both input fields as they are or provide the same `image_tag` as before
+5. Click **Run workflow**
+
+The workflow will use fresh base images (pulled at build time) while keeping the same application versions and image tags. This allows patching vulnerable base images without creating a new release or changing application code.
+
+NOTE: Quay.io must be configured to allow tags to be overwritten (the default behavior). Rerunning the workflow from the same release tag will republish the same versioned tags.
+
+== Required Quay.io credentials
+
+The Publish Images workflow requires two repository secrets:
+
+* `QUAY_ROBOT_ACCOUNT`: The robot account username (e.g., `kubesmarts+operator`)
+* `QUAY_ROBOT_TOKEN`: The robot account token (API key)
+
+These credentials must have write access to:
+- `quay.io/kubesmarts/logic-operator`
+- `quay.io/kubesmarts/workflow-gateway`
+
+To set up credentials:
+
+1. Go to https://quay.io/repository/kubesmarts/logic-operator?tab=settings[Quay.io → logic-operator settings] → Robot Accounts
+2. Create a robot account with write permission
+3. In GitHub: Settings → Secrets and variables → Actions
+4. Add `QUAY_ROBOT_ACCOUNT` (username) and `QUAY_ROBOT_TOKEN` (token)
+
+The Release workflow only uses the built-in `GITHUB_TOKEN` with `contents: write` permission and does not require any additional secrets.
+
+== Multi-architecture images
+
+The Publish Images workflow builds images for `linux/amd64` and `linux/arm64` platforms. The build process:
+
+* Uses `docker buildx` with QEMU to build for multiple platforms
+* Outputs OCI archives (not loaded into local Docker)
+* Pushes multi-arch manifest lists to Quay.io
+* Verifies that each image manifest contains both requested platforms
+
+After publishing, you can inspect the manifest:
+
+[source,bash]
+----
+docker manifest inspect quay.io/kubesmarts/logic-operator:v2.0.0-Alpha1 | jq '.manifests[] | .platform'
+----
+
+Both platforms should appear in the output.
+
+== Workflow permissions
+
+=== Release workflow
+
+Uses the built-in `GITHUB_TOKEN` with minimal required permissions:
+- `contents: write` — push release tag, create GitHub Release
+
+=== Publish Images workflow
+
+Uses the built-in `GITHUB_TOKEN` with minimal required permissions:
+- `contents: read` — check out source tag
+
+Image publishing to Quay.io uses `QUAY_ROBOT_ACCOUNT` and `QUAY_ROBOT_TOKEN` secrets, not GitHub credentials.
+
+Neither workflow modifies repository settings, accepts a GitHub App token, or uses a personal access token.

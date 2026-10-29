@@ -1,0 +1,201 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate & Test
+    runs-on: ubuntu-latest
+    outputs:
+      operator_version: ${{ steps.versions.outputs.operator_version }}
+      gateway_version: ${{ steps.versions.outputs.gateway_version }}
+      git_commit: ${{ steps.versions.outputs.git_commit }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Read versions from versions.mk
+        id: versions
+        run: |
+          make -s print-versions >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+
+      - name: Validate operator version
+        id: validate
+        run: |
+          OPERATOR_VERSION="${{ steps.versions.outputs.operator_version }}"
+
+          if [ -z "${OPERATOR_VERSION}" ]; then
+            echo "❌ ERROR: OPERATOR_VERSION is empty"
+            exit 1
+          fi
+
+          if [[ "${OPERATOR_VERSION}" == *"-SNAPSHOT" ]]; then
+            echo "❌ ERROR: Cannot release SNAPSHOT version ${OPERATOR_VERSION}"
+            exit 1
+          fi
+
+          echo "✅ Version validation passed: ${OPERATOR_VERSION}"
+
+      - name: Sync Vector configs from logic-apps
+        run: make sync-configs
+
+      - name: Check go fmt
+        run: |
+          OUTPUT=$(go fmt ./...)
+          if [ -n "$OUTPUT" ]; then
+            echo "The following files are not formatted:"
+            echo "$OUTPUT"
+            exit 1
+          fi
+
+      - name: Check generated code is up to date
+        run: |
+          make manifests generate
+          if ! git diff --quiet; then
+            echo "Generated files are out of date."
+            git diff --stat
+            exit 1
+          fi
+
+      - name: Run linter
+        run: make lint
+
+      - name: Run build
+        run: make build
+
+      - name: Check generated files after build
+        run: |
+          if ! git diff --quiet; then
+            echo "Generated files were modified by the build."
+            git diff --stat
+            exit 1
+          fi
+
+      - name: Run unit tests
+        run: make test
+
+  gateway-integration:
+    name: Gateway ↔ Runner Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Sync Vector configs from logic-apps
+        run: make sync-configs
+
+      - name: Run gateway integration tests
+        run: make test-gateway-integration
+
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Sync Vector configs from logic-apps
+        run: make sync-configs
+
+      - name: Set up E2E test infrastructure
+        run: make setup-test-e2e
+
+      - name: Run e2e tests
+        run: make test-e2e
+
+      - name: Collect failure logs
+        if: failure()
+        run: |
+          echo "=== Pod status ==="
+          kubectl get pods -A
+          echo "=== Events ==="
+          kubectl get events -n logic-operator-system --sort-by=.lastTimestamp || true
+          echo "=== Controller logs ==="
+          kubectl logs -l control-plane=controller-manager -n logic-operator-system --tail=100 || true
+
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [validate, gateway-integration, e2e]
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Check if tag already exists
+        id: check-tag
+        env:
+          OPERATOR_VERSION: ${{ needs.validate.outputs.operator_version }}
+        run: |
+          git fetch origin --tags
+          TAG="v${OPERATOR_VERSION}"
+          if git rev-parse "${TAG}" >/dev/null 2>&1; then
+            echo "❌ ERROR: Tag ${TAG} already exists"
+            exit 1
+          fi
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+
+      - name: Create annotated tag
+        env:
+          TAG: ${{ steps.check-tag.outputs.tag }}
+          GIT_COMMIT: ${{ needs.validate.outputs.git_commit }}
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "noreply@github.com"
+          git tag -a "${TAG}" -m "Release ${TAG}" ${{ github.sha }}
+
+      - name: Push tag
+        env:
+          TAG: ${{ steps.check-tag.outputs.tag }}
+        run: |
+          git push origin "${TAG}"
+
+      - name: Create GitHub Release
+        env:
+          TAG: ${{ steps.check-tag.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${TAG}" \
+            --title "Release ${TAG}" \
+            --generate-notes
+
+      - name: Summary
+        env:
+          TAG: ${{ steps.check-tag.outputs.tag }}
+          OPERATOR_VERSION: ${{ needs.validate.outputs.operator_version }}
+          GATEWAY_VERSION: ${{ needs.validate.outputs.gateway_version }}
+        run: |
+          echo "### ✅ Release Created Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Release Tag:** \`${TAG}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Component Versions:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Operator: \`${OPERATOR_VERSION}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Workflow Gateway: \`${GATEWAY_VERSION}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Next Step:** Run the [Publish Images](../../actions/workflows/publish-images.yaml) workflow with \`source_tag: ${TAG}\`" >> $GITHUB_STEP_SUMMARY
