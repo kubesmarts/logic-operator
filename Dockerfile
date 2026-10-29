@@ -1,5 +1,6 @@
 # Build the manager binary
-FROM golang:1.26 AS builder
+# Build with the native Go toolchain and cross-compile for the requested target.
+FROM --platform=$BUILDPLATFORM golang:1.26 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 ARG GIT_COMMIT=unknown
