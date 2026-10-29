@@ -23,6 +23,7 @@
 ** xref:deployment/kind-local.adoc[Local Development (KIND)]
 ** xref:deployment/production.adoc[Production]
 ** xref:deployment/monitoring.adoc[Monitoring & Observability]
+** xref:deployment/releases.adoc[Releases & Image Publishing]
 ** xref:deployment/troubleshooting.adoc[Troubleshooting]
 
 * Samples

@@ -1,0 +1,250 @@
+name: Publish Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_tag:
+        description: 'Release tag to build from (e.g., v2.0.0-Alpha1)'
+        required: true
+        type: string
+      image_tag:
+        description: 'Docker image tag (e.g., v2.0.0-Alpha1). If empty, uses v${OPERATOR_VERSION} and v${GATEWAY_VERSION}'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    name: Setup and validate
+    runs-on: ubuntu-latest
+    outputs:
+      source_tag: ${{ steps.validate.outputs.source_tag }}
+      operator_version: ${{ steps.versions.outputs.operator_version }}
+      gateway_version: ${{ steps.versions.outputs.gateway_version }}
+      data_index_version: ${{ steps.versions.outputs.data_index_version }}
+      quarkus_flow_runner_version: ${{ steps.versions.outputs.quarkus_flow_runner_version }}
+      git_commit: ${{ steps.versions.outputs.git_commit }}
+      operator_image_tag: ${{ steps.tags.outputs.operator_image_tag }}
+      gateway_image_tag: ${{ steps.tags.outputs.gateway_image_tag }}
+    steps:
+      - name: Validate and normalize source_tag
+        id: validate
+        env:
+          INPUT_TAG: ${{ github.event.inputs.source_tag }}
+        run: |
+          # Remove leading 'v' if present
+          SOURCE_TAG="${INPUT_TAG#v}"
+
+          if [ -z "${SOURCE_TAG}" ]; then
+            echo "❌ ERROR: source_tag is required"
+            exit 1
+          fi
+
+          echo "source_tag=v${SOURCE_TAG}" >> $GITHUB_OUTPUT
+
+      - name: Checkout source tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.validate.outputs.source_tag }}
+
+      - name: Verify tag exists and matches
+        env:
+          SOURCE_TAG: ${{ steps.validate.outputs.source_tag }}
+        run: |
+          if ! git rev-parse "${SOURCE_TAG}" >/dev/null 2>&1; then
+            echo "❌ ERROR: Tag ${SOURCE_TAG} does not exist"
+            exit 1
+          fi
+
+          echo "✅ Tag ${SOURCE_TAG} verified"
+
+      - name: Read versions from versions.mk
+        id: versions
+        env:
+          SOURCE_TAG: ${{ steps.validate.outputs.source_tag }}
+        run: |
+          make -s print-versions >> "$GITHUB_OUTPUT"
+          OPERATOR_VERSION=$(sed -n 's/^operator_version=//p' "$GITHUB_OUTPUT")
+
+          if [ "v${OPERATOR_VERSION}" != "${SOURCE_TAG}" ]; then
+            echo "❌ ERROR: source_tag ${SOURCE_TAG} does not match OPERATOR_VERSION v${OPERATOR_VERSION}"
+            exit 1
+          fi
+
+          echo "📦 Versions from checked-out tag:"
+          cat "$GITHUB_OUTPUT"
+
+      - name: Determine image tags
+        id: tags
+        env:
+          INPUT_IMAGE_TAG: ${{ github.event.inputs.image_tag }}
+          OPERATOR_VERSION: ${{ steps.versions.outputs.operator_version }}
+          GATEWAY_VERSION: ${{ steps.versions.outputs.gateway_version }}
+        run: |
+          if [ -n "${INPUT_IMAGE_TAG}" ]; then
+            # Validate Docker tag format strictly:
+            # - 1-128 characters
+            # - Start/end with alphanumeric
+            # - Allow [a-zA-Z0-9._-]
+            # - Single line only
+            if [ $(echo -n "${INPUT_IMAGE_TAG}" | wc -c) -gt 128 ]; then
+              echo "❌ ERROR: Docker tag exceeds 128 characters: ${INPUT_IMAGE_TAG}"
+              exit 1
+            fi
+            if ! echo "${INPUT_IMAGE_TAG}" | grep -xE '^[a-zA-Z0-9]([a-zA-Z0-9._-]{0,126}[a-zA-Z0-9])?$'; then
+              echo "❌ ERROR: Invalid Docker tag format (must start/end with alphanumeric, contain only [a-zA-Z0-9._-]): ${INPUT_IMAGE_TAG}"
+              exit 1
+            fi
+            # Use provided image_tag for both
+            echo "operator_image_tag=${INPUT_IMAGE_TAG}" >> $GITHUB_OUTPUT
+            echo "gateway_image_tag=${INPUT_IMAGE_TAG}" >> $GITHUB_OUTPUT
+            echo "Using custom image_tag: ${INPUT_IMAGE_TAG}"
+          else
+            # Use component-specific versions
+            OPERATOR_IMG="v${OPERATOR_VERSION}"
+            GATEWAY_IMG="v${GATEWAY_VERSION}"
+            echo "operator_image_tag=${OPERATOR_IMG}" >> $GITHUB_OUTPUT
+            echo "gateway_image_tag=${GATEWAY_IMG}" >> $GITHUB_OUTPUT
+            echo "Using default image tags:"
+            echo "  Operator: ${OPERATOR_IMG}"
+            echo "  Gateway: ${GATEWAY_IMG}"
+          fi
+
+  build-operator:
+    name: Build operator image
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.setup.outputs.source_tag }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and save operator image
+        env:
+          OPERATOR_VERSION: ${{ needs.setup.outputs.operator_version }}
+          GATEWAY_VERSION: ${{ needs.setup.outputs.gateway_version }}
+          DATA_INDEX_VERSION: ${{ needs.setup.outputs.data_index_version }}
+          QUARKUS_FLOW_RUNNER_VERSION: ${{ needs.setup.outputs.quarkus_flow_runner_version }}
+          GIT_COMMIT: ${{ needs.setup.outputs.git_commit }}
+          OPERATOR_IMAGE_TAG: ${{ needs.setup.outputs.operator_image_tag }}
+        run: |
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --build-arg GIT_COMMIT="${GIT_COMMIT}" \
+            --build-arg OPERATOR_VERSION="${OPERATOR_VERSION}" \
+            --build-arg GATEWAY_VERSION="${GATEWAY_VERSION}" \
+            --build-arg DATA_INDEX_VERSION="${DATA_INDEX_VERSION}" \
+            --build-arg QUARKUS_FLOW_RUNNER_VERSION="${QUARKUS_FLOW_RUNNER_VERSION}" \
+            --pull \
+            -f Dockerfile \
+            -t "localhost/kubesmarts/logic-operator:${OPERATOR_IMAGE_TAG}" \
+            -o type=oci,dest=artifact-operator.tar \
+            .
+
+          gzip artifact-operator.tar
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifact-operator
+          path: artifact-operator.tar.gz
+          retention-days: 1
+
+  build-gateway:
+    name: Build gateway image
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.setup.outputs.source_tag }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and save gateway image
+        env:
+          GATEWAY_IMAGE_TAG: ${{ needs.setup.outputs.gateway_image_tag }}
+        run: |
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --pull \
+            -f workflow-gateway/Dockerfile \
+            -t "localhost/kubesmarts/workflow-gateway:${GATEWAY_IMAGE_TAG}" \
+            -o type=oci,dest=artifact-gateway.tar \
+            .
+
+          gzip artifact-gateway.tar
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifact-gateway
+          path: artifact-gateway.tar.gz
+          retention-days: 1
+
+  push-operator:
+    name: Publish operator image
+    needs: [setup, build-operator]
+    uses: ./.github/workflows/publish-one-image.yaml
+    with:
+      image_name: kubesmarts/logic-operator
+      image_tag: ${{ needs.setup.outputs.operator_image_tag }}
+      artifact_name: artifact-operator
+    secrets: inherit
+
+  push-gateway:
+    name: Publish gateway image
+    needs: [setup, build-gateway]
+    uses: ./.github/workflows/publish-one-image.yaml
+    with:
+      image_name: kubesmarts/workflow-gateway
+      image_tag: ${{ needs.setup.outputs.gateway_image_tag }}
+      artifact_name: artifact-gateway
+    secrets: inherit
+
+  summary:
+    name: Summary
+    needs: [setup, push-operator, push-gateway]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Display summary
+        env:
+          SOURCE_TAG: ${{ needs.setup.outputs.source_tag }}
+          OPERATOR_VERSION: ${{ needs.setup.outputs.operator_version }}
+          GATEWAY_VERSION: ${{ needs.setup.outputs.gateway_version }}
+          DATA_INDEX_VERSION: ${{ needs.setup.outputs.data_index_version }}
+          QUARKUS_FLOW_RUNNER_VERSION: ${{ needs.setup.outputs.quarkus_flow_runner_version }}
+          OPERATOR_IMAGE_TAG: ${{ needs.setup.outputs.operator_image_tag }}
+          GATEWAY_IMAGE_TAG: ${{ needs.setup.outputs.gateway_image_tag }}
+          OPERATOR_DIGEST: ${{ needs.push-operator.outputs.digest }}
+          GATEWAY_DIGEST: ${{ needs.push-gateway.outputs.digest }}
+        run: |
+          echo "### ✅ All Images Published Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Source Tag:** \`${SOURCE_TAG}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Component Versions:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Operator: \`${OPERATOR_VERSION}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Workflow Gateway: \`${GATEWAY_VERSION}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Published Images:**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`quay.io/kubesmarts/logic-operator:${OPERATOR_IMAGE_TAG}\`" >> $GITHUB_STEP_SUMMARY
+          echo "  Digest: \`${OPERATOR_DIGEST}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`quay.io/kubesmarts/workflow-gateway:${GATEWAY_IMAGE_TAG}\`" >> $GITHUB_STEP_SUMMARY
+          echo "  Digest: \`${GATEWAY_DIGEST}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Platforms:** linux/amd64, linux/arm64" >> $GITHUB_STEP_SUMMARY

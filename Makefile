@@ -1,5 +1,9 @@
 include versions.mk
 
+.PHONY: help
+help: ## Display this help.
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+
 VERSION_PACKAGE = github.com/kubesmarts/logic-operator/api/version
 DOCS_VERSION_ATTRIBUTES = docs/antora/modules/ROOT/partials/versions.adoc
 VERSION_LDFLAGS = -X $(VERSION_PACKAGE).gitCommit=$(GIT_COMMIT) \
@@ -85,6 +89,12 @@ SHELL = /usr/bin/env bash -o pipefail
 .PHONY: all
 all: build
 
+.PHONY: print-versions
+print-versions: ## Print resolved release versions and source commit as key=value lines.
+	@printf 'operator_version=%s\ngateway_version=%s\ndata_index_version=%s\nquarkus_flow_runner_version=%s\ngit_commit=%s\n' \
+		'$(OPERATOR_VERSION)' '$(GATEWAY_VERSION)' '$(DATA_INDEX_VERSION)' \
+		'$(QUARKUS_FLOW_RUNNER_VERSION)' '$(GIT_COMMIT)'
+
 ##@ General
 
 # The help target prints out all targets with their descriptions organized
@@ -97,10 +107,6 @@ all: build
 # https://en.wikipedia.org/wiki/ANSI_escape_code#SGR_parameters
 # More info on the awk command:
 # http://linuxcommand.org/lc3_adv_awk.php
-
-.PHONY: help
-help: ## Display this help.
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
 ##@ Documentation
 
