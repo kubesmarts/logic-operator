@@ -41,7 +41,7 @@ spec:
     enabled: false
   workflowGateway:
     application:
-      image: kubesmarts.org/workflow-gateway:v%s
+      image: quay.io/kubesmarts/workflow-gateway:%s
     ingress:
       enabled: true
       host: %s

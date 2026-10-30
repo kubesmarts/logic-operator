@@ -11,7 +11,7 @@ spec:
   workflowGateway:
     application:
       # Keep aligned with GATEWAY_VERSION in versions.mk; kind-demo builds and loads this tag.
-      image: kubesmarts.org/workflow-gateway:v2.0.0-Alpha1
+      image: quay.io/kubesmarts/workflow-gateway:2.0.0-Alpha2
       replicas: 1
     ingress:
       enabled: true
