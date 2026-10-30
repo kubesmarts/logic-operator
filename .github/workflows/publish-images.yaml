@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       source_tag:
-        description: 'Release tag to build from (e.g., v2.0.0-Alpha1)'
+        description: 'Git release tag to build from (e.g., v2.0.0-Alpha2)'
         required: true
         type: string
       image_tag:
-        description: 'Docker image tag (e.g., v2.0.0-Alpha1). If empty, uses v${OPERATOR_VERSION} and v${GATEWAY_VERSION}'
+        description: 'Optional image tag for both images (e.g., 2.0.0-Alpha2). If empty, uses OPERATOR_VERSION and GATEWAY_VERSION as-is.'
         required: false
         type: string
 
@@ -103,8 +103,8 @@ jobs:
             echo "Using custom image_tag: ${INPUT_IMAGE_TAG}"
           else
             # Use component-specific versions
-            OPERATOR_IMG="v${OPERATOR_VERSION}"
-            GATEWAY_IMG="v${GATEWAY_VERSION}"
+            OPERATOR_IMG="${OPERATOR_VERSION}"
+            GATEWAY_IMG="${GATEWAY_VERSION}"
             echo "operator_image_tag=${OPERATOR_IMG}" >> $GITHUB_OUTPUT
             echo "gateway_image_tag=${GATEWAY_IMG}" >> $GITHUB_OUTPUT
             echo "Using default image tags:"

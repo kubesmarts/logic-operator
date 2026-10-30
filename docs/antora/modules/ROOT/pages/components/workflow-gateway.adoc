@@ -120,7 +120,7 @@ Adding `workflowGateway` to a `LogicPlatform` enables reconciliation of the foll
 * an optional Kubernetes Ingress or OpenShift Route, also named after the gateway.
 
 For this release, the default image is
-`kubesmarts.org/workflow-gateway:v{workflow-gateway-version}`. The admission webhook writes the
+`quay.io/kubesmarts/workflow-gateway:{workflow-gateway-version}`. The admission webhook writes the
 gateway image version embedded in its build into the LogicPlatform spec unless
 `workflowGateway.application.image` overrides it. The replica field is left unset when omitted.
 The resulting Kubernetes Deployment starts at one replica, and leaving the field unset lets an

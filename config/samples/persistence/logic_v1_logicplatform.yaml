@@ -20,7 +20,7 @@ spec:
       enabled: true
   workflowGateway:
     application:
-      image: kubesmarts.org/workflow-gateway:v2.0.0-Alpha1
+      image: quay.io/kubesmarts/workflow-gateway:2.0.0-Alpha2
       replicas: 1
     ingress:
       enabled: true

@@ -41,7 +41,7 @@ func DefaultVectorImage() string {
 // DefaultGatewayImage returns the workflow-gateway image version bundled with
 // this operator release.
 func DefaultGatewayImage() string {
-	return fmt.Sprintf("kubesmarts.org/workflow-gateway:v%s", version.GetWorkflowGatewayVersion())
+	return fmt.Sprintf("quay.io/kubesmarts/workflow-gateway:%s", version.GetWorkflowGatewayVersion())
 }
 
 // DefaultDataIndexResources returns default resource requirements for Data Index based on helm values.

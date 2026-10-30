@@ -34,7 +34,7 @@ Build the container image using the independently configured `GATEWAY_VERSION` i
 make docker-build-gateway
 ```
 
-The default image tag is `kubesmarts.org/workflow-gateway:v$(GATEWAY_VERSION)`. When running in
+The default image tag is `quay.io/kubesmarts/workflow-gateway:$(GATEWAY_VERSION)`. When running in
 Kubernetes, `LogicPlatform` defaults the gateway image to the version embedded in the operator
 build. Set `spec.workflowGateway.application.image` to override it.
 
@@ -46,7 +46,7 @@ The public API listener defaults to `:8080`. The management listener defaults to
 Containerized development runs can publish both ports:
 
 ```bash
-docker run --rm -p 8080:8080 -p 8081:8081 kubesmarts.org/workflow-gateway:v<version>
+docker run --rm -p 8080:8080 -p 8081:8081 quay.io/kubesmarts/workflow-gateway:<version>
 ```
 
 ## Listeners

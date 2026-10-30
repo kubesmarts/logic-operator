@@ -48,8 +48,8 @@ IMAGE_TAG_BASE ?= kubesmarts.org/logic-operator
 BUNDLE_IMG ?= $(IMAGE_TAG_BASE)-bundle:v$(OPERATOR_VERSION)
 
 # Workflow Gateway image configuration
-GATEWAY_IMAGE_TAG_BASE ?= kubesmarts.org/workflow-gateway
-GATEWAY_IMG ?= $(GATEWAY_IMAGE_TAG_BASE):v$(GATEWAY_VERSION)
+GATEWAY_IMAGE_TAG_BASE ?= quay.io/kubesmarts/workflow-gateway
+GATEWAY_IMG ?= $(GATEWAY_IMAGE_TAG_BASE):$(GATEWAY_VERSION)
 
 # BUNDLE_GEN_FLAGS are the flags passed to the operator-sdk generate bundle command
 BUNDLE_GEN_FLAGS ?= -q --overwrite --version $(OPERATOR_VERSION) $(BUNDLE_METADATA_OPTS)
@@ -172,7 +172,7 @@ test-gateway-integration: ## Run workflow gateway integration tests (mounts loca
 # - CRDs and operator deployment
 #
 KIND_CLUSTER ?= logic-operator-test-e2e
-E2E_IMG ?= example.com/logic-operator:v$(OPERATOR_VERSION)
+E2E_IMG ?= example.com/logic-operator:$(OPERATOR_VERSION)
 
 .PHONY: setup-test-e2e
 setup-test-e2e: manifests generate fmt vet ## Set up complete E2E test infrastructure (cluster, cert-manager, operator)
