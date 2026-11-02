@@ -18,6 +18,15 @@ The charts are published as OCI artifacts in GitHub Container Registry and are a
 * cert-manager installed before the operator. The operator's webhook certificates are managed through cert-manager resources.
 * For the stack chart, a default StorageClass or a configured PostgreSQL StorageClass when persistence is enabled.
 
+[TIP]
+====
+For a local KIND cluster, `make kind-create` from a repository checkout
+creates the cluster and, on first creation, loads the Quarkus Flow runner images
+and installs ingress-nginx and cert-manager. It prepares the cluster only;
+install the released operator or stack with the Helm commands below. If the KIND
+cluster already exists, the recipe skips cluster and add-on setup.
+====
+
 == Install cert-manager
 
 Install cert-manager before installing either chart. The repository's `make kind-create` recipe installs cert-manager `v1.16.3` on a newly created KIND cluster. The recipe skips cluster creation and addon installation when that KIND cluster already exists.

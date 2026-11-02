@@ -80,7 +80,10 @@ func DefaultVectorResources() corev1.ResourceRequirements {
 	}
 }
 
-func (d *LogicPlatformDefaulter) Default(_ context.Context, plat *LogicPlatform) error {
+// ApplyLogicPlatformDefaults applies the defaults used by both the admission
+// webhook and the controller. The controller also applies these defaults so
+// it can reconcile LogicPlatforms created before the webhook is available.
+func ApplyLogicPlatformDefaults(plat *LogicPlatform) {
 
 	// Note: DataIndex.Enabled defaults to true via +kubebuilder:default=true annotation
 	// The API server applies this default, so we don't need to handle it in the webhook
@@ -136,6 +139,10 @@ func (d *LogicPlatformDefaulter) Default(_ context.Context, plat *LogicPlatform)
 		// Do NOT default replicas — let Deployment default to 1 and allow HPA ownership
 	}
 
+}
+
+func (d *LogicPlatformDefaulter) Default(_ context.Context, plat *LogicPlatform) error {
+	ApplyLogicPlatformDefaults(plat)
 	return nil
 }
 

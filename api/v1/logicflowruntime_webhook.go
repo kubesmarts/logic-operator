@@ -13,15 +13,19 @@ type LogicFlowRuntimeDefaulter struct{}
 
 var _ admission.Defaulter[*LogicFlowRuntime] = &LogicFlowRuntimeDefaulter{}
 
-// Default sets Replicas to 1 if not specified.
-// We use a webhook instead of +kubebuilder:default=1 because ApplicationSpec is also used by LogicPlatform.DataIndex,
-// which needs to support HPA management without operator enforcement. The webhook allows us to apply the default
-// conditionally only for LogicFlowRuntime, leaving DataIndex.Application.Replicas nil for HPA to manage freely.
-func (d *LogicFlowRuntimeDefaulter) Default(_ context.Context, obj *LogicFlowRuntime) error {
+// ApplyLogicFlowRuntimeDefaults applies runtime-specific defaults used by both
+// the admission webhook and controller. ApplicationSpec is also used by
+// LogicPlatform.DataIndex, where replicas must remain unset to allow HPA
+// management, so this default is conditional on the resource kind.
+func ApplyLogicFlowRuntimeDefaults(obj *LogicFlowRuntime) {
 	if obj.Spec.Replicas == nil {
 		one := int32(1)
 		obj.Spec.Replicas = &one
 	}
+}
+
+func (d *LogicFlowRuntimeDefaulter) Default(_ context.Context, obj *LogicFlowRuntime) error {
+	ApplyLogicFlowRuntimeDefaults(obj)
 	return nil
 }
 

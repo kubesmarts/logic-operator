@@ -79,6 +79,10 @@ func (r *LogicPlatformReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if err := r.Get(ctx, req.NamespacedName, &plat); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+	// The object may have been created before the admission webhook was
+	// available. Apply the same defaults here so reconciliation is independent
+	// of webhook startup order.
+	logicv1.ApplyLogicPlatformDefaults(&plat)
 
 	if err := r.reconcileDataIndex(ctx, &plat); err != nil {
 		return ctrl.Result{}, err
