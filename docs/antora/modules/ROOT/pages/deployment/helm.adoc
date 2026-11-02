@@ -185,5 +185,5 @@ helm upgrade --install logic-operator \
   oci://ghcr.io/kubesmarts/charts/logic-operator \
   --version {operator-version} \
   --namespace logic-operator-system \
-  --set image.tag=2.0.0-Alpha2
+  --set image.tag={operator-version}
 ----

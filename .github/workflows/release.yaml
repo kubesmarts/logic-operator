@@ -31,15 +31,20 @@ jobs:
 
       - name: Validate operator version
         id: validate
+        env:
+          OPERATOR_VERSION: ${{ steps.versions.outputs.operator_version }}
         run: |
-          OPERATOR_VERSION="${{ steps.versions.outputs.operator_version }}"
-
           if [ -z "${OPERATOR_VERSION}" ]; then
             echo "❌ ERROR: OPERATOR_VERSION is empty"
             exit 1
           fi
 
-          if [[ "${OPERATOR_VERSION}" == *"-SNAPSHOT" ]]; then
+          if [[ ! "${OPERATOR_VERSION}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "❌ ERROR: OPERATOR_VERSION must be a valid Helm SemVer version (for example, 2.0.0-Alpha3)"
+            exit 1
+          fi
+
+          if [[ "${OPERATOR_VERSION}" == *"-SNAPSHOT"* ]]; then
             echo "❌ ERROR: Cannot release SNAPSHOT version ${OPERATOR_VERSION}"
             exit 1
           fi
@@ -154,7 +159,9 @@ jobs:
           version: v3.17.3
 
       - name: Package Helm charts and CRDs
-        run: make helm-package OPERATOR_VERSION=${{ needs.validate.outputs.operator_version }}
+        env:
+          OPERATOR_VERSION: ${{ needs.validate.outputs.operator_version }}
+        run: make helm-package "OPERATOR_VERSION=${OPERATOR_VERSION}"
 
       - name: Check release tag
         id: check-tag
@@ -209,9 +216,11 @@ jobs:
         run: echo "${GH_TOKEN}" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
 
       - name: Publish Helm charts to GHCR
+        env:
+          OPERATOR_VERSION: ${{ needs.validate.outputs.operator_version }}
         run: |
-          helm push dist/helm/logic-operator-${{ needs.validate.outputs.operator_version }}.tgz oci://ghcr.io/kubesmarts/charts
-          helm push dist/helm/logic-operator-stack-${{ needs.validate.outputs.operator_version }}.tgz oci://ghcr.io/kubesmarts/charts
+          helm push "dist/helm/logic-operator-${OPERATOR_VERSION}.tgz" oci://ghcr.io/kubesmarts/charts
+          helm push "dist/helm/logic-operator-stack-${OPERATOR_VERSION}.tgz" oci://ghcr.io/kubesmarts/charts
 
       - name: Summary
         env:

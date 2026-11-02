@@ -99,6 +99,8 @@ spec:
                   key: POSTGRESQL_PASSWORD
             - name: POSTGRES_DB
               value: {{ .Values.postgresql.auth.database | quote }}
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
           readinessProbe:
             exec:
               command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
