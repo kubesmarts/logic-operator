@@ -1,0 +1,5 @@
+image:
+  repository: quay.io/kubesmarts/logic-operator
+  # Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent

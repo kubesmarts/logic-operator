@@ -66,6 +66,9 @@ func (r *LogicFlowRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	if err := r.Get(ctx, req.NamespacedName, &rt); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+	// Apply runtime defaults in the manager as well as admission so a runtime
+	// created before the webhook is ready still gets its expected replica count.
+	logicv1.ApplyLogicFlowRuntimeDefaults(&rt)
 
 	configMaps, err := r.listConfigMaps(ctx, &rt)
 	if err != nil {

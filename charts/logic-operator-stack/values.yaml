@@ -1,0 +1,32 @@
+logic-operator:
+  image:
+    repository: quay.io/kubesmarts/logic-operator
+    tag: ""
+    pullPolicy: IfNotPresent
+
+logicPlatform:
+  name: ""
+  dataIndex:
+    enabled: true
+    vector:
+      enabled: true
+  workflowGateway:
+    replicas: 1
+    # Leave empty to use the gateway image version embedded in the operator.
+    image: ""
+    ingress:
+      enabled: false
+      host: ""
+      className: ""
+
+postgresql:
+  image: postgres:16-alpine
+  auth:
+    username: logicflow
+    password: logicflow
+    database: logicflow
+    existingSecret: ""
+  persistence:
+    enabled: true
+    storageClassName: ""
+    size: 8Gi

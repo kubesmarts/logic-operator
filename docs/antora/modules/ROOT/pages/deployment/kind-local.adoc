@@ -3,8 +3,9 @@ include::partial$versions.adoc[]
 = Local Development with KIND
 :description: Run Logic Operator on your laptop using a KIND cluster.
 
-This guide walks through creating a local Kubernetes cluster with KIND, deploying the operator, and running the hello-world sample.
-The entire setup takes three `make` commands.
+This is the developer and contributor path for building and running the source in a local Git checkout. Every `make kind-*` build uses the code and configuration in the currently checked-out branch, including local uncommitted changes; it does not install a published release. Choose the branch or commit you want to exercise before running the recipes.
+
+For a published operator version on a cluster you manage, use xref:deployment/install.adoc[Installation options] and the xref:deployment/helm.adoc[Helm installation guide].
 
 == Prerequisites
 
@@ -15,6 +16,35 @@ Install the following tools before starting:
 * https://kubernetes.io/docs/tasks/tools/[kubectl] v1.30+
 * https://kind.sigs.k8s.io/docs/user/quick-start/#installation[KIND] v0.20+
 * https://kubectl.docs.kubernetes.io/installation/kustomize/[kustomize] (installed automatically by `make`)
+
+== KIND Make targets
+
+Run these targets from the repository root of your local clone:
+
+[cols="1,3",options="header"]
+|===
+|Target |Purpose
+
+|`make kind-create`
+|Create the local cluster and install cert-manager and ingress-nginx.
+
+|`make kind-deploy`
+|Build the operator from the current checkout, load that image into KIND, and apply the manifests.
+
+|`make kind-build-gateway`
+|Build the gateway image from the current checkout and load it into KIND.
+
+|`make kind-demo`
+|Build/load the gateway and apply the sample workflow resources. Create and deploy the cluster first.
+
+|`make kind-undemo`
+|Remove the sample Logic Operator resources.
+
+|`make kind-delete`
+|Delete the local development cluster.
+|===
+
+The `kind-*` targets use the local KIND cluster named `logic-operator-dev` by default. They do not install the operator into a remote cluster. Run `make help` from the repository root to see the available target descriptions.
 
 == Step 1: Create the Cluster
 
@@ -45,7 +75,7 @@ make kind-deploy
 
 This target:
 
-. Builds the operator image tagged `controller:dev`
+. Builds the local operator source as `quay.io/kubesmarts/logic-operator:{operator-version}`
 . Loads the image into the KIND cluster
 . Applies `config/default` via kustomize with server-side apply
 . Waits for all deployments in `logic-operator-system` to become available

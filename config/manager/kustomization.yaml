@@ -5,4 +5,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: quay.io/kubesmarts/logic-operator
-  newTag: 2.0.0-Alpha2
+  newTag: 2.0.0-Alpha3

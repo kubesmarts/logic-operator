@@ -127,6 +127,12 @@ docs-versions: ## Generate Antora version attributes from versions.mk.
 	' docs/antora/antora.yml > docs/antora/antora.yml.tmp
 	@mv docs/antora/antora.yml.tmp docs/antora/antora.yml
 
+##@ Helm charts
+
+.PHONY: helm-package
+helm-package: kustomize ## Generate and package both Helm charts and CRDs for a release (requires Helm).
+	python3 tools/package-helm-charts.py $(OPERATOR_VERSION)
+
 ##@ Development
 
 .PHONY: manifests
@@ -172,7 +178,8 @@ test-gateway-integration: ## Run workflow gateway integration tests (mounts loca
 # - CRDs and operator deployment
 #
 KIND_CLUSTER ?= logic-operator-test-e2e
-E2E_IMG ?= example.com/logic-operator:$(OPERATOR_VERSION)
+KIND_OPERATOR_IMG ?= quay.io/kubesmarts/logic-operator:$(OPERATOR_VERSION)
+E2E_IMG ?= $(KIND_OPERATOR_IMG)
 
 .PHONY: setup-test-e2e
 setup-test-e2e: manifests generate fmt vet ## Set up complete E2E test infrastructure (cluster, cert-manager, operator)
@@ -338,7 +345,7 @@ kind-create: ## Create a KIND cluster for local development.
 			$(KIND) load docker-image $(QUARKUS_FLOW_RUNNER_STANDARD_IMG) --name $(KIND_DEV_CLUSTER) ;; \
 	esac
 
-KIND_IMG ?= controller:dev
+KIND_IMG ?= $(KIND_OPERATOR_IMG)
 
 .PHONY: kind-build-gateway
 kind-build-gateway: ## Build and load the configured gateway image into KIND.
@@ -365,7 +372,7 @@ kind-demo: kind-build-gateway ## Apply the gateway-backed hello workflow sample.
 	@echo "  kubectl get logicplatform,logicflowruntimes,logicflowdefinitions"
 	@echo ""
 	@echo "Call the synchronous hello workflow through the gateway ingress:"
-	@echo "  curl -X POST http://gateway.lvh.me/v1/runtime/examples/hello-world/1.0.0/sync -H 'Content-Type: application/json' -d '{\"name\":\"World\"}'"
+	@echo "  curl -X POST http://gateway.lvh.me/v1/runtime/default/hello-world/1.0.0/sync -H 'Content-Type: application/json' -d '{\"name\":\"World\"}'"
 
 .PHONY: kind-undemo
 kind-undemo: ## Remove sample CRs from the KIND cluster.

@@ -1,0 +1,189 @@
+include::partial$versions.adoc[]
+
+= Installing a Released Version with Helm
+:description: Install and upgrade released Logic Operator Helm charts
+
+The release workflow packages two Helm charts and a versioned CRD bundle:
+
+* `logic-operator` installs the operator and its required Kubernetes resources.
+* `logic-operator-stack` installs the operator, PostgreSQL, and a `LogicPlatform` custom resource. The operator then manages the Workflow Gateway and Data Index components.
+* `crds.yaml` contains the Logic Operator custom resource definitions. The charts do not contain CRDs; apply this file separately before a first install and before each chart upgrade.
+
+The charts are published as OCI artifacts in GitHub Container Registry and are also attached to each GitHub Release. Run the *Publish Images* workflow for the release before installing the charts so the referenced Quay images are available.
+
+== Requirements
+
+* A Kubernetes cluster and a working `kubectl` context. The chart does not create or configure a cluster.
+* Helm 3.8 or later, with OCI registry support.
+* cert-manager installed before the operator. The operator's webhook certificates are managed through cert-manager resources.
+* For the stack chart, a default StorageClass or a configured PostgreSQL StorageClass when persistence is enabled.
+
+[TIP]
+====
+For a local KIND cluster, `make kind-create` from a repository checkout
+creates the cluster and, on first creation, loads the Quarkus Flow runner images
+and installs ingress-nginx and cert-manager. It prepares the cluster only;
+install the released operator or stack with the Helm commands below. If the KIND
+cluster already exists, the recipe skips cluster and add-on setup.
+====
+
+== Install cert-manager
+
+Install cert-manager before installing either chart. The repository's `make kind-create` recipe installs cert-manager `v1.16.3` on a newly created KIND cluster. The recipe skips cluster creation and addon installation when that KIND cluster already exists.
+
+For a user-managed cluster, use the same pinned release manifest:
+
+[source,bash]
+----
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.3/cert-manager.yaml
+kubectl wait --namespace cert-manager \
+  --for=condition=available deployment --all --timeout=180s
+kubectl wait --for=condition=Established --timeout=60s \
+  crd/certificates.cert-manager.io crd/issuers.cert-manager.io
+----
+
+If cert-manager is already installed, verify its deployments are available and these CRDs are established before continuing. If you manage cert-manager with Helm or another installation method, keep using that method and follow its upgrade instructions.
+
+== Install the CRDs
+
+Apply the CRDs from the release before installing either chart. Helm does not manage this bundle; it is attached to the GitHub Release as a standalone asset.
+
+[source,bash]
+----
+VERSION={operator-version}
+curl -fsSL "https://github.com/kubesmarts/logic-operator/releases/download/v${VERSION}/crds.yaml" \
+  | kubectl apply --server-side -f -
+----
+
+Repeat this step with the target release version before upgrading the chart. This ensures the cluster has the CRD schema required by that release.
+
+== Install the operator only
+
+[source,bash]
+----
+helm install logic-operator \
+  oci://ghcr.io/kubesmarts/charts/logic-operator \
+  --version {operator-version} \
+  --namespace logic-operator-system \
+  --create-namespace
+----
+
+The operator image defaults to `quay.io/kubesmarts/logic-operator:{operator-version}`. Override it when needed:
+
+[source,bash]
+----
+helm upgrade --install logic-operator \
+  oci://ghcr.io/kubesmarts/charts/logic-operator \
+  --version {operator-version} \
+  --namespace logic-operator-system \
+  --set image.repository=quay.io/kubesmarts/logic-operator \
+  --set image.tag={operator-version}
+----
+
+== Expose the Workflow Gateway
+
+Gateway exposure is opt-in. Set `logicPlatform.workflowGateway.ingress.enabled` and choose a host appropriate for the cluster. Helm cannot reliably determine whether a cluster has a working Ingress controller, so the chart does not enable external access automatically.
+
+=== KIND with ingress-nginx
+
+The repository's `make kind-create` recipe configures ingress-nginx and maps HTTP to the local machine. Use the same wildcard DNS host as the development sample:
+
+[source,yaml]
+----
+logicPlatform:
+  workflowGateway:
+    ingress:
+      enabled: true
+      host: gateway.lvh.me
+      className: nginx
+----
+
+`lvh.me` resolves to `127.0.0.1`; this host is useful for a local KIND cluster configured with the repository's ingress setup. It is not a general hostname for remote clusters.
+
+=== OpenShift
+
+The operator detects OpenShift and creates a Route when gateway ingress is enabled. Provide a host from the cluster's apps domain:
+
+[source,yaml]
+----
+logicPlatform:
+  workflowGateway:
+    ingress:
+      enabled: true
+      host: gateway.apps.example.com
+----
+
+Do not set `className` for an OpenShift Route. The current `LogicPlatform` validation requires a host, so use an explicit apps-domain hostname.
+
+=== Other Kubernetes clusters
+
+Set `host` to a DNS name that resolves to the cluster's external ingress address. Set `className` to the installed controller's IngressClass; omit it to use the cluster's default class. Enabling this setting creates a Kubernetes Ingress, but the cluster must already have a compatible Ingress controller and DNS configured.
+
+== Install the sample stack
+
+[source,bash]
+----
+helm install logic-stack \
+  oci://ghcr.io/kubesmarts/charts/logic-operator-stack \
+  --version {operator-version} \
+  --namespace logic-operator-system \
+  --create-namespace
+----
+
+The sample stack uses PostgreSQL with a demo username and password. Set a private password before using it beyond a disposable development cluster. For example, save values in a local file and pass it with `--values`:
+
+[source,yaml]
+----
+postgresql:
+  auth:
+    username: logicflow
+    password: replace-this-demo-password
+    database: logicflow
+logicPlatform:
+  workflowGateway:
+    ingress:
+      enabled: true
+      host: gateway.example.com
+      className: nginx
+----
+
+[source,bash]
+----
+helm upgrade --install logic-stack \
+  oci://ghcr.io/kubesmarts/charts/logic-operator-stack \
+  --version {operator-version} \
+  --namespace logic-operator-system \
+  --values my-values.yaml
+----
+
+The stack chart enables Vector by default so Data Index can ingest workflow history. If Vector is not suitable for your cluster, set `logicPlatform.dataIndex.vector.enabled` to `false` in your values file.
+
+== Upgrade
+
+The Helm charts intentionally exclude CRDs. Before upgrading, apply the CRD bundle from the target GitHub Release to the cluster with server-side apply:
+
+[source,bash]
+----
+VERSION={operator-version}
+curl -fsSL "https://github.com/kubesmarts/logic-operator/releases/download/v${VERSION}/crds.yaml" \
+  | kubectl apply --server-side -f -
+helm upgrade logic-operator \
+  oci://ghcr.io/kubesmarts/charts/logic-operator \
+  --version "${VERSION}" \
+  --namespace logic-operator-system
+----
+
+For the stack chart, replace `logic-operator` with `logic-stack` and use the `logic-operator-stack` chart reference. Use the release version without the leading `v` for Helm's `--version`; the GitHub tag and CRD asset URL use the leading `v`.
+
+== Choose an image tag
+
+The operator chart's default image tag is its chart `appVersion`, which matches the released operator version. It can be overridden without changing the chart version:
+
+[source,bash]
+----
+helm upgrade --install logic-operator \
+  oci://ghcr.io/kubesmarts/charts/logic-operator \
+  --version {operator-version} \
+  --namespace logic-operator-system \
+  --set image.tag={operator-version}
+----

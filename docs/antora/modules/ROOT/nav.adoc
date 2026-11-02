@@ -20,7 +20,9 @@
 
 * Deployment
 ** xref:deployment/overview.adoc[Overview]
-** xref:deployment/kind-local.adoc[Local Development (KIND)]
+** xref:deployment/install.adoc[Installation Options]
+** xref:deployment/helm.adoc[Install a Release with Helm]
+** xref:deployment/kind-local.adoc[Developer Guide: Local KIND]
 ** xref:deployment/production.adoc[Production]
 ** xref:deployment/monitoring.adoc[Monitoring & Observability]
 ** xref:deployment/releases.adoc[Releases & Image Publishing]
