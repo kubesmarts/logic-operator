@@ -140,6 +140,7 @@ jobs:
     needs: [validate, gateway-integration, e2e]
     permissions:
       contents: write
+      packages: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -147,42 +148,70 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Check if tag already exists
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.17.3
+
+      - name: Package Helm charts and CRDs
+        run: make helm-package OPERATOR_VERSION=${{ needs.validate.outputs.operator_version }}
+
+      - name: Check release tag
         id: check-tag
         env:
           OPERATOR_VERSION: ${{ needs.validate.outputs.operator_version }}
+          RELEASE_COMMIT: ${{ github.sha }}
         run: |
           git fetch origin --tags
           TAG="v${OPERATOR_VERSION}"
           if git rev-parse "${TAG}" >/dev/null 2>&1; then
-            echo "❌ ERROR: Tag ${TAG} already exists"
-            exit 1
+            EXISTING_COMMIT=$(git rev-list -n 1 "${TAG}")
+            if [ "${EXISTING_COMMIT}" != "${RELEASE_COMMIT}" ]; then
+              echo "❌ ERROR: Tag ${TAG} already exists at a different commit"
+              exit 1
+            fi
+            echo "tag_exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag_exists=false" >> "$GITHUB_OUTPUT"
           fi
-          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
-      - name: Create annotated tag
+      - name: Create and push annotated tag
+        if: steps.check-tag.outputs.tag_exists != 'true'
         env:
           TAG: ${{ steps.check-tag.outputs.tag }}
-          GIT_COMMIT: ${{ needs.validate.outputs.git_commit }}
         run: |
           git config user.name "GitHub Actions"
           git config user.email "noreply@github.com"
-          git tag -a "${TAG}" -m "Release ${TAG}" ${{ github.sha }}
-
-      - name: Push tag
-        env:
-          TAG: ${{ steps.check-tag.outputs.tag }}
-        run: |
+          git tag -a "${TAG}" -m "Release ${TAG}" "${{ github.sha }}"
           git push origin "${TAG}"
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release if needed
         env:
           TAG: ${{ steps.check-tag.outputs.tag }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${TAG}" \
-            --title "Release ${TAG}" \
-            --generate-notes
+          if ! gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release create "${TAG}" \
+              --title "Release ${TAG}" \
+              --generate-notes
+          fi
+
+      - name: Attach charts and CRDs to GitHub Release
+        env:
+          TAG: ${{ steps.check-tag.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${TAG}" dist/helm/*.tgz dist/helm/crds.yaml --clobber
+
+      - name: Log in to GitHub Container Registry
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "${GH_TOKEN}" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
+
+      - name: Publish Helm charts to GHCR
+        run: |
+          helm push dist/helm/logic-operator-${{ needs.validate.outputs.operator_version }}.tgz oci://ghcr.io/kubesmarts/charts
+          helm push dist/helm/logic-operator-stack-${{ needs.validate.outputs.operator_version }}.tgz oci://ghcr.io/kubesmarts/charts
 
       - name: Summary
         env:
@@ -198,4 +227,5 @@ jobs:
           echo "- Operator: \`${OPERATOR_VERSION}\`" >> $GITHUB_STEP_SUMMARY
           echo "- Workflow Gateway: \`${GATEWAY_VERSION}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Next Step:** Run the [Publish Images](../../actions/workflows/publish-images.yaml) workflow with \`source_tag: ${TAG}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Helm charts:** Published to GHCR and attached with `crds.yaml` to the GitHub Release." >> $GITHUB_STEP_SUMMARY
+          echo "**Next Step:** Run the [Publish Images](../../actions/workflows/publish-images.yaml) workflow with \`source_tag: ${TAG}\` before installing the chart." >> $GITHUB_STEP_SUMMARY

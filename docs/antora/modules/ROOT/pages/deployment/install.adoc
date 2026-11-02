@@ -1,0 +1,31 @@
+include::partial$versions.adoc[]
+
+= Installation Options
+:description: Choose between installing a released Logic Operator with Helm or developing from a local source checkout.
+
+Choose the installation path that matches your goal:
+
+[cols="1,2,2",options="header"]
+|===
+|Path |Use it when |What it installs
+
+|Released version with Helm
+|You want to try or operate a published version on a Kubernetes or OpenShift cluster that you manage.
+|A released operator chart, or the operator plus PostgreSQL and a sample LogicPlatform stack.
+
+|Local development with KIND
+|You are developing, testing, or contributing to Logic Operator from a source checkout.
+|The operator built from the currently checked-out branch and local sample resources in a disposable KIND cluster.
+|===
+
+== Install a release
+
+Use Helm to install the published `logic-operator` chart or the `logic-operator-stack` chart. You manage the target cluster and its prerequisites; the chart does not create a cluster.
+
+See xref:deployment/helm.adoc[Installing a Released Version with Helm] for commands, gateway exposure settings, and CRD upgrade instructions.
+
+== Develop from a local checkout
+
+Clone the repository and use the `make kind-*` recipes from its root directory. `make kind-deploy` builds from the active local branch and applies that version to the local KIND cluster; it does not use the published chart or image by default.
+
+See xref:deployment/kind-local.adoc[Local Development with KIND] for prerequisites, targets, and the hello-world walkthrough.

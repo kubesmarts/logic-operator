@@ -1,0 +1,10 @@
+apiVersion: v2
+name: logic-operator-stack
+description: Install the Logic Operator with a LogicPlatform, Workflow Gateway, and PostgreSQL.
+type: application
+version: 0.0.0
+appVersion: "0.0.0"
+dependencies:
+  - name: logic-operator
+    version: 0.0.0
+    repository: file://../logic-operator

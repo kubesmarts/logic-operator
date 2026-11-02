@@ -1,7 +1,7 @@
 = Getting Started
 :description: Deploy Logic Operator on a local KIND cluster and run your first workflow.
 
-This guide deploys Logic Operator on a local https://kind.sigs.k8s.io[KIND] cluster and runs the hello-world sample workflow end-to-end.
+This developer quickstart builds Logic Operator from the current local Git checkout, deploys it on https://kind.sigs.k8s.io[KIND], and runs the hello-world sample workflow end-to-end. For a published release, start with xref:deployment/install.adoc[Installation options] and the xref:deployment/helm.adoc[Helm guide].
 
 == Prerequisites
 

@@ -36,3 +36,6 @@ docs/superpowers
 # Generated configs (synced from Go module dependencies)
 internal/controller/configs/*
 !internal/controller/configs/.gitkeep
+
+# Generated Helm chart packages and staging files
+dist/helm/

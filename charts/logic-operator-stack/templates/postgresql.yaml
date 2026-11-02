@@ -1,0 +1,117 @@
+{{- if not .Values.postgresql.auth.existingSecret }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "logic-operator-stack.fullname" . }}-postgresql
+  labels:
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/instance: {{ .Release.Name }}
+type: Opaque
+data:
+  POSTGRESQL_USER: {{ .Values.postgresql.auth.username | b64enc | quote }}
+  POSTGRESQL_PASSWORD: {{ .Values.postgresql.auth.password | b64enc | quote }}
+  POSTGRES_USER: {{ .Values.postgresql.auth.username | b64enc | quote }}
+  POSTGRES_PASSWORD: {{ .Values.postgresql.auth.password | b64enc | quote }}
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "logic-operator-stack.fullname" . }}-postgresql
+  labels:
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: postgresql
+  selector:
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+{{- if and .Values.postgresql.persistence.enabled .Values.postgresql.persistence.storageClassName }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "logic-operator-stack.fullname" . }}-postgresql
+  labels:
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: {{ .Values.postgresql.persistence.storageClassName | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.postgresql.persistence.size }}
+{{- else if .Values.postgresql.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "logic-operator-stack.fullname" . }}-postgresql
+  labels:
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: {{ .Values.postgresql.persistence.size }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "logic-operator-stack.fullname" . }}-postgresql
+  labels:
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgresql
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgresql
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: postgresql
+          image: {{ .Values.postgresql.image | quote }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgresql
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgresql.auth.existingSecret | default (printf "%s-postgresql" (include "logic-operator-stack.fullname" .)) }}
+                  key: POSTGRESQL_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgresql.auth.existingSecret | default (printf "%s-postgresql" (include "logic-operator-stack.fullname" .)) }}
+                  key: POSTGRESQL_PASSWORD
+            - name: POSTGRES_DB
+              value: {{ .Values.postgresql.auth.database | quote }}
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          {{ if .Values.postgresql.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "logic-operator-stack.fullname" . }}-postgresql
+          {{ else }}
+          emptyDir: {}
+          {{ end }}

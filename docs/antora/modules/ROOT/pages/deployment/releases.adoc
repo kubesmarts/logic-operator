@@ -22,9 +22,12 @@ The Release workflow will:
 * Run all validation checks: formatting, generated code, linting, unit tests, gateway integration tests, and E2E tests
 * Create an annotated Git tag: `v${OPERATOR_VERSION}`
 * Create a GitHub Release with auto-generated release notes
+* Package the `logic-operator` and `logic-operator-stack` Helm charts
+* Attach both chart archives and `crds.yaml` to the GitHub Release
+* Publish both charts to `ghcr.io/kubesmarts/charts` using the built-in `GITHUB_TOKEN`
 * Provide the release tag in the workflow summary for use in the next step
 
-Example release tag: `v2.0.0-Alpha2`
+Example release tag: `v2.0.0-Alpha3`
 
 === What gets validated
 
@@ -42,8 +45,8 @@ Operator and gateway versions are independent and configured in `versions.mk`:
 
 [source,makefile]
 ----
-OPERATOR_VERSION ?= 2.0.0-Alpha2
-GATEWAY_VERSION ?= 2.0.0-Alpha2
+OPERATOR_VERSION ?= 2.0.0-Alpha3
+GATEWAY_VERSION ?= 2.0.0-Alpha3
 DATA_INDEX_VERSION ?= 2.0.0-SNAPSHOT-postgresql
 QUARKUS_FLOW_RUNNER_VERSION ?= 1.3.0
 ----
@@ -56,10 +59,10 @@ The *Publish Images* workflow builds multi-architecture images (linux/amd64, lin
 
 To publish images:
 
-1. Note the release tag created by the Release workflow (e.g., `v2.0.0-Alpha2`)
+1. Note the release tag created by the Release workflow (e.g., `v2.0.0-Alpha3`)
 2. Navigate to https://github.com/kubesmarts/logic-operator/actions/workflows/publish-images.yaml[Actions → Publish Images]
 3. Click **Run workflow**
-4. Enter the release tag in `source_tag` (e.g., `v2.0.0-Alpha2`)
+4. Enter the release tag in `source_tag` (e.g., `v2.0.0-Alpha3`)
 5. Leave `image_tag` empty to use component-specific versions, or provide a custom tag to apply to both images
 6. Click **Run workflow**
 
@@ -90,13 +93,13 @@ When `image_tag` is provided:
 For example, if the tag's `versions.mk` defines:
 [source]
 ----
-OPERATOR_VERSION=2.0.0-Alpha2
-GATEWAY_VERSION=2.0.0-Alpha2
+OPERATOR_VERSION=2.0.0-Alpha3
+GATEWAY_VERSION=2.0.0-Alpha3
 ----
 
 Running with `image_tag` empty publishes:
-- `quay.io/kubesmarts/logic-operator:2.0.0-Alpha2`
-- `quay.io/kubesmarts/workflow-gateway:2.0.0-Alpha2`
+- `quay.io/kubesmarts/logic-operator:2.0.0-Alpha3`
+- `quay.io/kubesmarts/workflow-gateway:2.0.0-Alpha3`
 
 Running with `image_tag: 2.0.0` publishes both to their respective `2.0.0` tags.
 
@@ -106,7 +109,7 @@ To rebuild and republish images from an existing release tag (for example, after
 
 1. Navigate to https://github.com/kubesmarts/logic-operator/actions/workflows/publish-images.yaml[Actions → Publish Images]
 2. Click **Run workflow**
-3. Enter the existing release tag in `source_tag` (e.g., `v2.0.0-Alpha2`)
+3. Enter the existing release tag in `source_tag` (e.g., `v2.0.0-Alpha3`)
 4. Leave both input fields as they are or provide the same `image_tag` as before
 5. Click **Run workflow**
 
@@ -132,7 +135,7 @@ To set up credentials:
 3. In GitHub: Settings → Secrets and variables → Actions
 4. Add `QUAY_ROBOT_ACCOUNT` (username) and `QUAY_ROBOT_TOKEN` (token)
 
-The Release workflow only uses the built-in `GITHUB_TOKEN` with `contents: write` permission and does not require any additional secrets.
+The Release workflow uses the built-in `GITHUB_TOKEN` with `contents: write` and `packages: write` permissions to create the release and publish the charts. Make the GHCR chart packages public in the package settings to support anonymous installs.
 
 == Multi-architecture images
 
@@ -147,7 +150,7 @@ After publishing, you can inspect the manifest:
 
 [source,bash]
 ----
-docker manifest inspect quay.io/kubesmarts/logic-operator:2.0.0-Alpha2 | jq '.manifests[] | .platform'
+docker manifest inspect quay.io/kubesmarts/logic-operator:2.0.0-Alpha3 | jq '.manifests[] | .platform'
 ----
 
 Both platforms should appear in the output.
@@ -157,7 +160,8 @@ Both platforms should appear in the output.
 === Release workflow
 
 Uses the built-in `GITHUB_TOKEN` with minimal required permissions:
-- `contents: write` — push release tag, create GitHub Release
+- `contents: write` — push release tag, create GitHub Release, and upload release assets
+- `packages: write` — publish Helm charts to GHCR
 
 === Publish Images workflow
 
@@ -167,3 +171,7 @@ Uses the built-in `GITHUB_TOKEN` with minimal required permissions:
 Image publishing to Quay.io uses `QUAY_ROBOT_ACCOUNT` and `QUAY_ROBOT_TOKEN` secrets, not GitHub credentials.
 
 Neither workflow modifies repository settings, accepts a GitHub App token, or uses a personal access token.
+
+== Helm charts and CRD upgrades
+
+Each release publishes `logic-operator` and `logic-operator-stack` as OCI charts under `ghcr.io/kubesmarts/charts`, and attaches the `.tgz` archives plus `crds.yaml` to the GitHub Release. The charts intentionally exclude CRDs. Apply the release's `crds.yaml` with `kubectl apply --server-side` before the first Helm install and before every `helm upgrade`. See xref:deployment/helm.adoc[Helm Installation] for the commands.
