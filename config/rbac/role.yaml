@@ -24,10 +24,20 @@ rules:
   - namespaces
   - nodes
   - pods
-  - secrets
   verbs:
   - get
   - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - apps
@@ -68,10 +78,10 @@ rules:
 - apiGroups:
   - logic.kubesmarts.org
   resources:
+  - clusterlogicplatforms
   - logicflowdefinitions
   - logicflowruntimes
   - logicflowservices
-  - logicplatforms
   verbs:
   - create
   - delete
@@ -83,19 +93,19 @@ rules:
 - apiGroups:
   - logic.kubesmarts.org
   resources:
+  - clusterlogicplatforms/finalizers
   - logicflowdefinitions/finalizers
   - logicflowruntimes/finalizers
   - logicflowservices/finalizers
-  - logicplatforms/finalizers
   verbs:
   - update
 - apiGroups:
   - logic.kubesmarts.org
   resources:
+  - clusterlogicplatforms/status
   - logicflowdefinitions/status
   - logicflowruntimes/status
   - logicflowservices/status
-  - logicplatforms/status
   verbs:
   - get
   - patch

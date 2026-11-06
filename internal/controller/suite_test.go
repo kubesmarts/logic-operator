@@ -106,6 +106,25 @@ var _ = AfterSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 })
 
+var _ = BeforeEach(func() {
+	// Ensure a default ClusterLogicPlatform exists for each test.
+	// Delete any existing ones first to avoid conflicts.
+	var clps logicv1.ClusterLogicPlatformList
+	Expect(k8sClient.List(context.TODO(), &clps)).To(Succeed())
+	for i := range clps.Items {
+		Expect(k8sClient.Delete(context.TODO(), &clps.Items[i])).To(Succeed())
+	}
+
+	// Create fresh platform for the test.
+	clp := &logicv1.ClusterLogicPlatform{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-platform"},
+		Spec: logicv1.ClusterLogicPlatformSpec{
+			TargetNamespace: testNamespace,
+		},
+	}
+	Expect(k8sClient.Create(context.TODO(), clp)).To(Succeed())
+})
+
 // getFirstFoundEnvTestBinaryDir locates the first binary in the specified path.
 // ENVTEST-based tests depend on specific binaries, usually located in paths set by
 // controller-runtime. When running tests directly (e.g., via an IDE) without using
