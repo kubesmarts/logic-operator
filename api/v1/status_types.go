@@ -62,6 +62,8 @@ const (
 	ConditionDataIndexPersistenceReady    = "DataIndexPersistenceReady"
 	ConditionVectorReady                  = "VectorReady"
 	ConditionWorkflowGatewayReady         = "WorkflowGatewayReady"
+	ConditionTargetNamespaceResolved      = "TargetNamespaceResolved"
+	ConditionDBMigration                  = "DBMigration"
 )
 
 // LogicPlatform reasons
@@ -70,11 +72,10 @@ const (
 	ReasonDataIndexServiceNotFound    = "DataIndexServiceNotFound"
 	ReasonPersistenceConfigInvalid    = "PersistenceConfigInvalid"
 	ReasonDatabaseUnreachable         = "DatabaseUnreachable"
-	ReasonDataIndexUnhealthy          = "DataIndexUnhealthy"
 	ReasonDaemonSetNotFound           = "DaemonSetNotFound"
 	ReasonDaemonSetProgressing        = "DaemonSetProgressing"
 	ReasonComponentsNotReady          = "ComponentsNotReady"
-	ReasonDisabled                    = "Disabled"
+	ReasonTargetNamespaceMissing      = "TargetNamespaceMissing"
 )
 
 // SetCondition sets a condition on a Conditions slice, handling insert/update

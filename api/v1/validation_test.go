@@ -9,7 +9,7 @@ func TestValidateRunnerImage(t *testing.T) {
 	version := "0.15.1"
 	minimalImage := fmt.Sprintf("%s/%s:%s-%s", FlowRunnerRegistry, FlowRunnerImage, version, ImageVariantMinimal)
 	standardImage := fmt.Sprintf("%s/%s:%s-%s", FlowRunnerRegistry, FlowRunnerImage, version, ImageVariantStandard)
-	persistence := &PersistenceOptionsSpec{PostgreSQL: &PersistencePostgreSQL{}}
+	persistence := &DatastoreSpec{PostgreSQL: &PersistencePostgreSQL{}}
 
 	t.Run("minimal with persistence errors", func(t *testing.T) {
 		err := ValidateRunnerImage(minimalImage, persistence)

@@ -22,9 +22,32 @@ import (
 )
 
 const (
-	LogicFlowRuntimeKind = "LogicFlowRuntime"
-	LogicPlatformKind    = "LogicPlatform"
+	LogicFlowRuntimeKind     = "LogicFlowRuntime"
+	ClusterLogicPlatformKind = "ClusterLogicPlatform"
 )
+
+// PersistenceMode defines the persistence strategy for a workflow runtime.
+// +kubebuilder:validation:Enum=PlatformDB;Ephemeral
+type PersistenceMode string
+
+const (
+	// PersistenceModePlatformDB uses the platform-managed database.
+	PersistenceModePlatformDB PersistenceMode = "PlatformDB"
+	// PersistenceModeEphemeral uses ephemeral storage (no persistence).
+	PersistenceModeEphemeral PersistenceMode = "Ephemeral"
+)
+
+// PlatformReference references a ClusterLogicPlatform.
+type PlatformReference struct {
+	// Name of the platform object.
+	// +required
+	Name string `json:"name"`
+	// Kind of the platform object. Must be ClusterLogicPlatform.
+	// Defaults to ClusterLogicPlatform.
+	// +optional
+	// +kubebuilder:default=ClusterLogicPlatform
+	Kind string `json:"kind,omitempty"`
+}
 
 // LogicFlowRuntimeSpec defines the desired state of LogicFlowRuntime.
 //
@@ -33,6 +56,16 @@ type LogicFlowRuntimeSpec struct {
 	RuntimeSpec `json:",inline"`
 	Security    RuntimeSecuritySpec    `json:"security,omitempty"`
 	Logging     *StructuredLoggingSpec `json:"logging,omitempty"`
+
+	// PlatformRef references the platform object managing this runtime.
+	// +optional
+	PlatformRef *PlatformReference `json:"platformRef,omitempty"`
+
+	// PersistenceMode specifies the persistence strategy for this runtime.
+	// Defaults to Ephemeral.
+	// +optional
+	// +kubebuilder:default=Ephemeral
+	PersistenceMode *PersistenceMode `json:"persistenceMode,omitempty"`
 }
 
 // LogicFlowRuntimeStatus defines the observed state of LogicFlowRuntime.
@@ -261,11 +294,14 @@ type StructuredLoggingSpec struct {
 
 // RuntimeSpec defines configuration for LogicFlowRuntime deployments.
 type RuntimeSpec struct {
-	// Persistence configures database connectivity.
-	// Avoid using the same schema as the Data Index.
-	// +optional
-	Persistence *PersistenceOptionsSpec `json:"persistence,omitempty"`
-
 	// ApplicationSpec embeds deployment configuration (image, replicas, resources, container, podTemplate).
 	ApplicationSpec `json:",inline"`
+}
+
+// IsEphemeral returns true if the runtime uses ephemeral persistence mode.
+func IsEphemeral(rt *LogicFlowRuntime) bool {
+	if rt == nil || rt.Spec.PersistenceMode == nil {
+		return false
+	}
+	return *rt.Spec.PersistenceMode == PersistenceModeEphemeral
 }

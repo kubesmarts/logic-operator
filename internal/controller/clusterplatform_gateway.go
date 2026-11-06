@@ -22,37 +22,37 @@ import (
 
 // workflowGatewayComponent implements PlatformComponent for the Workflow Gateway service.
 type workflowGatewayComponent struct {
-	*LogicPlatformReconciler
+	*ClusterLogicPlatformReconciler
 }
 
 func (c *workflowGatewayComponent) Name() string { return "Workflow Gateway" }
-func (c *workflowGatewayComponent) Reconcile(ctx context.Context, plat *logicv1.LogicPlatform) error {
+func (c *workflowGatewayComponent) Reconcile(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
 	return c.reconcileWorkflowGateway(ctx, plat)
 }
-func (c *workflowGatewayComponent) UpdateStatus(ctx context.Context, plat *logicv1.LogicPlatform) error {
+func (c *workflowGatewayComponent) UpdateStatus(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
 	return c.updateWorkflowGatewayStatus(ctx, plat)
 }
 
-func (c *workflowGatewayComponent) reconcileWorkflowGateway(ctx context.Context, plat *logicv1.LogicPlatform) error {
+func (c *workflowGatewayComponent) reconcileWorkflowGateway(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
 	log := logf.FromContext(ctx)
 
 	// Handle deletion: clean up resources before finalizer removal
 	if plat.DeletionTimestamp != nil {
-		if hasFinalizerWorkflowGateway(plat) {
-			log.V(1).Info("LogicPlatform is being deleted, cleaning up gateway resources")
+		if hasFinalizerWorkflowGatewayCLP(plat) {
+			log.V(1).Info("ClusterLogicPlatform is being deleted, cleaning up gateway resources")
 			return c.deleteWorkflowGatewayResources(ctx, plat)
 		}
 		return nil
 	}
 
 	// If gateway is disabled, clean up resources
-	if plat.Spec.WorkflowGateway == nil {
+	if plat.Spec.Gateway == nil {
 		log.V(1).Info("WorkflowGateway is disabled, cleaning up resources")
 		return c.deleteWorkflowGatewayResources(ctx, plat)
 	}
 
 	// Gateway enabled; add finalizer if not present
-	if !hasFinalizerWorkflowGateway(plat) {
+	if !hasFinalizerWorkflowGatewayCLP(plat) {
 		original := plat.DeepCopy()
 		plat.Finalizers = append(plat.Finalizers, FinalizerWorkflowGateway)
 		if err := c.Patch(ctx, plat, client.MergeFrom(original)); err != nil {
@@ -81,23 +81,14 @@ func (c *workflowGatewayComponent) reconcileWorkflowGateway(ctx context.Context,
 	return nil
 }
 
-func (c *workflowGatewayComponent) applyGatewayServiceAccount(ctx context.Context, plat *logicv1.LogicPlatform) error {
-	gwName := workflowGatewayName(plat)
-	saKey := client.ObjectKey{Name: gwName, Namespace: plat.Namespace}
-
-	// Check if existing resource is owned by this platform
-	var existing corev1.ServiceAccount
-	if err := c.Get(ctx, saKey, &existing); err == nil && !hasOwner(&existing, plat) {
-		return fmt.Errorf("ServiceAccount %s already exists and is not owned by this LogicPlatform", saKey)
-	}
-
-	sa := serviceAccountForGateway(plat)
+func (c *workflowGatewayComponent) applyGatewayServiceAccount(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
+	sa := serviceAccountForGatewayCLP(plat)
 	return c.Apply(ctx, sa, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
 }
 
-func (c *workflowGatewayComponent) applyGatewayClusterRoleBinding(ctx context.Context, plat *logicv1.LogicPlatform) error {
-	gwName := workflowGatewayName(plat)
-	bindingName := workflowGatewayClusterRoleBindingName(plat)
+func (c *workflowGatewayComponent) applyGatewayClusterRoleBinding(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
+	gwName := workflowGatewayNameCLP(plat)
+	bindingName := workflowGatewayClusterRoleBindingNameCLP(plat)
 
 	// Build desired ClusterRoleBinding object
 	desired := &rbacv1.ClusterRoleBinding{
@@ -108,8 +99,7 @@ func (c *workflowGatewayComponent) applyGatewayClusterRoleBinding(ctx context.Co
 		ObjectMeta: metav1.ObjectMeta{
 			Name: bindingName,
 			Labels: map[string]string{
-				"logic.kubesmarts.org/platform-namespace": plat.Namespace,
-				"logic.kubesmarts.org/platform-name":      plat.Name,
+				"logic.kubesmarts.org/clusterplatform-name": plat.Name,
 			},
 		},
 		RoleRef: rbacv1.RoleRef{
@@ -121,7 +111,7 @@ func (c *workflowGatewayComponent) applyGatewayClusterRoleBinding(ctx context.Co
 			{
 				Kind:      "ServiceAccount",
 				Name:      gwName,
-				Namespace: plat.Namespace,
+				Namespace: plat.Spec.TargetNamespace,
 			},
 		},
 	}
@@ -131,7 +121,7 @@ func (c *workflowGatewayComponent) applyGatewayClusterRoleBinding(ctx context.Co
 	bindingKey := client.ObjectKey{Name: bindingName}
 	if err := c.Get(ctx, bindingKey, &existing); err == nil {
 		// If owned by us and role reference drifted (immutable field), delete and recreate
-		if hasOwner(&existing, plat) && existing.RoleRef != desired.RoleRef {
+		if hasOwnerCLP(&existing, plat) && existing.RoleRef != desired.RoleRef {
 			if err := c.Delete(ctx, &existing); err != nil {
 				return fmt.Errorf("failed to delete drifted ClusterRoleBinding: %w", err)
 			}
@@ -145,17 +135,12 @@ func (c *workflowGatewayComponent) applyGatewayClusterRoleBinding(ctx context.Co
 	return c.Patch(ctx, desired, client.Apply, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
 }
 
-func (c *workflowGatewayComponent) applyGatewayDeployment(ctx context.Context, plat *logicv1.LogicPlatform) error {
-	gwName := workflowGatewayName(plat)
+func (c *workflowGatewayComponent) applyGatewayDeployment(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
+	gwName := workflowGatewayNameCLP(plat)
 	childLabels := ChildLabelsInstance(plat, gwName)
 
-	deployKey := client.ObjectKey{Name: gwName, Namespace: plat.Namespace}
-	var existing appsv1.Deployment
-	if err := c.Get(ctx, deployKey, &existing); err == nil && !hasOwner(&existing, plat) {
-		return fmt.Errorf("deployment %s already exists and is not owned by this LogicPlatform", deployKey)
-	}
-
 	opts := []ContainerOption{
+		WithDefaultImage(logicv1.DefaultGatewayImage()),
 		WorkflowGatewayEnvVars(),
 		WorkflowGatewayPorts(),
 		WorkflowGatewayProbes(),
@@ -163,53 +148,46 @@ func (c *workflowGatewayComponent) applyGatewayDeployment(ctx context.Context, p
 
 	spec := ToDeploymentSpec(
 		GatewayContainerName,
-		&plat.Spec.WorkflowGateway.Application,
+		&plat.Spec.Gateway.Application,
 		childLabels,
 		SelectorLabels(gwName),
 		opts...,
 	)
 
 	// Do not set replicas if unset in CR — allow HPA to own scale.
-	// But preserve replicas from PodTemplate if set there.
-	if plat.Spec.WorkflowGateway.Application.Replicas == nil &&
-		plat.Spec.WorkflowGateway.Application.PodTemplate.Replicas == nil {
+	if plat.Spec.Gateway.Application.Replicas == nil &&
+		plat.Spec.Gateway.Application.PodTemplate.Replicas == nil {
 		spec.Replicas = nil
 	}
 
 	// Set dedicated ServiceAccount
 	spec.Template.Spec.ServiceAccountName = &gwName
 
-	deployment := appsv1ac.Deployment(gwName, plat.Namespace).
+	deployment := appsv1ac.Deployment(gwName, plat.Spec.TargetNamespace).
 		WithLabels(childLabels).
-		WithOwnerReferences(OwnerRef(plat, logicv1.LogicPlatformKind)).
+		WithOwnerReferences(OwnerRef(plat, logicv1.ClusterLogicPlatformKind)).
 		WithSpec(spec)
 
 	return c.Apply(ctx, deployment, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
 }
 
-func (c *workflowGatewayComponent) applyGatewayService(ctx context.Context, plat *logicv1.LogicPlatform) error {
-	gwName := workflowGatewayName(plat)
+func (c *workflowGatewayComponent) applyGatewayService(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
+	gwName := workflowGatewayNameCLP(plat)
 	childLabels := ChildLabelsInstance(plat, gwName)
 
-	svcKey := client.ObjectKey{Name: gwName, Namespace: plat.Namespace}
-	var existing corev1.Service
-	if err := c.Get(ctx, svcKey, &existing); err == nil && !hasOwner(&existing, plat) {
-		return fmt.Errorf("service %s already exists and is not owned by this LogicPlatform", svcKey)
-	}
+	spec := serviceForGatewayCLP(plat).Spec
 
-	spec := serviceForGateway(plat).Spec
-
-	service := corev1ac.Service(gwName, plat.Namespace).
+	service := corev1ac.Service(gwName, plat.Spec.TargetNamespace).
 		WithLabels(childLabels).
-		WithOwnerReferences(OwnerRef(plat, logicv1.LogicPlatformKind)).
+		WithOwnerReferences(OwnerRef(plat, logicv1.ClusterLogicPlatformKind)).
 		WithSpec(spec)
 
 	return c.Apply(ctx, service, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
 }
 
-func (c *workflowGatewayComponent) applyGatewayIngress(ctx context.Context, plat *logicv1.LogicPlatform) error {
+func (c *workflowGatewayComponent) applyGatewayIngress(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
 	// If ingress disabled, delete any existing resources
-	if plat.Spec.WorkflowGateway.Ingress == nil || !plat.Spec.WorkflowGateway.Ingress.Enabled {
+	if plat.Spec.Gateway.Ingress == nil || !plat.Spec.Gateway.Ingress.Enabled {
 		return c.deleteGatewayIngress(ctx, plat)
 	}
 
@@ -220,14 +198,14 @@ func (c *workflowGatewayComponent) applyGatewayIngress(ctx context.Context, plat
 	return c.applyGatewayKubernetesIngress(ctx, plat)
 }
 
-func (c *workflowGatewayComponent) deleteGatewayIngress(ctx context.Context, plat *logicv1.LogicPlatform) error {
-	gwName := workflowGatewayName(plat)
+func (c *workflowGatewayComponent) deleteGatewayIngress(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
+	gwName := workflowGatewayNameCLP(plat)
 
 	// Delete Ingress if owned by this platform
-	ingKey := client.ObjectKey{Name: gwName, Namespace: plat.Namespace}
+	ingKey := client.ObjectKey{Name: gwName, Namespace: plat.Spec.TargetNamespace}
 	var ing networkingv1.Ingress
 	if err := c.Get(ctx, ingKey, &ing); err == nil {
-		if hasOwner(&ing, plat) {
+		if hasOwnerCLP(&ing, plat) {
 			if err := c.Delete(ctx, &ing); err != nil && !apierrors.IsNotFound(err) {
 				return err
 			}
@@ -238,10 +216,10 @@ func (c *workflowGatewayComponent) deleteGatewayIngress(ctx context.Context, pla
 
 	// Delete Route if owned by this platform
 	if utils.IsOpenShift() {
-		rtKey := client.ObjectKey{Name: gwName, Namespace: plat.Namespace}
+		rtKey := client.ObjectKey{Name: gwName, Namespace: plat.Spec.TargetNamespace}
 		var rt routev1.Route
 		if err := c.Get(ctx, rtKey, &rt); err == nil {
-			if hasOwner(&rt, plat) {
+			if hasOwnerCLP(&rt, plat) {
 				if err := c.Delete(ctx, &rt); err != nil && !apierrors.IsNotFound(err) {
 					return err
 				}
@@ -253,21 +231,21 @@ func (c *workflowGatewayComponent) deleteGatewayIngress(ctx context.Context, pla
 	return nil
 }
 
-func (c *workflowGatewayComponent) applyGatewayKubernetesIngress(ctx context.Context, plat *logicv1.LogicPlatform) error {
-	ingress := ingressForGateway(plat)
+func (c *workflowGatewayComponent) applyGatewayKubernetesIngress(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
+	ingress := ingressForGatewayCLP(plat)
 	return c.Apply(ctx, ingress, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
 }
 
-func (c *workflowGatewayComponent) applyGatewayRoute(ctx context.Context, plat *logicv1.LogicPlatform) error {
-	route := routeForGateway(plat)
+func (c *workflowGatewayComponent) applyGatewayRoute(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
+	route := routeForGatewayCLP(plat)
 	//nolint:staticcheck
 	return c.Patch(ctx, route, client.Apply, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
 }
 
-func (c *workflowGatewayComponent) deleteWorkflowGatewayResources(ctx context.Context, plat *logicv1.LogicPlatform) error {
+func (c *workflowGatewayComponent) deleteWorkflowGatewayResources(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
 	log := logf.FromContext(ctx)
-	gwName := workflowGatewayName(plat)
-	bindingName := workflowGatewayClusterRoleBindingName(plat)
+	gwName := workflowGatewayNameCLP(plat)
+	bindingName := workflowGatewayClusterRoleBindingNameCLP(plat)
 
 	// Delete Ingress/Route
 	if err := c.deleteGatewayIngress(ctx, plat); err != nil {
@@ -276,12 +254,11 @@ func (c *workflowGatewayComponent) deleteWorkflowGatewayResources(ctx context.Co
 
 	// Delete Service (check ownership first)
 	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: gwName, Namespace: plat.Namespace},
+		ObjectMeta: metav1.ObjectMeta{Name: gwName, Namespace: plat.Spec.TargetNamespace},
 	}
 	if err := c.Get(ctx, client.ObjectKeyFromObject(svc), svc); err == nil {
-		// Service exists; verify it's owned by this platform
-		if !hasOwner(svc, plat) {
-			return fmt.Errorf("cannot delete Service %s/%s: not owned by LogicPlatform %s/%s", svc.Namespace, svc.Name, plat.Namespace, plat.Name)
+		if !hasOwnerCLP(svc, plat) {
+			return fmt.Errorf("cannot delete Service %s/%s: not owned by ClusterLogicPlatform %s", svc.Namespace, svc.Name, plat.Name)
 		}
 		if err := c.Delete(ctx, svc); err != nil && !apierrors.IsNotFound(err) {
 			return err
@@ -292,11 +269,11 @@ func (c *workflowGatewayComponent) deleteWorkflowGatewayResources(ctx context.Co
 
 	// Delete Deployment (check ownership first)
 	deploy := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: gwName, Namespace: plat.Namespace},
+		ObjectMeta: metav1.ObjectMeta{Name: gwName, Namespace: plat.Spec.TargetNamespace},
 	}
 	if err := c.Get(ctx, client.ObjectKeyFromObject(deploy), deploy); err == nil {
-		if !hasOwner(deploy, plat) {
-			return fmt.Errorf("cannot delete Deployment %s/%s: not owned by LogicPlatform %s/%s", deploy.Namespace, deploy.Name, plat.Namespace, plat.Name)
+		if !hasOwnerCLP(deploy, plat) {
+			return fmt.Errorf("cannot delete Deployment %s/%s: not owned by ClusterLogicPlatform %s", deploy.Namespace, deploy.Name, plat.Name)
 		}
 		if err := c.Delete(ctx, deploy); err != nil && !apierrors.IsNotFound(err) {
 			return err
@@ -310,10 +287,8 @@ func (c *workflowGatewayComponent) deleteWorkflowGatewayResources(ctx context.Co
 		ObjectMeta: metav1.ObjectMeta{Name: bindingName},
 	}
 	if err := c.Get(ctx, client.ObjectKeyFromObject(binding), binding); err == nil {
-		// Verify binding is labeled with this platform
-		if binding.Labels["logic.kubesmarts.org/platform-namespace"] != plat.Namespace ||
-			binding.Labels["logic.kubesmarts.org/platform-name"] != plat.Name {
-			return fmt.Errorf("cannot delete ClusterRoleBinding %s: not labeled for LogicPlatform %s/%s", bindingName, plat.Namespace, plat.Name)
+		if binding.Labels["logic.kubesmarts.org/clusterplatform-name"] != plat.Name {
+			return fmt.Errorf("cannot delete ClusterRoleBinding %s: not labeled for ClusterLogicPlatform %s", bindingName, plat.Name)
 		}
 		if err := c.Delete(ctx, binding); err != nil && !apierrors.IsNotFound(err) {
 			return err
@@ -324,11 +299,11 @@ func (c *workflowGatewayComponent) deleteWorkflowGatewayResources(ctx context.Co
 
 	// Delete ServiceAccount (check ownership first)
 	sa := &corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{Name: gwName, Namespace: plat.Namespace},
+		ObjectMeta: metav1.ObjectMeta{Name: gwName, Namespace: plat.Spec.TargetNamespace},
 	}
 	if err := c.Get(ctx, client.ObjectKeyFromObject(sa), sa); err == nil {
-		if !hasOwner(sa, plat) {
-			return fmt.Errorf("cannot delete ServiceAccount %s/%s: not owned by LogicPlatform %s/%s", sa.Namespace, sa.Name, plat.Namespace, plat.Name)
+		if !hasOwnerCLP(sa, plat) {
+			return fmt.Errorf("cannot delete ServiceAccount %s/%s: not owned by ClusterLogicPlatform %s", sa.Namespace, sa.Name, plat.Name)
 		}
 		if err := c.Delete(ctx, sa); err != nil && !apierrors.IsNotFound(err) {
 			return err
@@ -338,9 +313,9 @@ func (c *workflowGatewayComponent) deleteWorkflowGatewayResources(ctx context.Co
 	}
 
 	// Remove finalizer only if it was present
-	if hasFinalizerWorkflowGateway(plat) {
+	if hasFinalizerWorkflowGatewayCLP(plat) {
 		original := plat.DeepCopy()
-		removeFinalizerWorkflowGateway(plat)
+		removeFinalizerWorkflowGatewayCLP(plat)
 		if err := c.Patch(ctx, plat, client.MergeFrom(original)); err != nil {
 			return err
 		}
@@ -350,15 +325,15 @@ func (c *workflowGatewayComponent) deleteWorkflowGatewayResources(ctx context.Co
 	return nil
 }
 
-func (c *workflowGatewayComponent) updateWorkflowGatewayStatus(ctx context.Context, plat *logicv1.LogicPlatform) error {
+func (c *workflowGatewayComponent) updateWorkflowGatewayStatus(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
 	// If gateway is disabled, clear status
-	if plat.Spec.WorkflowGateway == nil {
-		plat.Status.WorkflowGateway = nil
-		removeLogicPlatformCondition(&plat.Status.Conditions, logicv1.ConditionWorkflowGatewayReady)
+	if plat.Spec.Gateway == nil {
+		plat.Status.Gateway = nil
+		removeClusterLogicPlatformCondition(&plat.Status.Conditions, logicv1.ConditionWorkflowGatewayReady)
 		return nil
 	}
 
-	gwName := workflowGatewayName(plat)
+	gwName := workflowGatewayNameCLP(plat)
 	status := &logicv1.WorkflowGatewayStatus{
 		DeploymentRef:     corev1.LocalObjectReference{Name: gwName},
 		ServiceRef:        corev1.LocalObjectReference{Name: gwName},
@@ -367,7 +342,7 @@ func (c *workflowGatewayComponent) updateWorkflowGatewayStatus(ctx context.Conte
 
 	// Get Deployment and check readiness.
 	var deploy appsv1.Deployment
-	deployKey := client.ObjectKey{Name: gwName, Namespace: plat.Namespace}
+	deployKey := client.ObjectKey{Name: gwName, Namespace: plat.Spec.TargetNamespace}
 	deploymentFound := false
 	deploymentReady := false
 	reason := logicv1.ReasonDeploymentNotFound
@@ -404,7 +379,7 @@ func (c *workflowGatewayComponent) updateWorkflowGatewayStatus(ctx context.Conte
 	// Get Service.
 	serviceFound := false
 	var svc corev1.Service
-	svcKey := client.ObjectKey{Name: gwName, Namespace: plat.Namespace}
+	svcKey := client.ObjectKey{Name: gwName, Namespace: plat.Spec.TargetNamespace}
 	if err := c.Get(ctx, svcKey, &svc); err == nil {
 		serviceFound = true
 	} else if !apierrors.IsNotFound(err) {
@@ -426,9 +401,9 @@ func (c *workflowGatewayComponent) updateWorkflowGatewayStatus(ctx context.Conte
 		conditionStatus, plat.Generation, reason, message)
 
 	// Get Ingress/Route URL if configured
-	if plat.Spec.WorkflowGateway.Ingress != nil && plat.Spec.WorkflowGateway.Ingress.Enabled {
-		ingressKey := client.ObjectKey{Name: gwName, Namespace: plat.Namespace}
-		url, err := ResolveIngressURL(ctx, c.Client, ingressKey, plat.Spec.WorkflowGateway.Ingress.TLS.Enabled)
+	if plat.Spec.Gateway.Ingress != nil && plat.Spec.Gateway.Ingress.Enabled {
+		ingressKey := client.ObjectKey{Name: gwName, Namespace: plat.Spec.TargetNamespace}
+		url, err := ResolveIngressURL(ctx, c.Client, ingressKey, plat.Spec.Gateway.Ingress.TLS.Enabled)
 		if err != nil {
 			return err
 		}
@@ -444,6 +419,16 @@ func (c *workflowGatewayComponent) updateWorkflowGatewayStatus(ctx context.Conte
 		}
 	}
 
-	plat.Status.WorkflowGateway = status
+	plat.Status.Gateway = status
 	return nil
+}
+
+// hasOwnerCLP checks if the given object is owned by the ClusterLogicPlatform.
+func hasOwnerCLP(obj metav1.Object, plat *logicv1.ClusterLogicPlatform) bool {
+	for _, ref := range obj.GetOwnerReferences() {
+		if ref.UID == plat.UID {
+			return true
+		}
+	}
+	return false
 }

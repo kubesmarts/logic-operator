@@ -212,14 +212,6 @@ func main() {
 		openshift.MustAddToScheme(scheme)
 	}
 
-	if err := (&controller.LogicPlatformReconciler{
-		Client:            mgr.GetClient(),
-		Scheme:            mgr.GetScheme(),
-		DatabaseConnector: &controller.PostgresConnector{},
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "LogicPlatform")
-		os.Exit(1)
-	}
 	if err := (&controller.LogicFlowServiceReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
@@ -260,11 +252,10 @@ func main() {
 		setupLog.Error(err, "unable to create webhook", "webhook", "LogicFlowService")
 		os.Exit(1)
 	}
-	if err := builder.WebhookManagedBy(mgr, &logicv1.LogicPlatform{}).
-		WithDefaulter(&logicv1.LogicPlatformDefaulter{}).
-		WithValidator(&logicv1.LogicPlatformValidator{Reader: mgr.GetClient()}).
+	if err := builder.WebhookManagedBy(mgr, &logicv1.ClusterLogicPlatform{}).
+		WithValidator(&logicv1.ClusterLogicPlatformValidator{Reader: mgr.GetClient()}).
 		Complete(); err != nil {
-		setupLog.Error(err, "unable to create webhook", "webhook", "LogicPlatform")
+		setupLog.Error(err, "unable to create webhook", "webhook", "ClusterLogicPlatform")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

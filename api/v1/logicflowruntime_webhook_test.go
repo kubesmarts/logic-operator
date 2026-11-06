@@ -95,25 +95,21 @@ func TestLogicFlowRuntimeValidator_ValidateCreate(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "minimal image with persistence rejected",
+			name: "minimal image with platform DB mode rejected",
 			obj: &LogicFlowRuntime{
 				Spec: LogicFlowRuntimeSpec{
 					RuntimeSpec: RuntimeSpec{
 						ApplicationSpec: ApplicationSpec{
 							Image: fmt.Sprintf("%s/%s:0.15.1-%s", FlowRunnerRegistry, FlowRunnerImage, ImageVariantMinimal),
 						},
-						Persistence: &PersistenceOptionsSpec{
-							PostgreSQL: &PersistencePostgreSQL{
-								SecretRef: PostgreSQLSecretOptions{Name: testPGSecret},
-							},
-						},
 					},
+					PersistenceMode: &[]PersistenceMode{PersistenceModePlatformDB}[0],
 				},
 			},
 			wantErr: true,
 		},
 		{
-			name: "standard image without persistence rejected",
+			name: "standard image with PlatformDB mode succeeds",
 			obj: &LogicFlowRuntime{
 				Spec: LogicFlowRuntimeSpec{
 					RuntimeSpec: RuntimeSpec{
@@ -121,24 +117,21 @@ func TestLogicFlowRuntimeValidator_ValidateCreate(t *testing.T) {
 							Image: fmt.Sprintf("%s/%s:0.15.1-%s", FlowRunnerRegistry, FlowRunnerImage, ImageVariantStandard),
 						},
 					},
+					PersistenceMode: &[]PersistenceMode{PersistenceModePlatformDB}[0],
 				},
 			},
-			wantErr: true,
+			wantErr: false,
 		},
 		{
-			name: "custom image with persistence passes (no validation)",
+			name: "custom image with platform DB passes (no validation)",
 			obj: &LogicFlowRuntime{
 				Spec: LogicFlowRuntimeSpec{
 					RuntimeSpec: RuntimeSpec{
 						ApplicationSpec: ApplicationSpec{
 							Image: "my-registry.io/custom-runner:latest",
 						},
-						Persistence: &PersistenceOptionsSpec{
-							PostgreSQL: &PersistencePostgreSQL{
-								SecretRef: PostgreSQLSecretOptions{Name: testPGSecret},
-							},
-						},
 					},
+					PersistenceMode: &[]PersistenceMode{PersistenceModePlatformDB}[0],
 				},
 			},
 			wantErr: false,
@@ -180,5 +173,57 @@ func TestLogicFlowRuntimeValidator_ValidateDelete(t *testing.T) {
 	_, err := v.ValidateDelete(context.Background(), &LogicFlowRuntime{})
 	if err != nil {
 		t.Errorf("ValidateDelete() unexpected error: %v", err)
+	}
+}
+
+func TestRuntime_RejectsUnknownPlatformKind(t *testing.T) {
+	validator := &LogicFlowRuntimeValidator{}
+
+	runtime := &LogicFlowRuntime{
+		Spec: LogicFlowRuntimeSpec{
+			PlatformRef: &PlatformReference{
+				Name: "test-platform",
+				Kind: "UnknownPlatform",
+			},
+		},
+	}
+
+	_, err := validator.ValidateCreate(context.Background(), runtime)
+	if err == nil {
+		t.Fatal("Expected error when platformRef has unknown Kind, got nil")
+	}
+}
+
+func TestRuntime_AllowsOmittedPlatformRef(t *testing.T) {
+	validator := &LogicFlowRuntimeValidator{}
+
+	runtime := &LogicFlowRuntime{
+		Spec: LogicFlowRuntimeSpec{
+			// platformRef is omitted
+			PlatformRef: nil,
+		},
+	}
+
+	_, err := validator.ValidateCreate(context.Background(), runtime)
+	if err != nil {
+		t.Fatalf("Expected no error when platformRef is omitted, got: %v", err)
+	}
+}
+
+func TestRuntime_RejectsPlatformRefWithEmptyName(t *testing.T) {
+	validator := &LogicFlowRuntimeValidator{}
+
+	runtime := &LogicFlowRuntime{
+		Spec: LogicFlowRuntimeSpec{
+			PlatformRef: &PlatformReference{
+				Name: "",
+				Kind: "ClusterLogicPlatform",
+			},
+		},
+	}
+
+	_, err := validator.ValidateCreate(context.Background(), runtime)
+	if err == nil {
+		t.Fatal("Expected error when platformRef has empty Name, got nil")
 	}
 }

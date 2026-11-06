@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -17,8 +18,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -126,23 +129,79 @@ func findVolumeMount(c corev1.Container, name string) *corev1.VolumeMount {
 	return nil
 }
 
-func persistenceSpec() logicv1.LogicFlowRuntimeSpec {
+func ephemeralSpec() logicv1.LogicFlowRuntimeSpec {
+	mode := logicv1.PersistenceModeEphemeral
 	return logicv1.LogicFlowRuntimeSpec{
-		RuntimeSpec: logicv1.RuntimeSpec{
-			Persistence: &logicv1.PersistenceOptionsSpec{
-				PostgreSQL: &logicv1.PersistencePostgreSQL{
-					SecretRef: logicv1.PostgreSQLSecretOptions{Name: "pg-creds"},
-					ServiceRef: logicv1.PostgreSQLServiceOptions{
-						SQLServiceOptions: &logicv1.SQLServiceOptions{
-							Name:         "pg",
-							DatabaseName: "logicflow",
+		PersistenceMode: &mode,
+	}
+}
+
+func persistenceSpec() logicv1.LogicFlowRuntimeSpec {
+	mode := logicv1.PersistenceModePlatformDB
+	return logicv1.LogicFlowRuntimeSpec{
+		PersistenceMode: &mode,
+	}
+}
+
+func createClusterLogicPlatform(ctx context.Context) {
+	// Delete any existing platform with the same name first
+	deleteClusterLogicPlatform(ctx)
+	clp := &logicv1.ClusterLogicPlatform{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-platform"},
+		Spec: logicv1.ClusterLogicPlatformSpec{
+			TargetNamespace: testNamespace,
+			Runtime: &logicv1.RuntimeDatastoreSpec{
+				Runtime: logicv1.DatastoreSpec{
+					PostgreSQL: &logicv1.PersistencePostgreSQL{
+						SecretRef: logicv1.PostgreSQLSecretOptions{Name: "pg-creds"},
+						ServiceRef: logicv1.PostgreSQLServiceOptions{Name:         "pg",
+								DatabaseName: "logicflow",
+							},
+							DatabaseSchema: "public",
 						},
-						DatabaseSchema: "public",
 					},
 				},
 			},
 		},
 	}
+	Expect(k8sClient.Create(ctx, clp)).To(Succeed())
+}
+
+func deleteClusterLogicPlatform(ctx context.Context) {
+	clp := &logicv1.ClusterLogicPlatform{}
+	err := k8sClient.Get(ctx, types.NamespacedName{Name: "test-platform"}, clp)
+	if errors.IsNotFound(err) {
+		return
+	}
+	Expect(err).NotTo(HaveOccurred())
+	Expect(k8sClient.Delete(ctx, clp)).To(Succeed())
+}
+
+func deleteSourceDBSecret(ctx context.Context, secretName string) {
+	secret := &corev1.Secret{}
+	err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: testNamespace}, secret)
+	if errors.IsNotFound(err) {
+		return
+	}
+	Expect(err).NotTo(HaveOccurred())
+	Expect(k8sClient.Delete(ctx, secret)).To(Succeed())
+}
+
+func createSourceDBSecret(ctx context.Context) {
+	// Delete any existing secret with the same name first
+	deleteSourceDBSecret(ctx, "pg-creds")
+	sourceSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pg-creds",
+			Namespace: testNamespace,
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{
+			"POSTGRESQL_USER":     []byte("postgres"),
+			"POSTGRESQL_PASSWORD": []byte("password"),
+		},
+	}
+	Expect(k8sClient.Create(ctx, sourceSecret)).To(Succeed())
 }
 
 func listLeases(ctx context.Context, poolName string) []coordinationv1.Lease {
@@ -162,6 +221,196 @@ func deleteLeases(ctx context.Context, poolName string) {
 	}
 }
 
+// Unit tests for resolver helpers using fake client (no envtest required)
+
+func TestResolvePlatform_UsesSingletonWhenRefOmitted(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := logicv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("AddToScheme failed: %v", err)
+	}
+
+	clp := &logicv1.ClusterLogicPlatform{
+		ObjectMeta: metav1.ObjectMeta{Name: "singleton-platform"},
+		Spec: logicv1.ClusterLogicPlatformSpec{
+			TargetNamespace: "default",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(clp).
+		Build()
+
+	r := &LogicFlowRuntimeReconciler{Client: fakeClient}
+	rt := &logicv1.LogicFlowRuntime{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-rt", Namespace: "default"},
+		Spec: logicv1.LogicFlowRuntimeSpec{
+			PlatformRef: nil,
+		},
+	}
+
+	ctx := context.Background()
+	resolved, err := r.resolvePlatform(ctx, rt)
+
+	if err != nil {
+		t.Fatalf("resolvePlatform failed: %v", err)
+	}
+	if resolved == nil {
+		t.Fatal("resolvePlatform returned nil platform")
+	}
+	if resolved.Name != "singleton-platform" {
+		t.Errorf("expected platform name 'singleton-platform', got %q", resolved.Name)
+	}
+}
+
+func TestResolvePlatform_ErrorsWhenNoPlatform(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := logicv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("AddToScheme failed: %v", err)
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		Build()
+
+	r := &LogicFlowRuntimeReconciler{Client: fakeClient}
+	rt := &logicv1.LogicFlowRuntime{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-rt", Namespace: "default"},
+		Spec: logicv1.LogicFlowRuntimeSpec{
+			PlatformRef: nil,
+		},
+	}
+
+	ctx := context.Background()
+	_, err := r.resolvePlatform(ctx, rt)
+
+	if err == nil {
+		t.Fatal("resolvePlatform should have returned an error when no platforms exist")
+	}
+	if !strings.Contains(err.Error(), "no ClusterLogicPlatform found") {
+		t.Errorf("expected 'no ClusterLogicPlatform found' error, got: %v", err)
+	}
+}
+
+func TestRuntime_EphemeralUsesMinimalImageNoDBEnv(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := logicv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("AddToScheme failed: %v", err)
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		Build()
+
+	r := &LogicFlowRuntimeReconciler{Client: fakeClient}
+	ctx := context.Background()
+
+	ephemeralMode := logicv1.PersistenceModeEphemeral
+	rt := &logicv1.LogicFlowRuntime{
+		ObjectMeta: metav1.ObjectMeta{Name: "ephemeral-rt", Namespace: "default"},
+		Spec: logicv1.LogicFlowRuntimeSpec{
+			PersistenceMode: &ephemeralMode,
+			RuntimeSpec: logicv1.RuntimeSpec{
+				ApplicationSpec: logicv1.ApplicationSpec{
+					Replicas: nil,
+				},
+			},
+		},
+	}
+	logicv1.ApplyLogicFlowRuntimeDefaults(rt)
+
+	eff, err := r.effectiveRuntimePersistence(ctx, rt)
+	if err != nil {
+		t.Fatalf("effectiveRuntimePersistence failed: %v", err)
+	}
+	if eff != nil {
+		t.Fatalf("ephemeral runtime should return nil persistence, got %v", eff)
+	}
+
+	// Verify the runtime is treated as ephemeral
+	if !logicv1.IsEphemeral(rt) {
+		t.Fatal("runtime should be ephemeral")
+	}
+}
+
+func TestRuntime_PlatformDBInheritsRuntimeDatastore(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := logicv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("AddToScheme failed: %v", err)
+	}
+
+	pgSecret := logicv1.PostgreSQLSecretOptions{
+		Name:    "pg-operational-creds",
+		UserKey: "user",
+	}
+	pgService := logicv1.PostgreSQLServiceOptions{Name:         "postgres",
+			DatabaseName: "workflows",
+		},
+		DatabaseSchema: "runtime",
+	}
+
+	clp := &logicv1.ClusterLogicPlatform{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-platform"},
+		Spec: logicv1.ClusterLogicPlatformSpec{
+			TargetNamespace: "default",
+			Runtime: &logicv1.RuntimeDatastoreSpec{
+				Runtime: logicv1.DatastoreSpec{
+					PostgreSQL: &logicv1.PersistencePostgreSQL{
+						SecretRef:  pgSecret,
+						ServiceRef: pgService,
+					},
+				},
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(clp).
+		Build()
+
+	r := &LogicFlowRuntimeReconciler{Client: fakeClient}
+	ctx := context.Background()
+
+	platformDBMode := logicv1.PersistenceModePlatformDB
+	rt := &logicv1.LogicFlowRuntime{
+		ObjectMeta: metav1.ObjectMeta{Name: "platform-db-rt", Namespace: "default"},
+		Spec: logicv1.LogicFlowRuntimeSpec{
+			PersistenceMode: &platformDBMode,
+		},
+	}
+
+	eff, err := r.effectiveRuntimePersistence(ctx, rt)
+	if err != nil {
+		t.Fatalf("effectiveRuntimePersistence failed: %v", err)
+	}
+	if eff == nil {
+		t.Fatal("platform DB runtime should return non-nil persistence")
+	}
+	if eff.PostgreSQL == nil {
+		t.Fatal("effective persistence should have PostgreSQL configured")
+	}
+
+	// Verify operational secret is used (DML), not migration secret
+	if eff.PostgreSQL.SecretRef.Name != "pg-operational-creds" {
+		t.Errorf("expected operational secret 'pg-operational-creds', got %q", eff.PostgreSQL.SecretRef.Name)
+	}
+	if eff.PostgreSQL.SecretRef.UserKey != "user" {
+		t.Errorf("expected UserKey 'user', got %q", eff.PostgreSQL.SecretRef.UserKey)
+	}
+
+	// Verify service ref is inherited
+	if eff.PostgreSQL.ServiceRef.Name != "postgres" {
+		t.Errorf("expected service name 'postgres', got %q", eff.PostgreSQL.ServiceRef.Name)
+	}
+	if eff.PostgreSQL.ServiceRef.DatabaseName != "workflows" {
+		t.Errorf("expected database 'workflows', got %q", eff.PostgreSQL.ServiceRef.DatabaseName)
+	}
+	if eff.PostgreSQL.ServiceRef.DatabaseSchema != "runtime" {
+		t.Errorf("expected schema 'runtime', got %q", eff.PostgreSQL.ServiceRef.DatabaseSchema)
+	}
+}
+
 var _ = Describe("LogicFlowRuntime Controller", func() {
 
 	Context("Minimal runtime (no persistence, no security)", func() {
@@ -171,7 +420,7 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 		BeforeEach(func() {
 			r = newReconciler()
-			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{})
+			nn = createRuntime(ctx, name, ephemeralSpec())
 		})
 		AfterEach(func() {
 			deleteRuntime(ctx, nn)
@@ -274,25 +523,13 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 		BeforeEach(func() {
 			r = newReconciler()
-			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{
-				RuntimeSpec: logicv1.RuntimeSpec{
-					Persistence: &logicv1.PersistenceOptionsSpec{
-						PostgreSQL: &logicv1.PersistencePostgreSQL{
-							SecretRef: logicv1.PostgreSQLSecretOptions{Name: "pg-creds"},
-							ServiceRef: logicv1.PostgreSQLServiceOptions{
-								SQLServiceOptions: &logicv1.SQLServiceOptions{
-									Name:         "pg",
-									DatabaseName: "logicflow",
-								},
-								DatabaseSchema: "public",
-							},
-						},
-					},
-				},
-			})
+			createClusterLogicPlatform(ctx)
+			createSourceDBSecret(ctx)
+			nn = createRuntime(ctx, name, persistenceSpec())
 		})
 		AfterEach(func() {
 			deleteRuntime(ctx, nn)
+			deleteClusterLogicPlatform(ctx)
 		})
 
 		It("should create a Deployment with the standard runner image", func() {
@@ -339,7 +576,9 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 		BeforeEach(func() {
 			r = newReconciler()
+			mode := logicv1.PersistenceModeEphemeral
 			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{
+				PersistenceMode: &mode,
 				Security: logicv1.RuntimeSecuritySpec{
 					Type: logicv1.RuntimeSecurityAPIKey,
 					APIKey: &logicv1.APIKeyAuthSpec{
@@ -391,7 +630,7 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 		BeforeEach(func() {
 			r = newReconciler()
-			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{})
+			nn = createRuntime(ctx, name, ephemeralSpec())
 		})
 		AfterEach(func() {
 			deleteRuntime(ctx, nn)
@@ -473,7 +712,7 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 		BeforeEach(func() {
 			r = newReconciler()
-			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{})
+			nn = createRuntime(ctx, name, ephemeralSpec())
 		})
 		AfterEach(func() {
 			deleteRuntime(ctx, nn)
@@ -514,7 +753,7 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 		BeforeEach(func() {
 			r = newReconciler()
-			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{})
+			nn = createRuntime(ctx, name, ephemeralSpec())
 		})
 		AfterEach(func() {
 			deleteRuntime(ctx, nn)
@@ -559,7 +798,7 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 		BeforeEach(func() {
 			r = newReconciler()
-			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{})
+			nn = createRuntime(ctx, name, ephemeralSpec())
 		})
 		AfterEach(func() {
 			deleteRuntime(ctx, nn)
@@ -591,7 +830,7 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 		BeforeEach(func() {
 			r = newReconciler()
-			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{})
+			nn = createRuntime(ctx, name, ephemeralSpec())
 			createFlowConfigMap(ctx, cmName, name, "payment-processor", "1.0.0")
 		})
 		AfterEach(func() {
@@ -650,7 +889,7 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 		BeforeEach(func() {
 			r = newReconciler()
-			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{})
+			nn = createRuntime(ctx, name, ephemeralSpec())
 			createFlowConfigMap(ctx, cm1Name, name, "order-flow", "2.0.0")
 			createFlowConfigMap(ctx, cm2Name, name, "payment-processor", "1.0.0")
 		})
@@ -695,7 +934,7 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 		BeforeEach(func() {
 			r = newReconciler()
-			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{})
+			nn = createRuntime(ctx, name, ephemeralSpec())
 		})
 		AfterEach(func() {
 			deleteConfigMap(ctx, cmName)
@@ -742,7 +981,7 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 		BeforeEach(func() {
 			r = newReconciler()
-			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{})
+			nn = createRuntime(ctx, name, ephemeralSpec())
 			createFlowConfigMap(ctx, cmName, "other-runtime", "wrong-ref-wf", "1.0.0")
 		})
 		AfterEach(func() {
@@ -770,7 +1009,7 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 		BeforeEach(func() {
 			r = newReconciler()
-			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{})
+			nn = createRuntime(ctx, name, ephemeralSpec())
 			createFlowConfigMap(ctx, cmName, name, "idem-wf", "1.0.0")
 		})
 		AfterEach(func() {
@@ -797,12 +1036,14 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 		BeforeEach(func() {
 			r = newReconciler()
+			createClusterLogicPlatform(ctx)
+			createSourceDBSecret(ctx)
 			nn = createRuntime(ctx, name, persistenceSpec())
 		})
 		AfterEach(func() {
 			deleteLeases(ctx, name)
-
 			deleteRuntime(ctx, nn)
+			deleteClusterLogicPlatform(ctx)
 		})
 
 		It("should create one lease for default replicas", func() {
@@ -857,7 +1098,7 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 		BeforeEach(func() {
 			r = newReconciler()
-			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{})
+			nn = createRuntime(ctx, name, ephemeralSpec())
 		})
 		AfterEach(func() {
 			deleteRuntime(ctx, nn)
@@ -885,12 +1126,14 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 		BeforeEach(func() {
 			r = newReconciler()
+			createClusterLogicPlatform(ctx)
+			createSourceDBSecret(ctx)
 			nn = createRuntime(ctx, name, persistenceSpec())
 		})
 		AfterEach(func() {
 			deleteLeases(ctx, name)
-
 			deleteRuntime(ctx, nn)
+			deleteClusterLogicPlatform(ctx)
 		})
 
 		It("should create additional leases on scale up", func() {
@@ -986,12 +1229,14 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 		BeforeEach(func() {
 			r = newReconciler()
+			createClusterLogicPlatform(ctx)
+			createSourceDBSecret(ctx)
 			nn = createRuntime(ctx, name, persistenceSpec())
 		})
 		AfterEach(func() {
 			deleteLeases(ctx, name)
-
 			deleteRuntime(ctx, nn)
+			deleteClusterLogicPlatform(ctx)
 		})
 
 		It("should produce the same leases on repeated reconciliation", func() {
@@ -1014,12 +1259,13 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 		BeforeEach(func() {
 			r = newReconciler()
+			createClusterLogicPlatform(ctx)
 			nn = createRuntime(ctx, name, persistenceSpec())
 		})
 		AfterEach(func() {
 			deleteLeases(ctx, name)
-
 			deleteRuntime(ctx, nn)
+			deleteClusterLogicPlatform(ctx)
 		})
 
 		It("should set durable env vars when persistence is configured", func() {
@@ -1051,7 +1297,7 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 			deleteRuntime(ctx, nn)
 
-			nn = createRuntime(ctx, "test-no-durable-env", logicv1.LogicFlowRuntimeSpec{})
+			nn = createRuntime(ctx, "test-no-durable-env", ephemeralSpec())
 			reconcileAndFetch(ctx, r, nn)
 
 			var dep appsv1.Deployment
@@ -1072,11 +1318,14 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 		BeforeEach(func() {
 			r = newReconciler()
+			createClusterLogicPlatform(ctx)
+			createSourceDBSecret(ctx)
 			nn = createRuntime(ctx, name, persistenceSpec())
 		})
 		AfterEach(func() {
 			deleteLeases(ctx, name)
 			deleteRuntime(ctx, nn)
+			deleteClusterLogicPlatform(ctx)
 		})
 
 		It("should use Recreate strategy for single replica", func() {
@@ -1112,7 +1361,7 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 		BeforeEach(func() {
 			r = newReconciler()
-			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{})
+			nn = createRuntime(ctx, name, ephemeralSpec())
 		})
 		AfterEach(func() {
 			deleteRuntime(ctx, nn)
@@ -1134,12 +1383,14 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 		BeforeEach(func() {
 			r = newReconciler()
+			createClusterLogicPlatform(ctx)
+			createSourceDBSecret(ctx)
 			nn = createRuntime(ctx, name, persistenceSpec())
 		})
 		AfterEach(func() {
 			deleteLeases(ctx, name)
-
 			deleteRuntime(ctx, nn)
+			deleteClusterLogicPlatform(ctx)
 		})
 
 		It("should create a ServiceAccount", func() {
@@ -1182,7 +1433,7 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 
 		BeforeEach(func() {
 			r = newReconciler()
-			nn = createRuntime(ctx, name, logicv1.LogicFlowRuntimeSpec{})
+			nn = createRuntime(ctx, name, ephemeralSpec())
 		})
 		AfterEach(func() {
 			deleteRuntime(ctx, nn)
@@ -1207,6 +1458,158 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 			var dep appsv1.Deployment
 			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
 			Expect(dep.Spec.Template.Spec.ServiceAccountName).To(BeEmpty())
+		})
+	})
+
+	Context("DB Secret replication", func() {
+		const name = "test-secret-replication"
+		const runtimeNamespace = "kube-system" // Use existing namespace different from testNamespace
+		var nn types.NamespacedName
+		var r *LogicFlowRuntimeReconciler
+		const sourceSecretName = "pg-creds"
+
+		BeforeEach(func() {
+			r = newReconciler()
+			createClusterLogicPlatform(ctx)
+			// Create source secret in the platform's target namespace (testNamespace) with custom data
+			deleteSourceDBSecret(ctx, sourceSecretName)
+			sourceSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      sourceSecretName,
+					Namespace: testNamespace,
+				},
+				Type: corev1.SecretTypeOpaque,
+				Data: map[string][]byte{
+					"POSTGRESQL_USER":     []byte("testuser"),
+					"POSTGRESQL_PASSWORD": []byte("testpass"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, sourceSecret)).To(Succeed())
+			// Create runtime in kube-system to test cross-namespace secret replication
+			nn = types.NamespacedName{Name: name, Namespace: runtimeNamespace}
+			rt := &logicv1.LogicFlowRuntime{
+				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: runtimeNamespace},
+				Spec:       persistenceSpec(),
+			}
+			Expect(k8sClient.Create(ctx, rt)).To(Succeed())
+		})
+		AfterEach(func() {
+			deleteLeases(ctx, name)
+			deleteRuntime(ctx, nn)
+			deleteClusterLogicPlatform(ctx)
+			deleteSourceDBSecret(ctx, sourceSecretName)
+			// Clean up replica secret in kube-system
+			replicaSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: sourceSecretName, Namespace: runtimeNamespace}}
+			_ = k8sClient.Delete(ctx, replicaSecret) // Ignore error if it doesn't exist
+		})
+
+		It("should create a replica secret in the runtime's namespace", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			var secret corev1.Secret
+			secretNN := types.NamespacedName{Name: sourceSecretName, Namespace: nn.Namespace}
+			Expect(k8sClient.Get(ctx, secretNN, &secret)).To(Succeed())
+			Expect(secret.Name).To(Equal(sourceSecretName))
+			Expect(secret.Data).To(HaveKeyWithValue("POSTGRESQL_USER", []byte("testuser")))
+			Expect(secret.Data).To(HaveKeyWithValue("POSTGRESQL_PASSWORD", []byte("testpass")))
+		})
+
+		It("should set the correct secret type", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			var secret corev1.Secret
+			secretNN := types.NamespacedName{Name: sourceSecretName, Namespace: nn.Namespace}
+			Expect(k8sClient.Get(ctx, secretNN, &secret)).To(Succeed())
+			Expect(secret.Type).To(Equal(corev1.SecretTypeOpaque))
+		})
+
+		It("should set owner reference to the runtime", func() {
+			rt := reconcileAndFetch(ctx, r, nn)
+
+			var secret corev1.Secret
+			secretNN := types.NamespacedName{Name: sourceSecretName, Namespace: nn.Namespace}
+			Expect(k8sClient.Get(ctx, secretNN, &secret)).To(Succeed())
+			Expect(secret.OwnerReferences).To(HaveLen(1))
+			Expect(secret.OwnerReferences[0].APIVersion).To(Equal(logicv1.GroupVersion.String()))
+			Expect(secret.OwnerReferences[0].Kind).To(Equal(logicv1.LogicFlowRuntimeKind))
+			Expect(secret.OwnerReferences[0].Name).To(Equal(name))
+			Expect(secret.OwnerReferences[0].UID).To(Equal(rt.UID))
+			Expect(*secret.OwnerReferences[0].Controller).To(BeTrue())
+		})
+
+		It("should label the replica as operator-managed", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			var secret corev1.Secret
+			secretNN := types.NamespacedName{Name: sourceSecretName, Namespace: nn.Namespace}
+			Expect(k8sClient.Get(ctx, secretNN, &secret)).To(Succeed())
+			Expect(secret.Labels).To(HaveKeyWithValue("logic.kubesmarts.org/managed-by", "logic-operator"))
+		})
+
+		It("should sync source secret data on reconcile", func() {
+			// First reconcile creates the replica
+			reconcileAndFetch(ctx, r, nn)
+
+			var secret corev1.Secret
+			secretNN := types.NamespacedName{Name: sourceSecretName, Namespace: nn.Namespace}
+			Expect(k8sClient.Get(ctx, secretNN, &secret)).To(Succeed())
+			Expect(secret.Data["POSTGRESQL_USER"]).To(Equal([]byte("testuser")))
+
+			// Update the source secret
+			var sourceSecret corev1.Secret
+			Expect(k8sClient.Get(ctx, client.ObjectKey{Name: sourceSecretName, Namespace: testNamespace}, &sourceSecret)).To(Succeed())
+			sourceSecret.Data["POSTGRESQL_USER"] = []byte("newuser")
+			sourceSecret.Data["POSTGRESQL_PASSWORD"] = []byte("newpass")
+			Expect(k8sClient.Update(ctx, &sourceSecret)).To(Succeed())
+
+			// Reconcile again - replica should be updated
+			reconcileAndFetch(ctx, r, nn)
+
+			Expect(k8sClient.Get(ctx, secretNN, &secret)).To(Succeed())
+			Expect(secret.Data["POSTGRESQL_USER"]).To(Equal([]byte("newuser")))
+			Expect(secret.Data["POSTGRESQL_PASSWORD"]).To(Equal([]byte("newpass")))
+		})
+	})
+
+	Context("No DB Secret replication for ephemeral", func() {
+		const name = "test-no-secret-ephemeral"
+		const sourceSecretName = "pg-creds"
+		var nn types.NamespacedName
+		var r *LogicFlowRuntimeReconciler
+
+		BeforeEach(func() {
+			r = newReconciler()
+			createClusterLogicPlatform(ctx)
+			// Create source secret
+			sourceSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      sourceSecretName,
+					Namespace: testNamespace,
+				},
+				Type: corev1.SecretTypeOpaque,
+				Data: map[string][]byte{
+					"POSTGRESQL_USER":     []byte("testuser"),
+					"POSTGRESQL_PASSWORD": []byte("testpass"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, sourceSecret)).To(Succeed())
+			nn = createRuntime(ctx, name, ephemeralSpec())
+		})
+		AfterEach(func() {
+			deleteRuntime(ctx, nn)
+			deleteClusterLogicPlatform(ctx)
+			// Clean up source secret
+			sourceSecret := &corev1.Secret{}
+			_ = k8sClient.Get(ctx, client.ObjectKey{Name: sourceSecretName, Namespace: testNamespace}, sourceSecret)
+			_ = k8sClient.Delete(ctx, sourceSecret)
+		})
+
+		It("should not create a replica secret for ephemeral runtime", func() {
+			reconcileAndFetch(ctx, r, nn)
+
+			var secret corev1.Secret
+			err := k8sClient.Get(ctx, nn, &secret)
+			Expect(errors.IsNotFound(err)).To(BeTrue())
 		})
 	})
 })

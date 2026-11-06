@@ -2,6 +2,8 @@ package v1
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
@@ -15,12 +17,25 @@ var _ admission.Defaulter[*LogicFlowRuntime] = &LogicFlowRuntimeDefaulter{}
 
 // ApplyLogicFlowRuntimeDefaults applies runtime-specific defaults used by both
 // the admission webhook and controller. ApplicationSpec is also used by
-// LogicPlatform.DataIndex, where replicas must remain unset to allow HPA
+// platform components, where replicas must remain unset to allow HPA
 // management, so this default is conditional on the resource kind.
 func ApplyLogicFlowRuntimeDefaults(obj *LogicFlowRuntime) {
 	if obj.Spec.Replicas == nil {
 		one := int32(1)
 		obj.Spec.Replicas = &one
+	}
+	if obj.Spec.PersistenceMode == nil {
+		// Default to Ephemeral, but override for known runner images with specific variants
+		mode := PersistenceModeEphemeral
+		if isKnownRunnerImage(obj.Spec.Image) {
+			// Known runner image: check variant suffix
+			if strings.HasSuffix(obj.Spec.Image, "-"+ImageVariantStandard) {
+				mode = PersistenceModePlatformDB
+			} else if strings.HasSuffix(obj.Spec.Image, "-"+ImageVariantMinimal) {
+				mode = PersistenceModeEphemeral
+			}
+		}
+		obj.Spec.PersistenceMode = &mode
 	}
 }
 
@@ -52,9 +67,35 @@ func (v *LogicFlowRuntimeValidator) validate(obj *LogicFlowRuntime) (admission.W
 		return nil, err
 	}
 	if obj.Spec.Image != "" {
-		if err := ValidateRunnerImage(obj.Spec.Image, obj.Spec.Persistence); err != nil {
+		var effP *DatastoreSpec
+		if !IsEphemeral(obj) {
+			effP = &DatastoreSpec{PostgreSQL: &PersistencePostgreSQL{}}
+		}
+		if err := ValidateRunnerImage(obj.Spec.Image, effP); err != nil {
 			return nil, err
 		}
 	}
+	if err := v.validatePlatformRef(obj.Spec.PlatformRef); err != nil {
+		return nil, err
+	}
 	return nil, nil
+}
+
+func (v *LogicFlowRuntimeValidator) validatePlatformRef(platformRef *PlatformReference) error {
+	// If platformRef is omitted, auto-discovery is used (allowed)
+	if platformRef == nil {
+		return nil
+	}
+
+	// If Kind is set, it must equal ClusterLogicPlatform
+	if platformRef.Kind != "" && platformRef.Kind != "ClusterLogicPlatform" {
+		return fmt.Errorf("spec.platformRef.kind must be 'ClusterLogicPlatform', got %q", platformRef.Kind)
+	}
+
+	// Name must be non-empty when platformRef is present
+	if platformRef.Name == "" {
+		return fmt.Errorf("spec.platformRef.name is required when platformRef is set")
+	}
+
+	return nil
 }

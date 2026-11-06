@@ -19,19 +19,19 @@ import (
 
 // vectorComponent implements PlatformComponent for the Vector service.
 type vectorComponent struct {
-	*LogicPlatformReconciler
+	*ClusterLogicPlatformReconciler
 }
 
 func (c *vectorComponent) Name() string { return "Vector" }
-func (c *vectorComponent) Reconcile(ctx context.Context, plat *logicv1.LogicPlatform) error {
+func (c *vectorComponent) Reconcile(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
 	return c.reconcileVector(ctx, plat)
 }
-func (c *vectorComponent) UpdateStatus(ctx context.Context, plat *logicv1.LogicPlatform) error {
+func (c *vectorComponent) UpdateStatus(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
 	return c.updateVectorStatus(ctx, plat)
 }
 
-func (c *vectorComponent) reconcileVector(ctx context.Context, plat *logicv1.LogicPlatform) error {
-	if plat.Spec.DataIndex.Vector == nil || !plat.Spec.DataIndex.Vector.Enabled {
+func (c *vectorComponent) reconcileVector(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
+	if plat.Spec.Vector == nil {
 		return c.deleteVectorResources(ctx, plat)
 	}
 
@@ -50,29 +50,29 @@ func (c *vectorComponent) reconcileVector(ctx context.Context, plat *logicv1.Log
 	return nil
 }
 
-func (c *vectorComponent) applyVectorDaemonSet(ctx context.Context, plat *logicv1.LogicPlatform) error {
-	childLabels := ChildLabelsInstance(plat, vectorName(plat))
-	vectorSelector := SelectorLabels(vectorName(plat))
-	// Merge selector labels into pod labels so they match
+func (c *vectorComponent) applyVectorDaemonSet(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
+	childLabels := ChildLabelsInstance(plat, vectorNameCLP(plat))
+	vectorSelector := SelectorLabels(vectorNameCLP(plat))
 	vectorLabels := MergeMaps(childLabels, vectorSelector)
 
 	containerOpts := []ContainerOption{
-		WithVectorEnvVars(plat),
+		WithDefaultImage(logicv1.DefaultVectorImage()),
+		WithVectorEnvVarsCLP(plat),
 		WithVectorVolumeMounts(),
 		VectorProbes(),
 	}
 
 	spec := ToDaemonSetSpec(
 		ContainerNameVector,
-		&plat.Spec.DataIndex.Vector.Application,
+		&plat.Spec.Vector.Application,
 		vectorLabels,
 		vectorSelector,
 		containerOpts,
 		WithoutRestrictedSecurity(),
 	)
 	spec.Template.Spec.
-		WithVolumes(VectorVolumes(plat)...).
-		WithServiceAccountName(vectorName(plat)).
+		WithVolumes(VectorVolumesCLP(plat)...).
+		WithServiceAccountName(vectorNameCLP(plat)).
 		WithTolerations(corev1ac.Toleration().
 			WithKey("node-role.kubernetes.io/control-plane").
 			WithOperator(corev1.TolerationOpExists).
@@ -82,21 +82,21 @@ func (c *vectorComponent) applyVectorDaemonSet(ctx context.Context, plat *logicv
 				WithOperator(corev1.TolerationOpExists).
 				WithEffect(corev1.TaintEffectNoSchedule))
 
-	daemonSet := appsv1ac.DaemonSet(vectorName(plat), plat.Namespace).
+	daemonSet := appsv1ac.DaemonSet(vectorNameCLP(plat), plat.Spec.TargetNamespace).
 		WithLabels(childLabels).
-		WithOwnerReferences(OwnerRef(plat, logicv1.LogicPlatformKind)).
+		WithOwnerReferences(OwnerRef(plat, logicv1.ClusterLogicPlatformKind)).
 		WithSpec(spec)
 
 	return c.Apply(ctx, daemonSet, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
 }
 
-func (c *vectorComponent) applyVectorService(ctx context.Context, plat *logicv1.LogicPlatform) error {
-	childLabels := ChildLabelsInstance(plat, vectorName(plat))
-	vectorSelector := SelectorLabels(vectorName(plat))
+func (c *vectorComponent) applyVectorService(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
+	childLabels := ChildLabelsInstance(plat, vectorNameCLP(plat))
+	vectorSelector := SelectorLabels(vectorNameCLP(plat))
 
-	svc := corev1ac.Service(vectorName(plat), plat.Namespace).
+	svc := corev1ac.Service(vectorNameCLP(plat), plat.Spec.TargetNamespace).
 		WithLabels(childLabels).
-		WithOwnerReferences(OwnerRef(plat, logicv1.LogicPlatformKind)).
+		WithOwnerReferences(OwnerRef(plat, logicv1.ClusterLogicPlatformKind)).
 		WithSpec(
 			corev1ac.ServiceSpec().
 				WithSelector(vectorSelector).
@@ -117,13 +117,13 @@ func (c *vectorComponent) applyVectorService(ctx context.Context, plat *logicv1.
 	return c.Apply(ctx, svc, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
 }
 
-func (c *vectorComponent) reconcileVectorRBAC(ctx context.Context, plat *logicv1.LogicPlatform) error {
-	rbacName := vectorName(plat)
+func (c *vectorComponent) reconcileVectorRBAC(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
+	rbacName := vectorNameCLP(plat)
 	childLabels := ChildLabelsInstance(plat, rbacName)
 	isController := true
 	ownerRef := metav1.OwnerReference{
 		APIVersion:         logicv1.GroupVersion.String(),
-		Kind:               logicv1.LogicPlatformKind,
+		Kind:               logicv1.ClusterLogicPlatformKind,
 		Name:               plat.Name,
 		UID:                plat.UID,
 		Controller:         &isController,
@@ -132,7 +132,7 @@ func (c *vectorComponent) reconcileVectorRBAC(ctx context.Context, plat *logicv1
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            rbacName,
-			Namespace:       plat.Namespace,
+			Namespace:       plat.Spec.TargetNamespace,
 			OwnerReferences: []metav1.OwnerReference{ownerRef},
 			Labels:          childLabels,
 		},
@@ -144,7 +144,7 @@ func (c *vectorComponent) reconcileVectorRBAC(ctx context.Context, plat *logicv1
 	rb := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            rbacName,
-			Namespace:       plat.Namespace,
+			Namespace:       plat.Spec.TargetNamespace,
 			OwnerReferences: []metav1.OwnerReference{ownerRef},
 			Labels:          childLabels,
 		},
@@ -157,7 +157,7 @@ func (c *vectorComponent) reconcileVectorRBAC(ctx context.Context, plat *logicv1
 			{
 				Kind:      "ServiceAccount",
 				Name:      rbacName,
-				Namespace: plat.Namespace,
+				Namespace: plat.Spec.TargetNamespace,
 			},
 		},
 	}
@@ -168,51 +168,49 @@ func (c *vectorComponent) reconcileVectorRBAC(ctx context.Context, plat *logicv1
 	return nil
 }
 
-func (c *vectorComponent) applyVectorConfigMap(ctx context.Context, plat *logicv1.LogicPlatform) error {
-	cmName := vectorName(plat)
+func (c *vectorComponent) applyVectorConfigMap(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
+	cmName := vectorNameCLP(plat)
 	childLabels := ChildLabelsInstance(plat, cmName)
-	// TODO: once we add support to ES, do the check here for which config to create
-	cm := corev1ac.ConfigMap(cmName, plat.Namespace).
+	cm := corev1ac.ConfigMap(cmName, plat.Spec.TargetNamespace).
 		WithLabels(childLabels).
-		WithOwnerReferences(OwnerRef(plat, logicv1.LogicPlatformKind)).
+		WithOwnerReferences(OwnerRef(plat, logicv1.ClusterLogicPlatformKind)).
 		WithData(map[string]string{"vector.yaml": vectorPostgreSQLConfig})
 
 	return c.Apply(ctx, cm, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
 }
 
-func (c *vectorComponent) deleteVectorResources(ctx context.Context, plat *logicv1.LogicPlatform) error {
+func (c *vectorComponent) deleteVectorResources(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
 	// Delete DaemonSet
 	if err := c.Delete(ctx, &appsv1.DaemonSet{
-		ObjectMeta: metav1.ObjectMeta{Name: vectorName(plat), Namespace: plat.Namespace},
+		ObjectMeta: metav1.ObjectMeta{Name: vectorNameCLP(plat), Namespace: plat.Spec.TargetNamespace},
 	}); err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
 
 	// Delete Service
 	if err := c.Delete(ctx, &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: vectorName(plat), Namespace: plat.Namespace},
+		ObjectMeta: metav1.ObjectMeta{Name: vectorNameCLP(plat), Namespace: plat.Spec.TargetNamespace},
 	}); err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
 
 	// Delete ConfigMap
-	// TODO: once we add support to ES, do the check here for which config to create
 	if err := c.Delete(ctx, &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: vectorName(plat), Namespace: plat.Namespace},
+		ObjectMeta: metav1.ObjectMeta{Name: vectorNameCLP(plat), Namespace: plat.Spec.TargetNamespace},
 	}); err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
 
 	// Delete ServiceAccount
 	if err := c.Delete(ctx, &corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{Name: vectorName(plat), Namespace: plat.Namespace},
+		ObjectMeta: metav1.ObjectMeta{Name: vectorNameCLP(plat), Namespace: plat.Spec.TargetNamespace},
 	}); err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
 
 	// Delete ClusterRoleBinding
 	if err := c.Delete(ctx, &rbacv1.ClusterRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{Name: vectorName(plat)},
+		ObjectMeta: metav1.ObjectMeta{Name: vectorNameCLP(plat)},
 	}); err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
@@ -220,11 +218,11 @@ func (c *vectorComponent) deleteVectorResources(ctx context.Context, plat *logic
 	return nil
 }
 
-func (c *vectorComponent) updateVectorStatus(ctx context.Context, plat *logicv1.LogicPlatform) error {
+func (c *vectorComponent) updateVectorStatus(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
 	// If Vector is disabled, clear status
-	if plat.Spec.DataIndex.Vector == nil || !plat.Spec.DataIndex.Vector.Enabled {
+	if plat.Spec.Vector == nil {
 		plat.Status.Vector = nil
-		removeLogicPlatformCondition(&plat.Status.Conditions, logicv1.ConditionVectorReady)
+		removeClusterLogicPlatformCondition(&plat.Status.Conditions, logicv1.ConditionVectorReady)
 		return nil
 	}
 
@@ -235,10 +233,10 @@ func (c *vectorComponent) updateVectorStatus(ctx context.Context, plat *logicv1.
 
 	// Fetch DaemonSet
 	var ds appsv1.DaemonSet
-	err := c.Get(ctx, client.ObjectKey{Name: vectorName(plat), Namespace: plat.Namespace}, &ds)
+	err := c.Get(ctx, client.ObjectKey{Name: vectorNameCLP(plat), Namespace: plat.Spec.TargetNamespace}, &ds)
 	if apierrors.IsNotFound(err) {
 		plat.Status.Vector.Ready = false
-		plat.Status.Vector.DaemonSetRef = corev1.LocalObjectReference{Name: vectorName(plat)}
+		plat.Status.Vector.DaemonSetRef = corev1.LocalObjectReference{Name: vectorNameCLP(plat)}
 		logicv1.SetCondition(&plat.Status.Conditions, logicv1.ConditionVectorReady,
 			metav1.ConditionFalse, plat.Generation,
 			logicv1.ReasonDaemonSetNotFound, "Vector DaemonSet not found")
@@ -258,7 +256,7 @@ func (c *vectorComponent) updateVectorStatus(ctx context.Context, plat *logicv1.
 	// Set MetricsEndpoint
 	plat.Status.Vector.MetricsEndpoint = fmt.Sprintf(
 		"http://%s.%s.svc.cluster.local:%d/metrics",
-		vectorName(plat), plat.Namespace, VectorPort,
+		vectorNameCLP(plat), plat.Spec.TargetNamespace, VectorPort,
 	)
 
 	// Set condition based on ready status

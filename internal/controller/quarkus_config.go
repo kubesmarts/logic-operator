@@ -16,6 +16,10 @@ const (
 	defaultPort         = 80
 )
 
+func schedName(rt *logicv1.LogicFlowRuntime) string {
+	return fmt.Sprintf("%s/%s", rt.Namespace, rt.Name)
+}
+
 func runnerImage(variant string) string {
 	return fmt.Sprintf("%s/%s:%s-%s", logicv1.FlowRunnerRegistry, logicv1.FlowRunnerImage, QuarkusFlowVersion, variant)
 }
@@ -48,7 +52,7 @@ func QuarkusServiceWithSelectorAndName(owner metav1.Object, ownerKind string, se
 
 // DefaultRunnerImage returns a ContainerOption that sets the runner image when none was
 // specified by the user. Auto-selects minimal (no persistence) or standard (with persistence).
-func DefaultRunnerImage(persistence *logicv1.PersistenceOptionsSpec) ContainerOption {
+func DefaultRunnerImage(persistence *logicv1.DatastoreSpec) ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
 		if c.Image != nil && *c.Image != "" {
 			return
@@ -58,6 +62,16 @@ func DefaultRunnerImage(persistence *logicv1.PersistenceOptionsSpec) ContainerOp
 		} else {
 			c.WithImage(runnerImage(logicv1.ImageVariantMinimal))
 		}
+	}
+}
+
+// WithDefaultImage returns a ContainerOption that sets an image when none was specified by the user.
+func WithDefaultImage(image string) ContainerOption {
+	return func(c *corev1ac.ContainerApplyConfiguration) {
+		if c.Image != nil && *c.Image != "" {
+			return
+		}
+		c.WithImage(image)
 	}
 }
 
@@ -108,7 +122,7 @@ func DurableStartupProbe() ContainerOption {
 
 // WithQuarkusPersistenceEnvVars returns a ContainerOption that appends Quarkus datasource environment variables.
 // The namespace parameter is the owning CR's namespace, used as fallback when serviceRef.namespace is empty.
-func WithQuarkusPersistenceEnvVars(p *logicv1.PersistenceOptionsSpec) ContainerOption {
+func WithQuarkusPersistenceEnvVars(p *logicv1.DatastoreSpec) ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
 		envs := persistenceQuarkusEnvVars(p)
 		if len(envs) > 0 {
@@ -117,7 +131,7 @@ func WithQuarkusPersistenceEnvVars(p *logicv1.PersistenceOptionsSpec) ContainerO
 	}
 }
 
-func persistenceQuarkusEnvVars(p *logicv1.PersistenceOptionsSpec) []*corev1ac.EnvVarApplyConfiguration {
+func persistenceQuarkusEnvVars(p *logicv1.DatastoreSpec) []*corev1ac.EnvVarApplyConfiguration {
 	if p == nil || p.PostgreSQL == nil {
 		return nil
 	}
@@ -274,6 +288,23 @@ func WithDurableEnvVars(rt *logicv1.LogicFlowRuntime) ContainerOption {
 	}
 }
 
+// WithQuartzSchedulerEnvVars returns a ContainerOption that sets Quartz scheduler environment variables.
+// Configures deterministic scheduler naming and clustering based on replica count.
+func WithQuartzSchedulerEnvVars(rt *logicv1.LogicFlowRuntime) ContainerOption {
+	return func(c *corev1ac.ContainerApplyConfiguration) {
+		replicas := effectiveReplicas(&rt.Spec.ApplicationSpec)
+		clustered := "false"
+		if replicas > 1 {
+			clustered = "true"
+		}
+		c.WithEnv(
+			envLiteral("QUARKUS_QUARTZ_INSTANCE_NAME", schedName(rt)),
+			envLiteral("QUARKUS_QUARTZ_CLUSTERED", clustered),
+			envLiteral("QUARKUS_QUARTZ_INSTANCE_ID", "AUTO"),
+		)
+	}
+}
+
 func securityEnvVars(sec logicv1.RuntimeSecuritySpec) []*corev1ac.EnvVarApplyConfiguration {
 	switch sec.Type {
 	case logicv1.RuntimeSecurityAPIKey:
@@ -344,9 +375,6 @@ func oidcEnvVars(oidc *logicv1.OIDCAuthSpec) []*corev1ac.EnvVarApplyConfiguratio
 }
 
 func buildJdbcURL(ref *logicv1.PostgreSQLServiceOptions) string {
-	if ref.SQLServiceOptions == nil {
-		return ""
-	}
 	// Use namespace as provided. If empty, treat as external hostname (no fallback).
 	// For K8s services, the caller must explicitly set Namespace. If not set, it's treated as external.
 	ns := ref.Namespace

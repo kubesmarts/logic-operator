@@ -15,20 +15,20 @@ func isKnownRunnerImage(image string) bool {
 	return strings.HasPrefix(image, FlowRunnerRegistry+"/"+FlowRunnerImage+":")
 }
 
-func HasPersistence(p *PersistenceOptionsSpec) bool {
+func HasPersistence(p *DatastoreSpec) bool {
 	return p != nil && p.PostgreSQL != nil
 }
 
-func ValidateRunnerImage(image string, persistence *PersistenceOptionsSpec) error {
+func ValidateRunnerImage(image string, persistence *DatastoreSpec) error {
 	if !isKnownRunnerImage(image) {
 		return nil
 	}
 
 	if strings.HasSuffix(image, "-"+ImageVariantMinimal) && HasPersistence(persistence) {
-		return fmt.Errorf("image %q does not support persistence; use the %s variant or remove persistence config", image, ImageVariantStandard)
+		return fmt.Errorf("image %q is the minimal variant and does not support persistence; set spec.persistenceMode=Ephemeral or use the standard image", image)
 	}
 	if strings.HasSuffix(image, "-"+ImageVariantStandard) && !HasPersistence(persistence) {
-		return fmt.Errorf("image %q requires persistence configuration; set spec.persistence or use the %s variant", image, ImageVariantMinimal)
+		return fmt.Errorf("image %q is the standard variant and requires persistence; set spec.persistenceMode=PlatformDB or use the minimal image", image)
 	}
 
 	return nil
