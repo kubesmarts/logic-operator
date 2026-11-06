@@ -21,9 +21,9 @@ func TestMigratorJob_UsesDDLSecretPerStore(t *testing.T) {
 				Persistence: &logicv1.DatastoreSpec{
 					PostgreSQL: &logicv1.PersistencePostgreSQL{
 						SecretRef: logicv1.PostgreSQLSecretOptions{Name: "di-secret"},
-						ServiceRef: logicv1.PostgreSQLServiceOptions{Name:         "postgres",
-								DatabaseName: "dataindex",
-							},
+						ServiceRef: logicv1.PostgreSQLServiceOptions{
+							Name:           "postgres",
+							DatabaseName:   "dataindex",
 							DatabaseSchema: "public",
 						},
 					},
@@ -33,9 +33,9 @@ func TestMigratorJob_UsesDDLSecretPerStore(t *testing.T) {
 				Runtime: logicv1.DatastoreSpec{
 					PostgreSQL: &logicv1.PersistencePostgreSQL{
 						SecretRef: logicv1.PostgreSQLSecretOptions{Name: "runtime-dml-secret"},
-						ServiceRef: logicv1.PostgreSQLServiceOptions{Name:         "postgres",
-								DatabaseName: "workflows",
-							},
+						ServiceRef: logicv1.PostgreSQLServiceOptions{
+							Name:           "postgres",
+							DatabaseName:   "workflows",
 							DatabaseSchema: "runtime",
 						},
 					},
@@ -44,9 +44,9 @@ func TestMigratorJob_UsesDDLSecretPerStore(t *testing.T) {
 				Quartz: logicv1.DatastoreSpec{
 					PostgreSQL: &logicv1.PersistencePostgreSQL{
 						SecretRef: logicv1.PostgreSQLSecretOptions{Name: "quartz-dml-secret"},
-						ServiceRef: logicv1.PostgreSQLServiceOptions{Name:         "postgres",
-								DatabaseName: "workflows",
-							},
+						ServiceRef: logicv1.PostgreSQLServiceOptions{
+							Name:           "postgres",
+							DatabaseName:   "workflows",
 							DatabaseSchema: "quartz",
 						},
 					},
@@ -93,10 +93,10 @@ func TestMigratorJob_DeduplicatesSharedInstance(t *testing.T) {
 				Runtime: logicv1.DatastoreSpec{
 					PostgreSQL: &logicv1.PersistencePostgreSQL{
 						SecretRef: logicv1.PostgreSQLSecretOptions{Name: "runtime-secret"},
-						ServiceRef: logicv1.PostgreSQLServiceOptions{Name:         "postgres",
-								DatabaseName: "workflows",
-								Port:         ptrInt(5432),
-							},
+						ServiceRef: logicv1.PostgreSQLServiceOptions{
+							Name:           "postgres",
+							DatabaseName:   "workflows",
+							Port:           ptrInt(5432),
 							DatabaseSchema: "runtime",
 						},
 					},
@@ -104,10 +104,10 @@ func TestMigratorJob_DeduplicatesSharedInstance(t *testing.T) {
 				Quartz: logicv1.DatastoreSpec{
 					PostgreSQL: &logicv1.PersistencePostgreSQL{
 						SecretRef: logicv1.PostgreSQLSecretOptions{Name: "quartz-secret"},
-						ServiceRef: logicv1.PostgreSQLServiceOptions{Name:         "postgres",
-								DatabaseName: "workflows",
-								Port:         ptrInt(5432),
-							},
+						ServiceRef: logicv1.PostgreSQLServiceOptions{
+							Name:           "postgres",
+							DatabaseName:   "workflows",
+							Port:           ptrInt(5432),
 							DatabaseSchema: "quartz",
 						},
 					},
@@ -144,9 +144,9 @@ func TestMigratorJob_DefaultsImageToQuay(t *testing.T) {
 				Runtime: logicv1.DatastoreSpec{
 					PostgreSQL: &logicv1.PersistencePostgreSQL{
 						SecretRef: logicv1.PostgreSQLSecretOptions{Name: "postgres-secret"},
-						ServiceRef: logicv1.PostgreSQLServiceOptions{Name:         "postgres",
-								DatabaseName: "workflows",
-							},
+						ServiceRef: logicv1.PostgreSQLServiceOptions{
+							Name:           "postgres",
+							DatabaseName:   "workflows",
 							DatabaseSchema: "runtime",
 						},
 					},
@@ -184,9 +184,9 @@ func TestMigratorJob_HonorsImageOverride(t *testing.T) {
 				Runtime: logicv1.DatastoreSpec{
 					PostgreSQL: &logicv1.PersistencePostgreSQL{
 						SecretRef: logicv1.PostgreSQLSecretOptions{Name: "postgres-secret"},
-						ServiceRef: logicv1.PostgreSQLServiceOptions{Name:         "postgres",
-								DatabaseName: "workflows",
-							},
+						ServiceRef: logicv1.PostgreSQLServiceOptions{
+							Name:           "postgres",
+							DatabaseName:   "workflows",
 							DatabaseSchema: "runtime",
 						},
 					},

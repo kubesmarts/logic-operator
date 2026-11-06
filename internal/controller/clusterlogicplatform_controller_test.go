@@ -102,7 +102,8 @@ var _ = Describe("ClusterLogicPlatform Controller", func() {
 							},
 						},
 					},
-				}
+				},
+			}
 			nn = createCLP(ctx, name, spec)
 		})
 

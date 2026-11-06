@@ -45,7 +45,6 @@ const (
 	TLSModeVerifyFull TLSMode = "verify-full"
 )
 
-
 // PersistencePostgreSQL configures a PostgreSQL database connection via Kubernetes Service reference.
 //
 // The operator constructs the JDBC URL dynamically from the service endpoint.

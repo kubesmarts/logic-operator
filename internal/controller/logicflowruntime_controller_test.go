@@ -154,9 +154,9 @@ func createClusterLogicPlatform(ctx context.Context) {
 				Runtime: logicv1.DatastoreSpec{
 					PostgreSQL: &logicv1.PersistencePostgreSQL{
 						SecretRef: logicv1.PostgreSQLSecretOptions{Name: "pg-creds"},
-						ServiceRef: logicv1.PostgreSQLServiceOptions{Name:         "pg",
-								DatabaseName: "logicflow",
-							},
+						ServiceRef: logicv1.PostgreSQLServiceOptions{
+							Name:           "pg",
+							DatabaseName:   "logicflow",
 							DatabaseSchema: "public",
 						},
 					},
@@ -343,9 +343,9 @@ func TestRuntime_PlatformDBInheritsRuntimeDatastore(t *testing.T) {
 		Name:    "pg-operational-creds",
 		UserKey: "user",
 	}
-	pgService := logicv1.PostgreSQLServiceOptions{Name:         "postgres",
-			DatabaseName: "workflows",
-		},
+	pgService := logicv1.PostgreSQLServiceOptions{
+		Name:           "postgres",
+		DatabaseName:   "workflows",
 		DatabaseSchema: "runtime",
 	}
 

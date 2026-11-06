@@ -1,8 +1,8 @@
 package controller
 
 import (
-	"k8s.io/apimachinery/pkg/util/intstr"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	corev1ac "k8s.io/client-go/applyconfigurations/core/v1"
 )
 
@@ -15,7 +15,7 @@ const (
 
 // WorkflowGatewayEnvVars returns environment variable configuration for the Workflow Gateway.
 func WorkflowGatewayEnvVars() ContainerOption {
-	return func(c *corev1ac.ContainerApplyConfiguration) {
+	return func(_ *corev1ac.ContainerApplyConfiguration) {
 		// Gateway-specific environment variables can be added here
 	}
 }

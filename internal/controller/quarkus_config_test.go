@@ -31,6 +31,7 @@ func TestPersistenceEnvVars_CustomSecretKeys(t *testing.T) {
 			},
 			ServiceRef: logicv1.PostgreSQLServiceOptions{
 				Name: testPostgresName,
+			},
 		},
 	}
 
@@ -67,6 +68,7 @@ func TestPersistenceEnvVars_ExplicitNamespace(t *testing.T) {
 			ServiceRef: logicv1.PostgreSQLServiceOptions{
 				Name:      testPostgresName,
 				Namespace: "my-namespace",
+			},
 		},
 	}
 
@@ -85,6 +87,7 @@ func TestPersistenceEnvVars_TLSAppendsSslMode(t *testing.T) {
 				ServiceRef: logicv1.PostgreSQLServiceOptions{
 					Name:           testPostgresName,
 					DatabaseSchema: "myschema",
+				},
 				TLS: &logicv1.TLSConnection{Enabled: true, TLSMode: logicv1.TLSModeVerifyFull},
 			},
 		}
@@ -100,8 +103,8 @@ func TestPersistenceEnvVars_TLSAppendsSslMode(t *testing.T) {
 				SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
 				ServiceRef: logicv1.PostgreSQLServiceOptions{
 					Name:         "postgres",
-						Port:         ptr.To(5432),
-						DatabaseName: "mydb",
+					Port:         ptr.To(5432),
+					DatabaseName: "mydb",
 				},
 				TLS: &logicv1.TLSConnection{Enabled: true, TLSMode: logicv1.TLSModeRequire},
 			},
@@ -117,8 +120,8 @@ func TestPersistenceEnvVars_TLSAppendsSslMode(t *testing.T) {
 				SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
 				ServiceRef: logicv1.PostgreSQLServiceOptions{
 					Name:         "postgres",
-						Port:         ptr.To(5432),
-						DatabaseName: "mydb",
+					Port:         ptr.To(5432),
+					DatabaseName: "mydb",
 				},
 				TLS: &logicv1.TLSConnection{Enabled: true},
 			},
