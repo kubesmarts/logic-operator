@@ -80,7 +80,7 @@ curl -X POST http://localhost:8080/graphql \
   -d '{"query":"{ getWorkflowInstances(limit: 10) { id namespace name status startedAt endedAt } }"}'
 ----
 
-See the https://kubesmarts.org/logic-apps/data-index/[Data Index documentation] for its current
+See the https://kubesmarts.org/logic-apps/[Data Index documentation] for its current
 GraphQL types, filters, and schema details.
 
 == Troubleshooting
