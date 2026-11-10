@@ -34,11 +34,11 @@ runner image. The operator creates Lease coordination resources when persistence
 
 Data Index and Vector are optional platform components. When Data Index is enabled, the admission
 webhook requires PostgreSQL connection settings with Secret, Service, database, and schema. Vector
-is configured independently under `dataIndex.vector`; workflow execution does not require either
+is configured independently under `vector`; workflow execution does not require either
 component.
 
 Vector currently receives a filter for only the first exact namespace in
-`dataIndex.vector.watchNamespaces`. Omit the field to default to the LogicPlatform namespace. A
+`vector.watchNamespaces`. Omit the field to default to `spec.targetNamespace`. A
 wildcard or multiple namespace entries are not supported by the current filter implementation.
 
 Structured logging is configured on each runtime. Keep workflow and task payload logging disabled
@@ -87,14 +87,14 @@ Without persistence, active execution state is held in memory and pod scaling ca
 
 === Workflow Gateway
 
-The gateway Deployment can be targeted by an HPA when `workflowGateway.application.replicas` is
+The gateway Deployment can be targeted by an HPA when `gateway.application.replicas` is
 left unset. For this release, set the HPA's `maxReplicas` to `1`: async instance routing state is
 held in memory and is not shared between gateway replicas. See
 xref:components/workflow-gateway.adoc[Workflow Gateway limitations].
 
 === Data Index and Vector
 
-The LogicPlatform webhook defaults Data Index to one replica and the operator reconciles the
+The ClusterLogicPlatform webhook defaults Data Index to one replica and the operator reconciles the
 configured count. No HPA contract is provided for Data Index. Vector is a DaemonSet and is not
 scaled through HPA.
 
@@ -108,7 +108,7 @@ strategy.
 
 == Platform readiness
 
-`LogicPlatform.status.conditions[type=Ready]` is an aggregate of enabled components. A configured
+`ClusterLogicPlatform.status.conditions[type=Ready]` is an aggregate of enabled components. A configured
 gateway, Data Index, or Vector component that is not ready makes the platform not ready. The
 component status fields show which one is still progressing. A configured external ingress host
 is not required for the gateway's component readiness condition.
@@ -119,7 +119,7 @@ The operator image version and component image versions are separate version str
 `{operator-version}`, Workflow Gateway `{workflow-gateway-version}`, Data Index
 `{data-index-version}`, and Quarkus Flow Runner `{quarkus-flow-runner-version}`. The operator build
 embeds its default gateway, Data Index, and Quarkus Flow Runner versions. On admission,
-LogicPlatform defaults the gateway and Data Index images into the resource spec; those values are
+ClusterLogicPlatform defaults the gateway and Data Index images into the resource spec; those values are
 then reconciled as configured and are not automatically advanced when the operator is upgraded.
 Review and update these image fields deliberately when upgrading platform components. A
 LogicFlowRuntime with an empty image uses the runner version embedded in the current operator, so

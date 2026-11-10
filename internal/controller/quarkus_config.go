@@ -121,7 +121,6 @@ func DurableStartupProbe() ContainerOption {
 }
 
 // WithQuarkusPersistenceEnvVars returns a ContainerOption that appends Quarkus datasource environment variables.
-// The namespace parameter is the owning CR's namespace, used as fallback when serviceRef.namespace is empty.
 func WithQuarkusPersistenceEnvVars(p *logicv1.DatastoreSpec) ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
 		envs := persistenceQuarkusEnvVars(p)
@@ -136,6 +135,35 @@ func persistenceQuarkusEnvVars(p *logicv1.DatastoreSpec) []*corev1ac.EnvVarApply
 		return nil
 	}
 
+	envs := datasourcePersistenceEnvVars(p, "QUARKUS_DATASOURCE_")
+	if p.PostgreSQL.ServiceRef.DatabaseSchema != "" {
+		envs = append(envs, envLiteral("QUARKUS_HIBERNATE_ORM_DATABASE_DEFAULT_SCHEMA", p.PostgreSQL.ServiceRef.DatabaseSchema))
+	}
+	return envs
+}
+
+// WithQuarkusQuartzPersistenceEnvVars returns environment variables for the runner's named flow-quartz datasource.
+// When p is nil, the runner's embedded profile falls back to the default datasource.
+func WithQuarkusQuartzPersistenceEnvVars(p *logicv1.DatastoreSpec) ContainerOption {
+	return func(c *corev1ac.ContainerApplyConfiguration) {
+		envs := quartzPersistenceQuarkusEnvVars(p)
+		if len(envs) > 0 {
+			c.WithEnv(envs...)
+		}
+	}
+}
+
+func quartzPersistenceQuarkusEnvVars(p *logicv1.DatastoreSpec) []*corev1ac.EnvVarApplyConfiguration {
+	if p == nil || p.PostgreSQL == nil {
+		return nil
+	}
+	return datasourcePersistenceEnvVars(p, "QUARKUS_DATASOURCE__FLOW_QUARTZ__")
+}
+
+func datasourcePersistenceEnvVars(p *logicv1.DatastoreSpec, envPrefix string) []*corev1ac.EnvVarApplyConfiguration {
+	if p == nil || p.PostgreSQL == nil {
+		return nil
+	}
 	pg := p.PostgreSQL
 	envs := make([]*corev1ac.EnvVarApplyConfiguration, 0, 3)
 
@@ -148,8 +176,8 @@ func persistenceQuarkusEnvVars(p *logicv1.DatastoreSpec) []*corev1ac.EnvVarApply
 		passwordKey = logicv1.DefaultPgsqlSecretPasswordKey
 	}
 	envs = append(envs,
-		envFromSecret("QUARKUS_DATASOURCE_USERNAME", pg.SecretRef.Name, userKey),
-		envFromSecret("QUARKUS_DATASOURCE_PASSWORD", pg.SecretRef.Name, passwordKey),
+		envFromSecret(envPrefix+"USERNAME", pg.SecretRef.Name, userKey),
+		envFromSecret(envPrefix+"PASSWORD", pg.SecretRef.Name, passwordKey),
 	)
 
 	jdbcURL := buildJdbcURL(&pg.ServiceRef)
@@ -164,11 +192,7 @@ func persistenceQuarkusEnvVars(p *logicv1.DatastoreSpec) []*corev1ac.EnvVarApply
 			jdbcURL += "?sslmode=" + mode
 		}
 	}
-	envs = append(envs, envLiteral("QUARKUS_DATASOURCE_JDBC_URL", jdbcURL))
-
-	if pg.ServiceRef.DatabaseSchema != "" {
-		envs = append(envs, envLiteral("QUARKUS_HIBERNATE_ORM_DATABASE_DEFAULT_SCHEMA", pg.ServiceRef.DatabaseSchema))
-	}
+	envs = append(envs, envLiteral(envPrefix+"JDBC_URL", jdbcURL))
 
 	return envs
 }

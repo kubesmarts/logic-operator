@@ -87,11 +87,6 @@ func (v *LogicFlowRuntimeValidator) validatePlatformRef(platformRef *PlatformRef
 		return nil
 	}
 
-	// If Kind is set, it must equal ClusterLogicPlatform
-	if platformRef.Kind != "" && platformRef.Kind != "ClusterLogicPlatform" {
-		return fmt.Errorf("spec.platformRef.kind must be 'ClusterLogicPlatform', got %q", platformRef.Kind)
-	}
-
 	// Name must be non-empty when platformRef is present
 	if platformRef.Name == "" {
 		return fmt.Errorf("spec.platformRef.name is required when platformRef is set")

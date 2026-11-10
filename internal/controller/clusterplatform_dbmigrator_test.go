@@ -29,28 +29,30 @@ func TestMigratorJob_UsesDDLSecretPerStore(t *testing.T) {
 					},
 				},
 			},
-			Runtime: &logicv1.RuntimeDatastoreSpec{
-				Runtime: logicv1.DatastoreSpec{
-					PostgreSQL: &logicv1.PersistencePostgreSQL{
-						SecretRef: logicv1.PostgreSQLSecretOptions{Name: "runtime-dml-secret"},
-						ServiceRef: logicv1.PostgreSQLServiceOptions{
-							Name:           "postgres",
-							DatabaseName:   "workflows",
-							DatabaseSchema: "runtime",
+			Runtime: &logicv1.RuntimePlatformSpec{
+				Persistence: &logicv1.RuntimePersistenceSpec{
+					Runtime: logicv1.DatastoreSpec{
+						PostgreSQL: &logicv1.PersistencePostgreSQL{
+							SecretRef: logicv1.PostgreSQLSecretOptions{Name: "runtime-dml-secret"},
+							ServiceRef: logicv1.PostgreSQLServiceOptions{
+								Name:           "postgres",
+								DatabaseName:   "workflows",
+								DatabaseSchema: "runtime",
+							},
 						},
+						MigrationSecretRef: &logicv1.PostgreSQLSecretOptions{Name: "runtime-ddl-secret"},
 					},
-					MigrationSecretRef: &logicv1.PostgreSQLSecretOptions{Name: "runtime-ddl-secret"},
-				},
-				Quartz: logicv1.DatastoreSpec{
-					PostgreSQL: &logicv1.PersistencePostgreSQL{
-						SecretRef: logicv1.PostgreSQLSecretOptions{Name: "quartz-dml-secret"},
-						ServiceRef: logicv1.PostgreSQLServiceOptions{
-							Name:           "postgres",
-							DatabaseName:   "workflows",
-							DatabaseSchema: "quartz",
+					Quartz: logicv1.DatastoreSpec{
+						PostgreSQL: &logicv1.PersistencePostgreSQL{
+							SecretRef: logicv1.PostgreSQLSecretOptions{Name: "quartz-dml-secret"},
+							ServiceRef: logicv1.PostgreSQLServiceOptions{
+								Name:           "postgres",
+								DatabaseName:   "workflows",
+								DatabaseSchema: "quartz",
+							},
 						},
+						MigrationSecretRef: &logicv1.PostgreSQLSecretOptions{Name: "quartz-ddl-secret"},
 					},
-					MigrationSecretRef: &logicv1.PostgreSQLSecretOptions{Name: "quartz-ddl-secret"},
 				},
 			},
 		},
@@ -89,26 +91,28 @@ func TestMigratorJob_DeduplicatesSharedInstance(t *testing.T) {
 		},
 		Spec: logicv1.ClusterLogicPlatformSpec{
 			TargetNamespace: "workflows",
-			Runtime: &logicv1.RuntimeDatastoreSpec{
-				Runtime: logicv1.DatastoreSpec{
-					PostgreSQL: &logicv1.PersistencePostgreSQL{
-						SecretRef: logicv1.PostgreSQLSecretOptions{Name: "runtime-secret"},
-						ServiceRef: logicv1.PostgreSQLServiceOptions{
-							Name:           "postgres",
-							DatabaseName:   "workflows",
-							Port:           ptrInt(5432),
-							DatabaseSchema: "runtime",
+			Runtime: &logicv1.RuntimePlatformSpec{
+				Persistence: &logicv1.RuntimePersistenceSpec{
+					Runtime: logicv1.DatastoreSpec{
+						PostgreSQL: &logicv1.PersistencePostgreSQL{
+							SecretRef: logicv1.PostgreSQLSecretOptions{Name: "runtime-secret"},
+							ServiceRef: logicv1.PostgreSQLServiceOptions{
+								Name:           "postgres",
+								DatabaseName:   "workflows",
+								Port:           ptrInt(5432),
+								DatabaseSchema: "runtime",
+							},
 						},
 					},
-				},
-				Quartz: logicv1.DatastoreSpec{
-					PostgreSQL: &logicv1.PersistencePostgreSQL{
-						SecretRef: logicv1.PostgreSQLSecretOptions{Name: "quartz-secret"},
-						ServiceRef: logicv1.PostgreSQLServiceOptions{
-							Name:           "postgres",
-							DatabaseName:   "workflows",
-							Port:           ptrInt(5432),
-							DatabaseSchema: "quartz",
+					Quartz: logicv1.DatastoreSpec{
+						PostgreSQL: &logicv1.PersistencePostgreSQL{
+							SecretRef: logicv1.PostgreSQLSecretOptions{Name: "quartz-secret"},
+							ServiceRef: logicv1.PostgreSQLServiceOptions{
+								Name:           "postgres",
+								DatabaseName:   "workflows",
+								Port:           ptrInt(5432),
+								DatabaseSchema: "quartz",
+							},
 						},
 					},
 				},
@@ -140,14 +144,16 @@ func TestMigratorJob_DefaultsImageToQuay(t *testing.T) {
 		},
 		Spec: logicv1.ClusterLogicPlatformSpec{
 			TargetNamespace: "workflows",
-			Runtime: &logicv1.RuntimeDatastoreSpec{
-				Runtime: logicv1.DatastoreSpec{
-					PostgreSQL: &logicv1.PersistencePostgreSQL{
-						SecretRef: logicv1.PostgreSQLSecretOptions{Name: "postgres-secret"},
-						ServiceRef: logicv1.PostgreSQLServiceOptions{
-							Name:           "postgres",
-							DatabaseName:   "workflows",
-							DatabaseSchema: "runtime",
+			Runtime: &logicv1.RuntimePlatformSpec{
+				Persistence: &logicv1.RuntimePersistenceSpec{
+					Runtime: logicv1.DatastoreSpec{
+						PostgreSQL: &logicv1.PersistencePostgreSQL{
+							SecretRef: logicv1.PostgreSQLSecretOptions{Name: "postgres-secret"},
+							ServiceRef: logicv1.PostgreSQLServiceOptions{
+								Name:           "postgres",
+								DatabaseName:   "workflows",
+								DatabaseSchema: "runtime",
+							},
 						},
 					},
 				},
@@ -180,14 +186,16 @@ func TestMigratorJob_HonorsImageOverride(t *testing.T) {
 			DBMigrator: &logicv1.DBMigratorSpec{
 				Image: customImage,
 			},
-			Runtime: &logicv1.RuntimeDatastoreSpec{
-				Runtime: logicv1.DatastoreSpec{
-					PostgreSQL: &logicv1.PersistencePostgreSQL{
-						SecretRef: logicv1.PostgreSQLSecretOptions{Name: "postgres-secret"},
-						ServiceRef: logicv1.PostgreSQLServiceOptions{
-							Name:           "postgres",
-							DatabaseName:   "workflows",
-							DatabaseSchema: "runtime",
+			Runtime: &logicv1.RuntimePlatformSpec{
+				Persistence: &logicv1.RuntimePersistenceSpec{
+					Runtime: logicv1.DatastoreSpec{
+						PostgreSQL: &logicv1.PersistencePostgreSQL{
+							SecretRef: logicv1.PostgreSQLSecretOptions{Name: "postgres-secret"},
+							ServiceRef: logicv1.PostgreSQLServiceOptions{
+								Name:           "postgres",
+								DatabaseName:   "workflows",
+								DatabaseSchema: "runtime",
+							},
 						},
 					},
 				},

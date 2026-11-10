@@ -8,7 +8,7 @@ rules:
   resources:
   - logicflowservices
   - logicflowdefinitions
-  - logicplatforms
+  - clusterlogicplatforms
   verbs:
   - get
   - list

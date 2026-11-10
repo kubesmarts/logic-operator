@@ -4,7 +4,7 @@ include::partial$versions.adoc[]
 :description: End-to-end walkthrough of the hello-world workflow using make kind-demo.
 
 The hello-world sample is the quickest way to see Logic Operator in action.
-It deploys a LogicPlatform-managed gateway, a stateless runtime, and a single-step workflow. The gateway Ingress is the public endpoint.
+It deploys a ClusterLogicPlatform-managed gateway, a stateless runtime, and a single-step workflow. The gateway Ingress is the public endpoint.
 
 == Prerequisites
 
@@ -17,7 +17,7 @@ A running KIND cluster with the operator deployed. If you have not done this yet
 make kind-demo
 ----
 
-This builds and loads the gateway image, then applies `config/samples/`, which creates a `LogicPlatform`, `LogicFlowRuntime`, and `LogicFlowDefinition`.
+This builds and loads the gateway image, then applies `config/samples/`, which creates a `ClusterLogicPlatform`, `LogicFlowRuntime`, and `LogicFlowDefinition`.
 
 == The Custom Resources
 
@@ -62,21 +62,21 @@ This is an OWS 1.0.0 document.
 The single task `greet` uses a `set` action to build the response string from the input field `.name`.
 The operator propagates this definition as a ConfigMap into the runtime pod.
 
-The `LogicPlatform` sample enables its workflow gateway with an Ingress at `gateway.lvh.me`. The gateway maps the workflow identity from the definition labels to `spec.runtimeRef.name`, then calls the runtime's Kubernetes Service. No `LogicFlowService` is required for this route. If a matching `LogicFlowService` exists, the gateway prefers its `status.url`.
+The `ClusterLogicPlatform` sample enables its workflow gateway with an Ingress at `gateway.lvh.me`. The gateway maps the workflow identity from the definition labels to `spec.runtimeRef.name`, then calls the runtime's Kubernetes Service. No `LogicFlowService` is required for this route. If a matching `LogicFlowService` exists, the gateway prefers its `status.url`.
 
 == Wait for the Runtime
 
 [source,bash]
 ----
 kubectl wait --for=condition=available deployment/hello-runtime --timeout=120s
-kubectl wait --for=condition=available deployment/logicplatform-sample-workflow-gateway --timeout=120s
+kubectl wait --for=condition=available deployment/default-workflow-gateway --timeout=120s
 ----
 
 Check the platform, runtime, and definition:
 
 [source,bash]
 ----
-kubectl get logicplatforms,logicflowruntimes,logicflowdefinitions
+kubectl get clusterlogicplatforms,logicflowruntimes,logicflowdefinitions
 ----
 
 == Invoke the Workflow

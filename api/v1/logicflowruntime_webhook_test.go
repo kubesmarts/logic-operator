@@ -176,24 +176,6 @@ func TestLogicFlowRuntimeValidator_ValidateDelete(t *testing.T) {
 	}
 }
 
-func TestRuntime_RejectsUnknownPlatformKind(t *testing.T) {
-	validator := &LogicFlowRuntimeValidator{}
-
-	runtime := &LogicFlowRuntime{
-		Spec: LogicFlowRuntimeSpec{
-			PlatformRef: &PlatformReference{
-				Name: "test-platform",
-				Kind: "UnknownPlatform",
-			},
-		},
-	}
-
-	_, err := validator.ValidateCreate(context.Background(), runtime)
-	if err == nil {
-		t.Fatal("Expected error when platformRef has unknown Kind, got nil")
-	}
-}
-
 func TestRuntime_AllowsOmittedPlatformRef(t *testing.T) {
 	validator := &LogicFlowRuntimeValidator{}
 
@@ -217,7 +199,6 @@ func TestRuntime_RejectsPlatformRefWithEmptyName(t *testing.T) {
 		Spec: LogicFlowRuntimeSpec{
 			PlatformRef: &PlatformReference{
 				Name: "",
-				Kind: "ClusterLogicPlatform",
 			},
 		},
 	}

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	corev1ac "k8s.io/client-go/applyconfigurations/core/v1"
@@ -15,8 +16,8 @@ const (
 
 // WorkflowGatewayEnvVars returns environment variable configuration for the Workflow Gateway.
 func WorkflowGatewayEnvVars() ContainerOption {
-	return func(_ *corev1ac.ContainerApplyConfiguration) {
-		// Gateway-specific environment variables can be added here
+	return func(c *corev1ac.ContainerApplyConfiguration) {
+		c.WithEnv(envFieldRef("POD_NAMESPACE", "metadata.namespace"))
 	}
 }
 
@@ -26,7 +27,11 @@ func WorkflowGatewayPorts() ContainerOption {
 		c.WithPorts(corev1ac.ContainerPort().
 			WithContainerPort(8080).
 			WithName("http").
-			WithProtocol(corev1.ProtocolTCP))
+			WithProtocol(corev1.ProtocolTCP),
+			corev1ac.ContainerPort().
+				WithContainerPort(logicv1.WorkflowGatewayManagementPort).
+				WithName("management").
+				WithProtocol(corev1.ProtocolTCP))
 	}
 }
 
@@ -35,14 +40,14 @@ func WorkflowGatewayProbes() ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
 		c.WithReadinessProbe(corev1ac.Probe().
 			WithHTTPGet(corev1ac.HTTPGetAction().
-				WithPath("/health").
-				WithPort(intstr.FromInt(8080))).
+				WithPath("/ready").
+				WithPort(intstr.FromString("management"))).
 			WithInitialDelaySeconds(10).
 			WithPeriodSeconds(5))
 		c.WithLivenessProbe(corev1ac.Probe().
 			WithHTTPGet(corev1ac.HTTPGetAction().
 				WithPath("/health").
-				WithPort(intstr.FromInt(8080))).
+				WithPort(intstr.FromString("management"))).
 			WithInitialDelaySeconds(30).
 			WithPeriodSeconds(10))
 	}

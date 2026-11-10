@@ -37,16 +37,11 @@ const (
 	PersistenceModeEphemeral PersistenceMode = "Ephemeral"
 )
 
-// PlatformReference references a ClusterLogicPlatform.
+// PlatformReference selects a ClusterLogicPlatform by name.
 type PlatformReference struct {
 	// Name of the platform object.
 	// +required
 	Name string `json:"name"`
-	// Kind of the platform object. Must be ClusterLogicPlatform.
-	// Defaults to ClusterLogicPlatform.
-	// +optional
-	// +kubebuilder:default=ClusterLogicPlatform
-	Kind string `json:"kind,omitempty"`
 }
 
 // LogicFlowRuntimeSpec defines the desired state of LogicFlowRuntime.

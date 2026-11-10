@@ -10,7 +10,7 @@ and query workflow instances through Data Index.
 
 The gateway is a standalone component with its own API and container image. In a Kubernetes
 installation, the supported operator-managed deployment is configured through
-`LogicPlatform.spec.workflowGateway`; see xref:crd-reference/logicplatform.adoc[LogicPlatform]. A
+`ClusterLogicPlatform.spec.gateway`; see xref:crd-reference/clusterlogicplatform.adoc[ClusterLogicPlatform]. A
 `LogicFlowService` is optional: without one, the gateway routes directly to the runtime named by
 the workflow definition's `spec.runtimeRef`.
 
@@ -83,7 +83,7 @@ configured on `LogicFlowRuntime`.
 
 == Data Index integration
 
-The instance endpoints use the GraphQL endpoint published by a `LogicPlatform` in the same
+The instance endpoints use the GraphQL endpoint published by a `ClusterLogicPlatform` in the same
 namespace as the gateway. If Data Index is disabled or its endpoint has not been discovered,
 instance queries return `503 Service Unavailable`. Upstream Data Index failures return
 `502 Bad Gateway`. Workflow execution does not require Data Index.
@@ -108,9 +108,9 @@ otherwise `503`.
 |Return the current execution endpoint table for diagnostics.
 |===
 
-== How LogicPlatform manages the gateway
+== How ClusterLogicPlatform manages the gateway
 
-Adding `workflowGateway` to a `LogicPlatform` enables reconciliation of the following resources:
+Adding `gateway` to a `ClusterLogicPlatform` enables reconciliation of the following resources:
 
 * a Deployment named `<platform-name>-workflow-gateway`;
 * a ClusterIP Service with the same name, port 80 targeting container port 8080;
@@ -121,35 +121,32 @@ Adding `workflowGateway` to a `LogicPlatform` enables reconciliation of the foll
 
 For this release, the default image is
 `quay.io/kubesmarts/workflow-gateway:{workflow-gateway-version}`. The admission webhook writes the
-gateway image version embedded in its build into the LogicPlatform spec unless
-`workflowGateway.application.image` overrides it. The replica field is left unset when omitted.
+gateway image version embedded in its build into the ClusterLogicPlatform spec unless
+`gateway.application.image` overrides it. The replica field is left unset when omitted.
 The resulting Kubernetes Deployment starts at one replica, and leaving the field unset lets an
-HPA manage its scale. The operator updates `status.workflowGateway` with readiness, child resource
+HPA manage its scale. The operator updates `status.gateway` with readiness, child resource
 references, replica counts, and the external URL when one is configured and resolved.
-`LogicPlatform` aggregate readiness includes the gateway whenever `workflowGateway` is present.
-The resolved image tag is stored in the LogicPlatform spec and will not automatically advance when
+`ClusterLogicPlatform` aggregate readiness includes the gateway whenever `gateway` is present.
+The resolved image tag is stored in the ClusterLogicPlatform spec and will not automatically advance when
 the operator image is upgraded; update it explicitly to upgrade the gateway.
 
-Removing `workflowGateway` causes the controller to delete its managed resources. The gateway
+Removing `gateway` causes the controller to delete its managed resources. The gateway
 requires its cluster-wide ClusterRole to be installed with Logic Operator; the platform-specific
 ClusterRoleBinding is created by the controller.
 
 === Example configuration
 
-Data Index is enabled by default and requires PostgreSQL configuration. Set it to `false` for a
-gateway-only platform:
+Data Index is optional. Omit `dataIndex` for a gateway-only platform:
 
 [source,yaml]
 ----
 apiVersion: logic.kubesmarts.org/v1
-kind: LogicPlatform
+kind: ClusterLogicPlatform
 metadata:
   name: workflow-platform
-  namespace: default
 spec:
-  dataIndex:
-    enabled: false
-  workflowGateway:
+  targetNamespace: default
+  gateway:
     ingress:
       enabled: true
       host: gateway.example.com
@@ -189,17 +186,17 @@ curl -X POST http://gateway.example.com/v1/runtime/default/hello-world/1.0.0/syn
   -d '{"name":"World"}'
 ----
 
-To inspect the deployed component, see `status.workflowGateway` on the LogicPlatform and its
+To inspect the deployed component, see `status.gateway` on the ClusterLogicPlatform and its
 generated Deployment and Service:
 
 [source,bash]
 ----
-kubectl get logicplatform workflow-platform -o yaml
+kubectl get clusterlogicplatform workflow-platform -o yaml
 kubectl get deployment,service workflow-platform-workflow-gateway
 ----
 
 == Related documentation
 
-* xref:crd-reference/logicplatform.adoc[LogicPlatform configuration and status]
+* xref:crd-reference/clusterlogicplatform.adoc[ClusterLogicPlatform configuration and status]
 * xref:crd-reference/logicflowservice.adoc[LogicFlowService routing and traffic policy]
 * xref:deployment/kind-local.adoc[Running the gateway on KIND]

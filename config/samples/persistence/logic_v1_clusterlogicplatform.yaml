@@ -1,0 +1,70 @@
+apiVersion: logic.kubesmarts.org/v1
+kind: ClusterLogicPlatform
+metadata:
+  name: default
+spec:
+  targetNamespace: logic-platform
+
+  # Data Index with PostgreSQL persistence
+  dataIndex:
+    application:
+      resources:
+        requests:
+          memory: "512Mi"
+          cpu: "250m"
+        limits:
+          memory: "1Gi"
+          cpu: "500m"
+    persistence:
+      postgresql:
+        secretRef:
+          name: postgresql-secret
+        serviceRef:
+          name: postgresql
+          namespace: logic-platform
+          databaseName: logicflow
+          databaseSchema: data_index
+
+  # Workflow Gateway
+  gateway:
+    application:
+      resources:
+        requests:
+          memory: "256Mi"
+          cpu: "100m"
+        limits:
+          memory: "512Mi"
+          cpu: "250m"
+
+  # Vector log forwarder
+  vector:
+    application:
+      resources:
+        requests:
+          memory: "128Mi"
+          cpu: "50m"
+        limits:
+          memory: "256Mi"
+          cpu: "100m"
+
+  # Workflow runtime and Quartz scheduler persistence
+  runtime:
+    persistence:
+      runtime:
+        postgresql:
+          secretRef:
+            name: postgresql-secret
+          serviceRef:
+            name: postgresql
+            namespace: logic-platform
+            databaseName: logicflow
+            databaseSchema: runtime
+      quartz:
+        postgresql:
+          secretRef:
+            name: postgresql-secret
+          serviceRef:
+            name: postgresql
+            namespace: logic-platform
+            databaseName: logicflow
+            databaseSchema: quartz

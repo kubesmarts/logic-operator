@@ -1,19 +1,3 @@
-/*
-Copyright 2026.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package controller
 
 import (
@@ -24,6 +8,7 @@ import (
 
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
@@ -90,15 +75,29 @@ var _ = Describe("ClusterLogicPlatform Controller", func() {
 						Image:    logicv1.DefaultDataIndexImage(),
 						Replicas: ptr.To(int32(1)),
 					},
-				},
-				Runtime: &logicv1.RuntimeDatastoreSpec{
-					Runtime: logicv1.DatastoreSpec{
+					Persistence: &logicv1.DatastoreSpec{
 						PostgreSQL: &logicv1.PersistencePostgreSQL{
-							SecretRef: logicv1.PostgreSQLSecretOptions{Name: "postgres-secret"},
+							SecretRef: logicv1.PostgreSQLSecretOptions{Name: "data-index-secret"},
 							ServiceRef: logicv1.PostgreSQLServiceOptions{
-								Name:           "postgres",
-								DatabaseName:   "workflows",
-								DatabaseSchema: "runtime",
+								Name:           "data-index-postgres",
+								Namespace:      testNamespace,
+								Port:           ptr.To(5433),
+								DatabaseName:   "data-index-db",
+								DatabaseSchema: "data_index",
+							},
+						},
+					},
+				},
+				Runtime: &logicv1.RuntimePlatformSpec{
+					Persistence: &logicv1.RuntimePersistenceSpec{
+						Runtime: logicv1.DatastoreSpec{
+							PostgreSQL: &logicv1.PersistencePostgreSQL{
+								SecretRef: logicv1.PostgreSQLSecretOptions{Name: "postgres-secret"},
+								ServiceRef: logicv1.PostgreSQLServiceOptions{
+									Name:           "postgres",
+									DatabaseName:   "workflows",
+									DatabaseSchema: "runtime",
+								},
 							},
 						},
 					},
@@ -121,6 +120,109 @@ var _ = Describe("ClusterLogicPlatform Controller", func() {
 			depName := types.NamespacedName{Name: name + "-data-index", Namespace: testNamespace}
 			Expect(k8sClient.Get(ctx, depName, &dep)).To(Succeed())
 			Expect(dep.Namespace).To(Equal(testNamespace))
+		})
+
+		It("should use Data Index persistence instead of the runtime datastore", func() {
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "data-index-secret", Namespace: testNamespace},
+				Data: map[string][]byte{
+					logicv1.DefaultPgsqlSecretUserKey:     []byte("data-index-user"),
+					logicv1.DefaultPgsqlSecretPasswordKey: []byte("data-index-password"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+			DeferCleanup(func() {
+				Expect(k8sClient.Delete(ctx, secret)).To(Succeed())
+			})
+
+			service := &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{Name: "data-index-postgres", Namespace: testNamespace},
+				Spec: corev1.ServiceSpec{
+					Ports: []corev1.ServicePort{{Port: 5433}},
+				},
+			}
+			Expect(k8sClient.Create(ctx, service)).To(Succeed())
+			DeferCleanup(func() {
+				Expect(k8sClient.Delete(ctx, service)).To(Succeed())
+			})
+
+			clp := reconcileCLPAndFetch(ctx, r, nn)
+
+			var deployment appsv1.Deployment
+			deploymentName := types.NamespacedName{Name: name + "-data-index", Namespace: testNamespace}
+			Expect(k8sClient.Get(ctx, deploymentName, &deployment)).To(Succeed())
+			container := deployment.Spec.Template.Spec.Containers[0]
+
+			jdbcURL := findEnvVar(container.Env, "QUARKUS_DATASOURCE_JDBC_URL")
+			Expect(jdbcURL).NotTo(BeNil())
+			Expect(jdbcURL.Value).To(Equal("jdbc:postgresql://data-index-postgres." + testNamespace + ".svc.cluster.local:5433/data-index-db?currentSchema=data_index"))
+			username := findEnvVar(container.Env, "QUARKUS_DATASOURCE_USERNAME")
+			Expect(username).NotTo(BeNil())
+			Expect(username.ValueFrom.SecretKeyRef.Name).To(Equal("data-index-secret"))
+
+			connector := r.DatabaseConnector.(*MockDatabaseConnector)
+			Expect(connector.LastCall.Host).To(Equal("data-index-postgres." + testNamespace + ".svc.cluster.local"))
+			Expect(connector.LastCall.Port).To(Equal(5433))
+			Expect(connector.LastCall.User).To(Equal("data-index-user"))
+			Expect(connector.LastCall.Dbname).To(Equal("data-index-db"))
+			Expect(clp.Status.DataIndex.Persistence.DatabaseConnected).NotTo(BeNil())
+			Expect(*clp.Status.DataIndex.Persistence.DatabaseConnected).To(BeTrue())
+		})
+
+		It("should mark required Data Index persistence as not ready when omitted", func() {
+			var clp logicv1.ClusterLogicPlatform
+			Expect(k8sClient.Get(ctx, nn, &clp)).To(Succeed())
+			clp.Spec.DataIndex.Persistence = nil
+			Expect(k8sClient.Update(ctx, &clp)).To(Succeed())
+
+			clp = *reconcileCLPAndFetch(ctx, r, nn)
+			condition := logicv1.FindCondition(clp.Status.Conditions, logicv1.ConditionDataIndexPersistenceReady)
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			Expect(condition.Reason).To(Equal(logicv1.ReasonPersistenceConfigInvalid))
+			Expect(condition.Message).To(Equal("Data Index persistence is required"))
+			Expect(clp.Status.DataIndex.Persistence).NotTo(BeNil())
+			Expect(clp.Status.DataIndex.Persistence.Valid).To(BeFalse())
+			Expect(clp.Status.DataIndex.Persistence.Error).To(Equal(condition.Message))
+		})
+
+		It("should report missing Data Index persistence resources accurately", func() {
+			const secretName = "missing-resource-secret"
+			const serviceName = "missing-resource-postgres"
+
+			var clp logicv1.ClusterLogicPlatform
+			Expect(k8sClient.Get(ctx, nn, &clp)).To(Succeed())
+			clp.Spec.DataIndex.Persistence.PostgreSQL.SecretRef.Name = secretName
+			clp.Spec.DataIndex.Persistence.PostgreSQL.ServiceRef.Name = serviceName
+			Expect(k8sClient.Update(ctx, &clp)).To(Succeed())
+
+			clp = *reconcileCLPAndFetch(ctx, r, nn)
+			Expect(clp.Status.DataIndex.Persistence.SecretExists).To(BeFalse())
+			Expect(clp.Status.DataIndex.Persistence.ServiceExists).To(BeFalse())
+			Expect(clp.Status.DataIndex.Persistence.Valid).To(BeFalse())
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: testNamespace},
+			}
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+			DeferCleanup(func() { Expect(k8sClient.Delete(ctx, secret)).To(Succeed()) })
+
+			clp = *reconcileCLPAndFetch(ctx, r, nn)
+			Expect(clp.Status.DataIndex.Persistence.SecretExists).To(BeTrue())
+			Expect(clp.Status.DataIndex.Persistence.ServiceExists).To(BeFalse())
+			Expect(clp.Status.DataIndex.Persistence.Valid).To(BeFalse())
+
+			service := &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{Name: serviceName, Namespace: testNamespace},
+				Spec:       corev1.ServiceSpec{Ports: []corev1.ServicePort{{Port: 5432}}},
+			}
+			Expect(k8sClient.Create(ctx, service)).To(Succeed())
+			DeferCleanup(func() { Expect(k8sClient.Delete(ctx, service)).To(Succeed()) })
+
+			clp = *reconcileCLPAndFetch(ctx, r, nn)
+			Expect(clp.Status.DataIndex.Persistence.SecretExists).To(BeTrue())
+			Expect(clp.Status.DataIndex.Persistence.ServiceExists).To(BeTrue())
+			Expect(clp.Status.DataIndex.Persistence.Valid).To(BeTrue())
 		})
 	})
 

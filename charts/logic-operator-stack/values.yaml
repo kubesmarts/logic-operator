@@ -4,20 +4,22 @@ logic-operator:
     tag: ""
     pullPolicy: IfNotPresent
 
-logicPlatform:
+clusterLogicPlatform:
   name: ""
+  targetNamespace: logic-platform
+  createNamespace: true
   dataIndex:
     enabled: true
-    vector:
-      enabled: true
-  workflowGateway:
+  vector:
+    enabled: true
+  gateway:
     replicas: 1
     # Leave empty to use the gateway image version embedded in the operator.
     image: ""
     ingress:
       enabled: false
       host: ""
-      className: ""
+      ingressClassName: ""
 
 postgresql:
   image: postgres:16-alpine

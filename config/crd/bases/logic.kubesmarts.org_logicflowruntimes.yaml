@@ -1442,12 +1442,6 @@ spec:
                 description: PlatformRef references the platform object managing this
                   runtime.
                 properties:
-                  kind:
-                    default: ClusterLogicPlatform
-                    description: |-
-                      Kind of the platform object. Must be ClusterLogicPlatform.
-                      Defaults to ClusterLogicPlatform.
-                    type: string
                   name:
                     description: Name of the platform object.
                     type: string

@@ -138,8 +138,8 @@ func collectConfiguredDatastores(plat *logicv1.ClusterLogicPlatform) []datastore
 	}
 
 	// Runtime datastore
-	if plat.Spec.Runtime != nil && plat.Spec.Runtime.Runtime.PostgreSQL != nil {
-		if target := extractDatastoreTargetSpec("runtime", &plat.Spec.Runtime.Runtime); target != nil {
+	if plat.Spec.Runtime != nil && plat.Spec.Runtime.Persistence != nil && plat.Spec.Runtime.Persistence.Runtime.PostgreSQL != nil {
+		if target := extractDatastoreTargetSpec("runtime", &plat.Spec.Runtime.Persistence.Runtime); target != nil {
 			key := fmt.Sprintf("%s:%s:%d:%s:%s", target.typeName, target.host, target.port, target.database, target.schema)
 			if !seen[key] {
 				targets = append(targets, *target)
@@ -149,8 +149,8 @@ func collectConfiguredDatastores(plat *logicv1.ClusterLogicPlatform) []datastore
 	}
 
 	// Quartz datastore
-	if plat.Spec.Runtime != nil && plat.Spec.Runtime.Quartz.PostgreSQL != nil {
-		if target := extractDatastoreTargetSpec("quartz", &plat.Spec.Runtime.Quartz); target != nil {
+	if plat.Spec.Runtime != nil && plat.Spec.Runtime.Persistence != nil && plat.Spec.Runtime.Persistence.Quartz.PostgreSQL != nil {
+		if target := extractDatastoreTargetSpec("quartz", &plat.Spec.Runtime.Persistence.Quartz); target != nil {
 			key := fmt.Sprintf("%s:%s:%d:%s:%s", target.typeName, target.host, target.port, target.database, target.schema)
 			if !seen[key] {
 				targets = append(targets, *target)

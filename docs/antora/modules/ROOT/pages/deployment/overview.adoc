@@ -4,8 +4,8 @@ include::partial$versions.adoc[]
 :description: How Logic Operator, its four custom resources, and managed workflow components fit together.
 
 Logic Operator watches its custom resources and reconciles Kubernetes resources to match their
-specifications. The CRDs are cluster-scoped definitions; each LogicPlatform, LogicFlowRuntime,
-LogicFlowDefinition, and LogicFlowService object is namespaced.
+specifications. `ClusterLogicPlatform` is cluster-scoped; `LogicFlowRuntime`,
+`LogicFlowDefinition`, and `LogicFlowService` are namespaced.
 
 == Installed components
 
@@ -16,7 +16,7 @@ also installs the CRDs, admission webhooks, and RBAC.
 |===
 |Custom resource |Managed behavior
 
-|`LogicPlatform`
+|`ClusterLogicPlatform`
 |Manages Data Index, optional Vector log collection, and optional Workflow Gateway resources.
 
 |`LogicFlowRuntime`
@@ -31,7 +31,7 @@ manages Lease coordination and runtime RBAC.
 HTTPRoute, with optional traffic splitting.
 |===
 
-Mutating and validating admission webhooks cover LogicPlatform, LogicFlowRuntime,
+Mutating and validating admission webhooks cover ClusterLogicPlatform, LogicFlowRuntime,
 LogicFlowDefinition, and LogicFlowService. The operator's service account manages its child
 resources. The gateway has a separate ServiceAccount and receives cluster-wide read permissions
 through a platform-specific ClusterRoleBinding when enabled.
@@ -39,7 +39,7 @@ through a platform-specific ClusterRoleBinding when enabled.
 == Resource relationships
 
 ----
-LogicPlatform (optional platform services)
+ClusterLogicPlatform (optional platform services)
   ├── Data Index Deployment + Service
   ├── Vector DaemonSet (optional)
   └── Workflow Gateway Deployment + Service (optional)
@@ -70,9 +70,9 @@ persistence. Enable the components required by your use case.
 The operator build carries independent version settings for its own image, Workflow Gateway,
 Data Index, and Quarkus Flow Runner: `{operator-version}`, `{workflow-gateway-version}`,
 `{data-index-version}`, and `{quarkus-flow-runner-version}`, respectively. A LogicFlowRuntime with
-no explicit image uses the runner version embedded in the current operator. LogicPlatform
+no explicit image uses the runner version embedded in the current operator. ClusterLogicPlatform
 admission defaults component image values when a platform is created; those values are stored in
-its spec. Review and update pinned LogicPlatform images explicitly during upgrades. See
+its spec. Review and update pinned ClusterLogicPlatform images explicitly during upgrades. See
 xref:deployment/production.adoc[Production Checklist].
 
 == Prerequisites

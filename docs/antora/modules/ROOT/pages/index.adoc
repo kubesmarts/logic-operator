@@ -14,7 +14,7 @@ Logic Operator introduces four custom resources:
 |===
 |CRD |Purpose
 
-|xref:crd-reference/logicplatform.adoc[LogicPlatform]
+|xref:crd-reference/clusterlogicplatform.adoc[ClusterLogicPlatform]
 |Manages Data Index, Vector log collection, and the optional Workflow Gateway. The gateway accepts workflow execution and lifecycle requests.
 
 |xref:crd-reference/logicflowruntime.adoc[LogicFlowRuntime]

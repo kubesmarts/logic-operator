@@ -150,14 +150,26 @@ func createClusterLogicPlatform(ctx context.Context) {
 		ObjectMeta: metav1.ObjectMeta{Name: "test-platform"},
 		Spec: logicv1.ClusterLogicPlatformSpec{
 			TargetNamespace: testNamespace,
-			Runtime: &logicv1.RuntimeDatastoreSpec{
-				Runtime: logicv1.DatastoreSpec{
-					PostgreSQL: &logicv1.PersistencePostgreSQL{
-						SecretRef: logicv1.PostgreSQLSecretOptions{Name: "pg-creds"},
-						ServiceRef: logicv1.PostgreSQLServiceOptions{
-							Name:           "pg",
-							DatabaseName:   "logicflow",
-							DatabaseSchema: "public",
+			Runtime: &logicv1.RuntimePlatformSpec{
+				Persistence: &logicv1.RuntimePersistenceSpec{
+					Runtime: logicv1.DatastoreSpec{
+						PostgreSQL: &logicv1.PersistencePostgreSQL{
+							SecretRef: logicv1.PostgreSQLSecretOptions{Name: "pg-creds"},
+							ServiceRef: logicv1.PostgreSQLServiceOptions{
+								Name:           "pg",
+								DatabaseName:   "logicflow",
+								DatabaseSchema: "public",
+							},
+						},
+					},
+					Quartz: logicv1.DatastoreSpec{
+						PostgreSQL: &logicv1.PersistencePostgreSQL{
+							SecretRef: logicv1.PostgreSQLSecretOptions{Name: "pg-creds"},
+							ServiceRef: logicv1.PostgreSQLServiceOptions{
+								Name:           "pg",
+								DatabaseName:   "logicflow",
+								DatabaseSchema: "quartz",
+							},
 						},
 					},
 				},
@@ -333,7 +345,7 @@ func TestRuntime_EphemeralUsesMinimalImageNoDBEnv(t *testing.T) {
 	}
 }
 
-func TestRuntime_PlatformDBInheritsRuntimeDatastore(t *testing.T) {
+func TestRuntime_PlatformDBInheritsRuntimeAndQuartzDatastores(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := logicv1.AddToScheme(scheme); err != nil {
 		t.Fatalf("AddToScheme failed: %v", err)
@@ -345,6 +357,7 @@ func TestRuntime_PlatformDBInheritsRuntimeDatastore(t *testing.T) {
 	}
 	pgService := logicv1.PostgreSQLServiceOptions{
 		Name:           "postgres",
+		Namespace:      "platform-databases",
 		DatabaseName:   "workflows",
 		DatabaseSchema: "runtime",
 	}
@@ -353,11 +366,24 @@ func TestRuntime_PlatformDBInheritsRuntimeDatastore(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "test-platform"},
 		Spec: logicv1.ClusterLogicPlatformSpec{
 			TargetNamespace: "default",
-			Runtime: &logicv1.RuntimeDatastoreSpec{
-				Runtime: logicv1.DatastoreSpec{
-					PostgreSQL: &logicv1.PersistencePostgreSQL{
-						SecretRef:  pgSecret,
-						ServiceRef: pgService,
+			Runtime: &logicv1.RuntimePlatformSpec{
+				Persistence: &logicv1.RuntimePersistenceSpec{
+					Runtime: logicv1.DatastoreSpec{
+						PostgreSQL: &logicv1.PersistencePostgreSQL{
+							SecretRef:  pgSecret,
+							ServiceRef: pgService,
+						},
+					},
+					Quartz: logicv1.DatastoreSpec{
+						PostgreSQL: &logicv1.PersistencePostgreSQL{
+							SecretRef: logicv1.PostgreSQLSecretOptions{Name: "quartz-creds", PasswordKey: "QUARTZ_PASS"},
+							ServiceRef: logicv1.PostgreSQLServiceOptions{
+								Name:           "quartz-postgres",
+								Namespace:      "scheduler-databases",
+								DatabaseName:   "schedulers",
+								DatabaseSchema: "quartz_state",
+							},
+						},
 					},
 				},
 			},
@@ -374,7 +400,7 @@ func TestRuntime_PlatformDBInheritsRuntimeDatastore(t *testing.T) {
 
 	platformDBMode := logicv1.PersistenceModePlatformDB
 	rt := &logicv1.LogicFlowRuntime{
-		ObjectMeta: metav1.ObjectMeta{Name: "platform-db-rt", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "platform-db-rt", Namespace: "workflows"},
 		Spec: logicv1.LogicFlowRuntimeSpec{
 			PersistenceMode: &platformDBMode,
 		},
@@ -387,27 +413,103 @@ func TestRuntime_PlatformDBInheritsRuntimeDatastore(t *testing.T) {
 	if eff == nil {
 		t.Fatal("platform DB runtime should return non-nil persistence")
 	}
-	if eff.PostgreSQL == nil {
+	if eff.Runtime == nil || eff.Runtime.PostgreSQL == nil {
 		t.Fatal("effective persistence should have PostgreSQL configured")
 	}
 
 	// Verify operational secret is used (DML), not migration secret
-	if eff.PostgreSQL.SecretRef.Name != "pg-operational-creds" {
-		t.Errorf("expected operational secret 'pg-operational-creds', got %q", eff.PostgreSQL.SecretRef.Name)
+	if eff.Runtime.PostgreSQL.SecretRef.Name != "pg-operational-creds" {
+		t.Errorf("expected operational secret 'pg-operational-creds', got %q", eff.Runtime.PostgreSQL.SecretRef.Name)
 	}
-	if eff.PostgreSQL.SecretRef.UserKey != "user" {
-		t.Errorf("expected UserKey 'user', got %q", eff.PostgreSQL.SecretRef.UserKey)
+	if eff.Runtime.PostgreSQL.SecretRef.UserKey != "user" {
+		t.Errorf("expected UserKey 'user', got %q", eff.Runtime.PostgreSQL.SecretRef.UserKey)
 	}
 
 	// Verify service ref is inherited
-	if eff.PostgreSQL.ServiceRef.Name != "postgres" {
-		t.Errorf("expected service name 'postgres', got %q", eff.PostgreSQL.ServiceRef.Name)
+	if eff.Runtime.PostgreSQL.ServiceRef.Name != "postgres" {
+		t.Errorf("expected service name 'postgres', got %q", eff.Runtime.PostgreSQL.ServiceRef.Name)
 	}
-	if eff.PostgreSQL.ServiceRef.DatabaseName != "workflows" {
-		t.Errorf("expected database 'workflows', got %q", eff.PostgreSQL.ServiceRef.DatabaseName)
+	if eff.Runtime.PostgreSQL.ServiceRef.Namespace != "platform-databases" {
+		t.Errorf("expected service namespace 'platform-databases', got %q", eff.Runtime.PostgreSQL.ServiceRef.Namespace)
 	}
-	if eff.PostgreSQL.ServiceRef.DatabaseSchema != "runtime" {
-		t.Errorf("expected schema 'runtime', got %q", eff.PostgreSQL.ServiceRef.DatabaseSchema)
+	if eff.Runtime.PostgreSQL.ServiceRef.DatabaseName != "workflows" {
+		t.Errorf("expected database 'workflows', got %q", eff.Runtime.PostgreSQL.ServiceRef.DatabaseName)
+	}
+	if eff.Runtime.PostgreSQL.ServiceRef.DatabaseSchema != "runtime" {
+		t.Errorf("expected schema 'runtime', got %q", eff.Runtime.PostgreSQL.ServiceRef.DatabaseSchema)
+	}
+	if eff.Quartz == nil || eff.Quartz.PostgreSQL == nil {
+		t.Fatal("effective persistence should include the configured Quartz PostgreSQL datastore")
+	}
+	if eff.Quartz.PostgreSQL.SecretRef.Name != "quartz-creds" || eff.Quartz.PostgreSQL.SecretRef.PasswordKey != "QUARTZ_PASS" {
+		t.Errorf("expected Quartz credentials from quartz-creds/QUARTZ_PASS, got %+v", eff.Quartz.PostgreSQL.SecretRef)
+	}
+	if eff.Quartz.PostgreSQL.ServiceRef.Namespace != "scheduler-databases" || eff.Quartz.PostgreSQL.ServiceRef.DatabaseSchema != "quartz_state" {
+		t.Errorf("expected Quartz service namespace/schema scheduler-databases/quartz_state, got %+v", eff.Quartz.PostgreSQL.ServiceRef)
+	}
+}
+
+func TestRuntime_PlatformDBWithoutDatastoreReportsActionableCondition(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := logicv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("AddToScheme failed: %v", err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("AddToScheme core types failed: %v", err)
+	}
+	if err := appsv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("AddToScheme apps types failed: %v", err)
+	}
+
+	platform := &logicv1.ClusterLogicPlatform{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-platform"},
+		Spec:       logicv1.ClusterLogicPlatformSpec{TargetNamespace: "platform"},
+	}
+	mode := logicv1.PersistenceModePlatformDB
+	rt := &logicv1.LogicFlowRuntime{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-runtime", Namespace: "workflows"},
+		Spec:       logicv1.LogicFlowRuntimeSpec{PersistenceMode: &mode},
+	}
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithStatusSubresource(&logicv1.LogicFlowRuntime{}).
+		WithObjects(platform, rt).
+		Build()
+	r := &LogicFlowRuntimeReconciler{Client: fakeClient, Scheme: scheme}
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: rt.Name, Namespace: rt.Namespace},
+	})
+	if err != nil {
+		t.Fatalf("Reconcile returned an error: %v", err)
+	}
+
+	var reconciled logicv1.LogicFlowRuntime
+	if err := fakeClient.Get(context.Background(), client.ObjectKeyFromObject(rt), &reconciled); err != nil {
+		t.Fatalf("getting reconciled runtime: %v", err)
+	}
+	condition := logicv1.FindCondition(reconciled.Status.Conditions, logicv1.ConditionPersistenceReady)
+	if condition == nil {
+		t.Fatal("expected PersistenceReady condition")
+	}
+	if condition.Status != metav1.ConditionFalse {
+		t.Errorf("PersistenceReady status = %q, want False", condition.Status)
+	}
+	if condition.Reason != logicv1.ReasonRuntimePersistenceNotConfigured {
+		t.Errorf("PersistenceReady reason = %q, want %q", condition.Reason, logicv1.ReasonRuntimePersistenceNotConfigured)
+	}
+	if !strings.Contains(condition.Message, "test-platform") ||
+		!strings.Contains(condition.Message, "spec.runtime.persistence.runtime.postgresql") ||
+		!strings.Contains(condition.Message, "spec.persistenceMode to Ephemeral") {
+		t.Errorf("PersistenceReady message should explain how to fix the configuration, got %q", condition.Message)
+	}
+	if reconciled.Status.Phase != logicv1.ApplicationPhasePending {
+		t.Errorf("runtime phase = %q, want Pending", reconciled.Status.Phase)
+	}
+
+	var deployment appsv1.Deployment
+	if err := fakeClient.Get(context.Background(), client.ObjectKeyFromObject(rt), &deployment); !errors.IsNotFound(err) {
+		t.Errorf("expected no Deployment for a PlatformDB runtime without datastore config, got error %v", err)
 	}
 }
 
@@ -566,6 +668,14 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 			jdbcURL := findEnvVar(envs, "QUARKUS_DATASOURCE_JDBC_URL")
 			Expect(jdbcURL).NotTo(BeNil())
 			Expect(jdbcURL.Value).To(Equal("jdbc:postgresql://pg:5432/logicflow?currentSchema=public"))
+
+			quartzUser := findEnvVar(envs, "QUARKUS_DATASOURCE__FLOW_QUARTZ__USERNAME")
+			Expect(quartzUser).NotTo(BeNil())
+			Expect(quartzUser.ValueFrom.SecretKeyRef.Name).To(Equal("pg-creds"))
+
+			quartzURL := findEnvVar(envs, "QUARKUS_DATASOURCE__FLOW_QUARTZ__JDBC_URL")
+			Expect(quartzURL).NotTo(BeNil())
+			Expect(quartzURL.Value).To(Equal("jdbc:postgresql://pg:5432/logicflow?currentSchema=quartz"))
 		})
 	})
 
@@ -1568,6 +1678,22 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 			Expect(k8sClient.Get(ctx, secretNN, &secret)).To(Succeed())
 			Expect(secret.Data["POSTGRESQL_USER"]).To(Equal([]byte("newuser")))
 			Expect(secret.Data["POSTGRESQL_PASSWORD"]).To(Equal([]byte("newpass")))
+		})
+
+		It("should enqueue runtimes in other namespaces when the platform source secret changes", func() {
+			requests := r.mapSecretToRuntimes(ctx, &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: sourceSecretName, Namespace: testNamespace},
+			})
+
+			Expect(requests).To(ConsistOf(reconcile.Request{NamespacedName: nn}))
+		})
+
+		It("should ignore unrelated secrets in the platform namespace", func() {
+			requests := r.mapSecretToRuntimes(ctx, &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "unrelated-secret", Namespace: testNamespace},
+			})
+
+			Expect(requests).To(BeEmpty())
 		})
 	})
 

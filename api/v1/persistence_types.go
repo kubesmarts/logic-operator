@@ -159,14 +159,20 @@ type DatastoreSpec struct {
 	DBMigrationStrategy DBMigrationStrategyType `json:"dbMigrationStrategy,omitempty"`
 }
 
-// RuntimeDatastoreSpec configures per-datastore persistence for workflow runtimes.
-//
-// Runtime and Quartz use separate datastores to isolate workflow state from scheduler tables.
-type RuntimeDatastoreSpec struct {
-	// Runtime configures the datastore for Quarkus Flow workflow state (DML operations, DDL migrations).
+// RuntimePlatformSpec contains platform-level settings used by runtimes.
+type RuntimePlatformSpec struct {
+	// Persistence configures separate workflow runtime and Quartz datastores.
+	// +optional
+	Persistence *RuntimePersistenceSpec `json:"persistence,omitempty"`
+}
+
+// RuntimePersistenceSpec configures workflow state and, optionally, a separate Quartz datasource.
+// When Quartz is omitted, the runner profile uses the workflow runtime datasource for Quartz.
+type RuntimePersistenceSpec struct {
+	// Runtime configures the datastore for Quarkus Flow workflow state.
 	// +optional
 	Runtime DatastoreSpec `json:"runtime,omitempty"`
-	// Quartz configures the datastore for Quartz scheduler tables.
+	// Quartz optionally configures a separate datasource for Quartz scheduler tables.
 	// +optional
 	Quartz DatastoreSpec `json:"quartz,omitempty"`
 }

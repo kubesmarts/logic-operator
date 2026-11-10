@@ -52,7 +52,7 @@
 - Test: `api/v1/clusterlogicplatform_types_test.go`
 
 **Interfaces:**
-- Produces: `ClusterLogicPlatform`, `ClusterLogicPlatformSpec{ TargetNamespace string; DataIndex DataIndexSpec; Gateway ...; Vector ...; Runtime RuntimeDatastoreSpec; DBMigrator *DBMigratorSpec }`, `ClusterLogicPlatformStatus`, and `DBMigratorSpec{ Image string }`.
+- Produces: `ClusterLogicPlatform`, `ClusterLogicPlatformSpec{ TargetNamespace string; DataIndex DataIndexSpec; Gateway ...; Vector ...; Runtime RuntimePlatformSpec; DBMigrator *DBMigratorSpec }`, `ClusterLogicPlatformStatus`, and `DBMigratorSpec{ Image string }`.
 - Reuses `DataIndexSpec` and gateway/ingress specs from the current `LogicPlatform` (to be relocated, not duplicated).
 
 - [ ] **Step 1:** Write failing test `TestClusterLogicPlatform_IsClusterScoped` asserting the generated CRD/type has `+kubebuilder:resource:scope=Cluster` behavior — e.g. a round-trip through the scheme and a marker check, plus `TestClusterLogicPlatformSpec_RequiresTargetNamespace` (empty `TargetNamespace` fails the validation helper).
@@ -68,12 +68,12 @@
 - Test: `api/v1/persistence_types_test.go`
 
 **Interfaces:**
-- Produces: `DatastoreSpec{ PostgreSQL *PersistencePostgreSQL; MigrationSecretRef *PostgreSQLSecretOptions }` where `PersistencePostgreSQL.SecretRef` is the **DML** (operational) credential and `MigrationSecretRef` is the **DDL** credential; `RuntimeDatastoreSpec{ Runtime DatastoreSpec; Quartz DatastoreSpec }`.
+- Produces: `DatastoreSpec{ PostgreSQL *PersistencePostgreSQL; MigrationSecretRef *PostgreSQLSecretOptions }` where `PersistencePostgreSQL.SecretRef` is the **DML** (operational) credential and `MigrationSecretRef` is the **DDL** credential; `RuntimePlatformSpec{ Persistence *RuntimePersistenceSpec }` and `RuntimePersistenceSpec{ Runtime DatastoreSpec; Quartz DatastoreSpec }`.
 - Consumes: existing `PersistencePostgreSQL`, `PostgreSQLSecretOptions`, `PostgreSQLServiceOptions`.
 
 - [ ] **Step 1:** Write failing tests: `TestDatastoreSpec_OperationalSecretIsDML` (operational connection resolves `SecretRef`, not `MigrationSecretRef`) and `TestDatastoreSpec_MigrationSecretIsDDL` (migration path resolves `MigrationSecretRef`, falling back to `SecretRef` when unset so single-credential setups still work).
 - [ ] **Step 2:** Run; expect FAIL.
-- [ ] **Step 3:** Add `DatastoreSpec` and `RuntimeDatastoreSpec` and the resolver helpers `OperationalSecret(d DatastoreSpec) PostgreSQLSecretOptions` and `MigrationSecret(d DatastoreSpec) PostgreSQLSecretOptions`. One line of intent: migration falls back to operational secret only when `MigrationSecretRef` is nil.
+- [ ] **Step 3:** Add `DatastoreSpec` and `RuntimePersistenceSpec` and the resolver helpers `OperationalSecret(d DatastoreSpec) PostgreSQLSecretOptions` and `MigrationSecret(d DatastoreSpec) PostgreSQLSecretOptions`. One line of intent: migration falls back to operational secret only when `MigrationSecretRef` is nil.
 - [ ] **Step 4:** Run tests + `make manifests`; expect PASS.
 - [ ] **Step 5:** Commit: `feat(api): per-datastore DDL/DML credential split`.
 
@@ -148,10 +148,10 @@
 - Test: `internal/controller/logicflowruntime_controller_test.go`
 
 **Interfaces:**
-- Consumes: `PlatformReference` (Task 3), `RuntimeDatastoreSpec` (Task 2), `IsEphemeral` (Task 3).
+- Consumes: `PlatformReference` (Task 3), `RuntimePersistenceSpec` (Task 2), `IsEphemeral` (Task 3).
 - Produces: `resolvePlatform(ctx, rt) (*ClusterLogicPlatform, error)` — uses `platformRef.Name` if set, else lists and returns the singleton, erroring if zero or (defensively) more than one. `effectiveRuntimePersistence(rt, platform) *DatastoreSpec` — nil when ephemeral.
 
-- [ ] **Step 1:** Write failing tests: `TestResolvePlatform_UsesSingletonWhenRefOmitted`, `TestResolvePlatform_ErrorsWhenNoPlatform`, `TestRuntime_EphemeralUsesMinimalImageNoDBEnv`, `TestRuntime_PlatformDBInheritsRuntimeDatastore` (env vars built from the platform's `spec.runtime.db` operational secret).
+- [ ] **Step 1:** Write failing tests: `TestResolvePlatform_UsesSingletonWhenRefOmitted`, `TestResolvePlatform_ErrorsWhenNoPlatform`, `TestRuntime_EphemeralUsesMinimalImageNoDBEnv`, `TestRuntime_PlatformDBInheritsRuntimeDatastore` (env vars built from the platform's `spec.runtime.persistence.runtime` operational secret).
 - [ ] **Step 2:** Run; expect FAIL (and fix the compile break from Task 3 here).
 - [ ] **Step 3:** Replace every `rt.Spec.Persistence` branch (image selection via `DefaultRunnerImage`, `WithQuarkusPersistenceEnvVars`, `reconcileLeases`, `reconcilePodRBAC`, `updateStatusLeases`) with the resolved platform datastore or the ephemeral path. Operational env vars use `OperationalSecret` (DML), never the migration secret.
 - [ ] **Step 4:** Run tests; expect PASS.

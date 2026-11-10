@@ -107,22 +107,9 @@ var _ = AfterSuite(func() {
 })
 
 var _ = BeforeEach(func() {
-	// Ensure a default ClusterLogicPlatform exists for each test.
-	// Delete any existing ones first to avoid conflicts.
-	var clps logicv1.ClusterLogicPlatformList
-	Expect(k8sClient.List(context.TODO(), &clps)).To(Succeed())
-	for i := range clps.Items {
-		Expect(k8sClient.Delete(context.TODO(), &clps.Items[i])).To(Succeed())
-	}
-
-	// Create fresh platform for the test.
-	clp := &logicv1.ClusterLogicPlatform{
-		ObjectMeta: metav1.ObjectMeta{Name: "test-platform"},
-		Spec: logicv1.ClusterLogicPlatformSpec{
-			TargetNamespace: testNamespace,
-		},
-	}
-	Expect(k8sClient.Create(context.TODO(), clp)).To(Succeed())
+	// Create ClusterLogicPlatform with persistence for each test.
+	// The helper will delete any existing platform first.
+	createClusterLogicPlatform(context.TODO())
 })
 
 // getFirstFoundEnvTestBinaryDir locates the first binary in the specified path.

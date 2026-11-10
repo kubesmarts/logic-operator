@@ -5,4 +5,6 @@ metadata:
     app.kubernetes.io/name: logic-operator
     app.kubernetes.io/managed-by: kustomize
   name: hello-runtime
-spec: {}
+spec:
+  # This standalone runtime uses the in-memory scheduler and has no persistence.
+  persistenceMode: Ephemeral

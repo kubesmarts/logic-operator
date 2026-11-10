@@ -142,6 +142,9 @@ func (r *ClusterLogicPlatformReconciler) writeStatus(ctx context.Context, plat *
 
 func updateClusterLogicPlatformReadiness(plat *logicv1.ClusterLogicPlatform) {
 	var notReady []string
+	if condition := logicv1.FindCondition(plat.Status.Conditions, logicv1.ConditionTargetNamespaceResolved); condition != nil && condition.Status != metav1.ConditionTrue {
+		notReady = append(notReady, "Target Namespace")
+	}
 	components := 0
 	if plat.Spec.DataIndex != nil {
 		components++
@@ -169,6 +172,8 @@ func updateClusterLogicPlatformReadiness(plat *logicv1.ClusterLogicPlatform) {
 		}
 		logicv1.SetCondition(&plat.Status.Conditions, logicv1.ConditionReady,
 			metav1.ConditionTrue, plat.Generation, logicv1.ReasonReady, message)
+		// A platform is one logical unit; the aggregate Ready condition supplies its availability.
+		plat.Status.Phase = logicv1.DerivePhase(plat.Status.Conditions, 1)
 		return
 	}
 
@@ -189,6 +194,8 @@ func updateClusterLogicPlatformReadiness(plat *logicv1.ClusterLogicPlatform) {
 	logicv1.SetCondition(&plat.Status.Conditions, logicv1.ConditionReady,
 		metav1.ConditionFalse, plat.Generation, reason,
 		fmt.Sprintf("Waiting for enabled platform components: %s", strings.Join(notReady, ", ")))
+	// Zero available units keeps the aggregate phase Pending unless a condition marks it Failed.
+	plat.Status.Phase = logicv1.DerivePhase(plat.Status.Conditions, 0)
 }
 
 // SetupWithManager sets up the controller with the Manager.

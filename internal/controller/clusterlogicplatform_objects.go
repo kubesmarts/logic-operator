@@ -43,8 +43,8 @@ func VectorVolumesCLP(plat *logicv1.ClusterLogicPlatform) []*corev1ac.VolumeAppl
 			WithHostPath(corev1ac.HostPathVolumeSource().WithPath(VectorDockerPath)),
 	}
 
-	// Use runtime operational secret for vector configuration
-	if plat.Spec.Runtime != nil && plat.Spec.Runtime.Runtime.PostgreSQL != nil {
+	// Vector writes events to the Data Index database.
+	if dataIndexPersistence := platformDataIndexPersistence(plat); dataIndexPersistence != nil {
 		vols = append(vols, corev1ac.Volume().WithName(VectorConfigVolumeName).WithConfigMap(corev1ac.ConfigMapVolumeSource().WithName(vectorNameCLP(plat))))
 	}
 
@@ -60,20 +60,22 @@ func WithVectorEnvVarsCLP(plat *logicv1.ClusterLogicPlatform) ContainerOption {
 			envFieldRef("NODE_NAME", "spec.nodeName"),
 		}
 		// TODO: change the config to fetch for multiple namespaces
+		workflowNamespace := plat.Spec.TargetNamespace
 		if plat.Spec.Vector != nil && len(plat.Spec.Vector.WatchNamespaces) > 0 {
-			envs = append(envs, envLiteral("WORKFLOW_NAMESPACE", plat.Spec.Vector.WatchNamespaces[0]))
+			workflowNamespace = plat.Spec.Vector.WatchNamespaces[0]
 		}
+		envs = append(envs, envLiteral("WORKFLOW_NAMESPACE", workflowNamespace))
 		if plat.Spec.Vector != nil && plat.Spec.Vector.DebugEvents {
 			envs = append(envs, envLiteral("DEBUG_EVENTS", "true"))
 		}
-		// Use operational secret from Runtime.Runtime datastore
-		if plat.Spec.Runtime != nil && plat.Spec.Runtime.Runtime.PostgreSQL != nil {
-			pg := plat.Spec.Runtime.Runtime.PostgreSQL
+		// Vector writes workflow events to the Data Index datastore.
+		if dataIndexPersistence := platformDataIndexPersistence(plat); dataIndexPersistence != nil && dataIndexPersistence.PostgreSQL != nil {
+			pg := dataIndexPersistence.PostgreSQL
 			port := defaultPostgresPort
 			if pg.ServiceRef.Port != nil {
 				port = *pg.ServiceRef.Port
 			}
-			operationalSecret := logicv1.OperationalSecret(plat.Spec.Runtime.Runtime)
+			operationalSecret := logicv1.OperationalSecret(*dataIndexPersistence)
 			userKey := operationalSecret.UserKey
 			if userKey == "" {
 				userKey = logicv1.DefaultPgsqlSecretUserKey

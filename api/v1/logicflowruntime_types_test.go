@@ -9,13 +9,11 @@ import (
 func TestLogicFlowRuntime_PlatformRefCanBeSet(t *testing.T) {
 	g := gomega.NewWithT(t)
 
-	// Test that PlatformReference can store Name and Kind values
+	// Test that PlatformReference selects a platform by name
 	ref := &PlatformReference{
 		Name: "my-platform",
-		Kind: "ClusterLogicPlatform",
 	}
 	g.Expect(ref.Name).To(gomega.Equal("my-platform"))
-	g.Expect(ref.Kind).To(gomega.Equal("ClusterLogicPlatform"))
 
 	// Test that a runtime can hold a PlatformRef
 	rt := &LogicFlowRuntime{
@@ -25,7 +23,6 @@ func TestLogicFlowRuntime_PlatformRefCanBeSet(t *testing.T) {
 	}
 	g.Expect(rt.Spec.PlatformRef).NotTo(gomega.BeNil())
 	g.Expect(rt.Spec.PlatformRef.Name).To(gomega.Equal("my-platform"))
-	g.Expect(rt.Spec.PlatformRef.Kind).To(gomega.Equal("ClusterLogicPlatform"))
 }
 
 func TestLogicFlowRuntime_IsEphemeral(t *testing.T) {

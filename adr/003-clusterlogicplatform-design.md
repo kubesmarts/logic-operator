@@ -144,7 +144,7 @@ A single entrypoint simplifies the Gateway, OIDC/RBAC, and the Backstage integra
   to cert-manager's "cluster resource namespace."
 - Reuses the existing component specs (`DataIndexSpec`, gateway, ingress) from today's
   `LogicPlatform`, relocated/renamed as needed.
-- `spec.runtime.db` (see below): **the** runtime datastore for the cluster — not a
+- `spec.runtime.persistence.runtime` (see below): **the** runtime datastore for the cluster — not a
   "default," the single definition.
 - `spec.dataIndex.persistence` and `spec.quartz` persistence (see below).
 - Future: `spec.dbMigrator` for migration tuning (image, resources, timeouts).
@@ -162,7 +162,7 @@ Deleted along with its generated CRD, webhook registration, and the four RBAC ro
   This is the one seam that must exist from day one so a future platform kind (a cell,
   or a hypothetical namespaced variant) can be referenced without an API break.
 - **Replace** `spec.persistence` (raw DB config) with a **persistence mode**:
-  - *use platform DB* — inherit the platform's `spec.runtime.db` (and quartz).
+  - *use platform DB* — inherit the platform's `spec.runtime.persistence.runtime` (and Quartz datastore).
   - *no DB (ephemeral)* — select the in-memory scheduler (`scheduler/memory`); Quartz
     is not used, so there is **no** quartz datastore or `SCHED_NAME` concern. Suitable
     for minimal/stateless deployments.

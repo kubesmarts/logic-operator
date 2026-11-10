@@ -80,6 +80,19 @@ def set_chart_versions(chart: Path, version: str) -> None:
     metadata.write_text(text)
 
 
+def set_stack_dependency_version(chart: Path, version: str) -> None:
+    metadata = chart / "Chart.yaml"
+    text = metadata.read_text()
+    text, replacements = re.subn(
+        r"(?m)(- name:\s*logic-operator\s*\n\s+version:\s*)[^\n]+(\n\s+repository:\s*file://\.\./logic-operator)",
+        lambda match: match.group(1) + version + match.group(2),
+        text,
+    )
+    if replacements != 1:
+        raise SystemExit("Could not update the stack chart's local logic-operator dependency version")
+    metadata.write_text(text)
+
+
 def main() -> None:
     if len(sys.argv) != 2 or not sys.argv[1]:
         raise SystemExit("usage: package-helm-charts.py VERSION")
@@ -94,6 +107,7 @@ def main() -> None:
     for name in ("logic-operator", "logic-operator-stack"):
         shutil.copytree(CHARTS / name, staging / name)
         set_chart_versions(staging / name, version)
+    set_stack_dependency_version(staging / "logic-operator-stack", version)
     crd_bundle = generate_operator_chart(staging / "logic-operator")
 
     subprocess.run(

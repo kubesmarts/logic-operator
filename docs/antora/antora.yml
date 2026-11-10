@@ -1,7 +1,7 @@
 name: logic-operator
 title: Logic Operator
-version: 2.0.0-Alpha3
-display_version: 2.0.0-Alpha3
+version: 2.0.0-Alpha4
+display_version: 2.0.0-Alpha4
 nav:
   - modules/ROOT/nav.adoc
 asciidoc:

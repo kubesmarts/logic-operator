@@ -56,11 +56,10 @@ func (c *dataIndexComponent) reconcileDataIndex(ctx context.Context, plat *logic
 
 func (c *dataIndexComponent) applyDataIndexDeployment(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
 	childLabels := ChildLabelsInstance(plat, dataIndexNameCLP(plat))
-	// Use operational secret from Runtime.Runtime datastore
-	runtimePersistence := platformRuntimePersistence(plat)
+	dataIndexPersistence := platformDataIndexPersistence(plat)
 	opts := []ContainerOption{
 		WithDefaultImage(logicv1.DefaultDataIndexImage()),
-		WithQuarkusPersistenceEnvVars(runtimePersistence),
+		WithQuarkusPersistenceEnvVars(dataIndexPersistence),
 		WithFlywayPersistenceVars(),
 		WithGraphQLVars(),
 		DefaultQuarkusProbes(),
@@ -323,25 +322,21 @@ func (c *dataIndexComponent) updateDataIndexStatus(ctx context.Context, plat *lo
 }
 
 func (c *dataIndexComponent) updateStatusPersistence(ctx context.Context, plat *logicv1.ClusterLogicPlatform) error {
-	// Use operational secret from Runtime.Runtime datastore
-	if plat.Spec.Runtime == nil {
-		plat.Status.DataIndex.Persistence = nil
+	dataIndexDS := platformDataIndexPersistence(plat)
+	if dataIndexDS == nil {
+		message := "Data Index persistence is required"
+		plat.Status.DataIndex.Persistence = &logicv1.PersistenceConfigStatus{
+			Valid: false,
+			Error: message,
+		}
 		logicv1.SetCondition(&plat.Status.Conditions, logicv1.ConditionDataIndexPersistenceReady,
-			metav1.ConditionTrue, plat.Generation,
-			logicv1.ReasonReady, "No persistence configured")
-		return nil
-	}
-	runtimeDS := plat.Spec.Runtime.Runtime
-	if runtimeDS.PostgreSQL == nil {
-		plat.Status.DataIndex.Persistence = nil
-		logicv1.SetCondition(&plat.Status.Conditions, logicv1.ConditionDataIndexPersistenceReady,
-			metav1.ConditionTrue, plat.Generation,
-			logicv1.ReasonReady, "No persistence configured")
+			metav1.ConditionFalse, plat.Generation,
+			logicv1.ReasonPersistenceConfigInvalid, message)
 		return nil
 	}
 
-	pg := runtimeDS.PostgreSQL
-	operationalSecret := logicv1.OperationalSecret(runtimeDS)
+	pg := dataIndexDS.PostgreSQL
+	operationalSecret := logicv1.OperationalSecret(*dataIndexDS)
 	status := &logicv1.PersistenceConfigStatus{
 		Valid:        true,
 		SecretExists: false,
@@ -360,9 +355,9 @@ func (c *dataIndexComponent) updateStatusPersistence(ctx context.Context, plat *
 		status.Error = fmt.Sprintf("secret %s not found", operationalSecret.Name)
 	} else if err != nil {
 		return err
+	} else {
+		status.SecretExists = true
 	}
-
-	status.SecretExists = true
 
 	// Check if service exists
 	var svc corev1.Service
@@ -384,9 +379,9 @@ func (c *dataIndexComponent) updateStatusPersistence(ctx context.Context, plat *
 		status.Error += fmt.Sprintf("service %s not found", pg.ServiceRef.Name)
 	} else if err != nil {
 		return err
+	} else {
+		status.ServiceExists = true
 	}
-
-	status.ServiceExists = true
 
 	plat.Status.DataIndex.Persistence = status
 
@@ -445,16 +440,13 @@ func (c *dataIndexComponent) checkPersistenceConnectivity(ctx context.Context, p
 func (c *dataIndexComponent) checkPostgresDatabaseHealth(ctx context.Context, plat *logicv1.ClusterLogicPlatform) (bool, string, string) {
 	log := logf.FromContext(ctx)
 
-	if plat.Spec.Runtime == nil {
+	dataIndexDS := platformDataIndexPersistence(plat)
+	if dataIndexDS == nil {
 		return false, logicv1.ReasonDatabaseUnreachable, "PostgreSQL not configured"
 	}
-	runtimeDS := plat.Spec.Runtime.Runtime
-	pg := runtimeDS.PostgreSQL
-	if pg == nil {
-		return false, logicv1.ReasonDatabaseUnreachable, "PostgreSQL not configured"
-	}
+	pg := dataIndexDS.PostgreSQL
 
-	operationalSecret := logicv1.OperationalSecret(runtimeDS)
+	operationalSecret := logicv1.OperationalSecret(*dataIndexDS)
 
 	// Read credentials from secret
 	var secret corev1.Secret
@@ -511,12 +503,12 @@ func (c *dataIndexComponent) checkPostgresDatabaseHealth(ctx context.Context, pl
 	return false, logicv1.ReasonDatabaseUnreachable, "PostgreSQL connection check failed"
 }
 
-// platformRuntimePersistence returns a DatastoreSpec wrapping the operational secret from Runtime.Runtime
-func platformRuntimePersistence(plat *logicv1.ClusterLogicPlatform) *logicv1.DatastoreSpec {
-	if plat.Spec.Runtime == nil || plat.Spec.Runtime.Runtime.PostgreSQL == nil {
+// platformDataIndexPersistence returns the Data Index datastore configured on the platform.
+func platformDataIndexPersistence(plat *logicv1.ClusterLogicPlatform) *logicv1.DatastoreSpec {
+	if plat.Spec.DataIndex == nil || plat.Spec.DataIndex.Persistence == nil || plat.Spec.DataIndex.Persistence.PostgreSQL == nil {
 		return nil
 	}
-	return &plat.Spec.Runtime.Runtime
+	return plat.Spec.DataIndex.Persistence
 }
 
 func removeClusterLogicPlatformCondition(conditions *[]metav1.Condition, conditionTypes ...string) {

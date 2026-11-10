@@ -300,11 +300,12 @@ func UncommentCode(filename, target, prefix string) error {
 // restricted Pod Security Standard enforced on logic-operator-system.
 // curlArgs is passed verbatim as the shell command inside the container.
 func RunCurlPod(podName, namespace, curlArgs string) (string, error) {
+	image := CurlImage()
 	overrides := fmt.Sprintf(`{
 		"spec": {
 			"containers": [{
 				"name": %q,
-				"image": "curlimages/curl:latest",
+				"image": %q,
 				"command": ["/bin/sh", "-c"],
 				"args": [%q],
 				"securityContext": {
@@ -317,11 +318,16 @@ func RunCurlPod(podName, namespace, curlArgs string) (string, error) {
 			}],
 			"restartPolicy": "Never"
 		}
-	}`, podName, curlArgs)
+	}`, podName, image, curlArgs)
 	cmd := exec.Command("kubectl", "run", podName,
 		"--restart=Never",
 		"--namespace", namespace,
-		"--image=curlimages/curl:latest",
+		"--image="+image,
 		"--overrides", overrides)
 	return Run(cmd)
+}
+
+// CurlImage returns the curl image configured by the Makefile for E2E pods.
+func CurlImage() string {
+	return os.Getenv("E2E_CURL_IMAGE")
 }

@@ -1,0 +1,6 @@
+dependencies:
+- name: logic-operator
+  repository: file://../logic-operator
+  version: 0.0.0
+digest: sha256:b7cf05f1c464d24ec17a3253250b640d113e012d14e151f1ad3813f398275d32
+generated: "2026-11-10T10:54:07.846935-05:00"

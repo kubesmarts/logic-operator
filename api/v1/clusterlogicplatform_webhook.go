@@ -34,8 +34,15 @@ func (v *ClusterLogicPlatformValidator) validate(ctx context.Context, obj *Clust
 	if obj.Spec.TargetNamespace == "" {
 		return fmt.Errorf("spec.targetNamespace is required")
 	}
+	if obj.Spec.Vector != nil && obj.Spec.DataIndex == nil {
+		return fmt.Errorf("spec.dataIndex is required when Vector is enabled")
+	}
+	if obj.Spec.DataIndex != nil &&
+		(obj.Spec.DataIndex.Persistence == nil || obj.Spec.DataIndex.Persistence.PostgreSQL == nil) {
+		return fmt.Errorf("spec.dataIndex.persistence.postgresql is required when Data Index is enabled")
+	}
 
-	// ClusterLogicPlatform must be singleton (only one per cluster)
+	// ClusterLogicPlatform must be singleton (only one per cluster).
 	if err := v.validateSingleton(ctx, obj); err != nil {
 		return err
 	}
@@ -44,14 +51,11 @@ func (v *ClusterLogicPlatformValidator) validate(ctx context.Context, obj *Clust
 }
 
 func (v *ClusterLogicPlatformValidator) validateSingleton(ctx context.Context, obj *ClusterLogicPlatform) error {
-	// Check if another ClusterLogicPlatform already exists
 	var platforms ClusterLogicPlatformList
-	err := v.Reader.List(ctx, &platforms)
-	if err != nil {
+	if err := v.Reader.List(ctx, &platforms); err != nil {
 		return err
 	}
 
-	// Count existing platforms (excluding self during updates)
 	for _, plat := range platforms.Items {
 		if plat.Name != obj.Name {
 			return fmt.Errorf("only one ClusterLogicPlatform per cluster is allowed; %s already exists", plat.Name)

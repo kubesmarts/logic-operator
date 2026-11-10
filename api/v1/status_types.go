@@ -20,15 +20,17 @@ const (
 	ConditionDeploymentAvailable = "DeploymentAvailable"
 	ConditionServiceReady        = "ServiceReady"
 	ConditionLeaseReady          = "LeaseReady"
+	ConditionPersistenceReady    = "PersistenceReady"
 )
 
 const (
-	ReasonDeploymentNotFound       = "DeploymentNotFound"
-	ReasonServiceNotFound          = "ServiceNotFound"
-	ReasonLeaseNotFound            = "LeaseNotFound"
-	ReasonReady                    = "Ready"
-	ReasonDeploymentProgressing    = "DeploymentProgressing"
-	ReasonProgressDeadlineExceeded = "ProgressDeadlineExceeded"
+	ReasonDeploymentNotFound              = "DeploymentNotFound"
+	ReasonServiceNotFound                 = "ServiceNotFound"
+	ReasonLeaseNotFound                   = "LeaseNotFound"
+	ReasonRuntimePersistenceNotConfigured = "RuntimePersistenceNotConfigured"
+	ReasonReady                           = "Ready"
+	ReasonDeploymentProgressing           = "DeploymentProgressing"
+	ReasonProgressDeadlineExceeded        = "ProgressDeadlineExceeded"
 )
 
 const (

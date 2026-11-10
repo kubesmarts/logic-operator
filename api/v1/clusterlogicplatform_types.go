@@ -26,9 +26,9 @@ type ClusterLogicPlatformSpec struct {
 	// +optional
 	Vector *VectorSpec `json:"vector,omitempty"`
 
-	// Runtime configures per-datastore persistence for workflow runtimes.
+	// Runtime configures runtime-wide platform settings, including persistence datastores.
 	// +optional
-	Runtime *RuntimeDatastoreSpec `json:"runtime,omitempty"`
+	Runtime *RuntimePlatformSpec `json:"runtime,omitempty"`
 
 	// DBMigrator configures the schema migration tool.
 	// +optional
@@ -37,6 +37,11 @@ type ClusterLogicPlatformSpec struct {
 
 // ClusterLogicPlatformStatus defines the observed state of ClusterLogicPlatform.
 type ClusterLogicPlatformStatus struct {
+	// Phase summarizes the readiness of all enabled platform components.
+	// +kubebuilder:validation:Enum=Pending;Ready;Failed
+	// +optional
+	Phase ApplicationPhase `json:"phase,omitempty"`
+
 	// ObservedGeneration tracks the last reconciled spec generation.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
@@ -85,14 +90,15 @@ type DBMigratorSpec struct {
 //	    application:
 //	      image: quay.io/kubesmarts/workflow-gateway:2.0.0
 //	  runtime:
-//	    runtime:
-//	      postgresql:
-//	        secretRef:
-//	          name: postgres-credentials
-//	        serviceRef:
-//	          name: postgres
-//	          databaseName: workflows
-//	          databaseSchema: runtime
+//	    persistence:
+//	      runtime:
+//	        postgresql:
+//	          secretRef:
+//	            name: postgres-credentials
+//	          serviceRef:
+//	            name: postgres
+//	            databaseName: workflows
+//	            databaseSchema: runtime
 //
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status

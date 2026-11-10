@@ -20,6 +20,41 @@ func TestPersistenceEnvVars_NilReturnsNil(t *testing.T) {
 	g.Expect(persistenceQuarkusEnvVars(&logicv1.DatastoreSpec{})).To(gomega.BeNil())
 }
 
+func TestQuartzPersistenceEnvVars_UsesNamedDatasourceAndIndependentConfiguration(t *testing.T) {
+	g := gomega.NewWithT(t)
+	p := &logicv1.DatastoreSpec{
+		PostgreSQL: &logicv1.PersistencePostgreSQL{
+			SecretRef: logicv1.PostgreSQLSecretOptions{
+				Name:        "quartz-creds",
+				UserKey:     "SCHEDULER_USER",
+				PasswordKey: "SCHEDULER_PASSWORD",
+			},
+			ServiceRef: logicv1.PostgreSQLServiceOptions{
+				Name:           "scheduler-postgres",
+				Namespace:      "databases",
+				DatabaseName:   "schedulers",
+				DatabaseSchema: "quartz-state",
+			},
+		},
+	}
+
+	envs := quartzPersistenceQuarkusEnvVars(p)
+	g.Expect(envs).To(gomega.HaveLen(3))
+	g.Expect(*envs[0].Name).To(gomega.Equal("QUARKUS_DATASOURCE__FLOW_QUARTZ__USERNAME"))
+	g.Expect(*envs[0].ValueFrom.SecretKeyRef.Name).To(gomega.Equal("quartz-creds"))
+	g.Expect(*envs[0].ValueFrom.SecretKeyRef.Key).To(gomega.Equal("SCHEDULER_USER"))
+	g.Expect(*envs[1].Name).To(gomega.Equal("QUARKUS_DATASOURCE__FLOW_QUARTZ__PASSWORD"))
+	g.Expect(*envs[1].ValueFrom.SecretKeyRef.Key).To(gomega.Equal("SCHEDULER_PASSWORD"))
+	g.Expect(*envs[2].Name).To(gomega.Equal("QUARKUS_DATASOURCE__FLOW_QUARTZ__JDBC_URL"))
+	g.Expect(*envs[2].Value).To(gomega.Equal("jdbc:postgresql://scheduler-postgres.databases.svc.cluster.local:5432/schedulers?currentSchema=quartz-state"))
+}
+
+func TestQuartzPersistenceEnvVars_NilUsesEmbeddedDefaultDatasourceFallback(t *testing.T) {
+	g := gomega.NewWithT(t)
+	g.Expect(quartzPersistenceQuarkusEnvVars(nil)).To(gomega.BeNil())
+	g.Expect(quartzPersistenceQuarkusEnvVars(&logicv1.DatastoreSpec{})).To(gomega.BeNil())
+}
+
 func TestPersistenceEnvVars_CustomSecretKeys(t *testing.T) {
 	g := gomega.NewWithT(t)
 	p := &logicv1.DatastoreSpec{

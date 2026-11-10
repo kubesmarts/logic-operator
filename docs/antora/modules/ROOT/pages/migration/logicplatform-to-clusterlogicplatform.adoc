@@ -1,0 +1,140 @@
+include::partial$versions.adoc[]
+
+= Migrate from LogicPlatform to ClusterLogicPlatform
+:description: Replace the removed namespaced LogicPlatform resource with ClusterLogicPlatform.
+
+The namespaced `LogicPlatform` API was replaced by the cluster-scoped `ClusterLogicPlatform` API.
+This is a breaking API change: Kubernetes cannot change a custom resource definition from
+namespaced to cluster-scoped in place. Back up the old resource and recreate it using the new kind
+and field layout.
+
+The migration preserves your component configuration and database contents. It does not migrate
+PostgreSQL data. Keep the existing database, Secret, and Service in place while replacing the
+operator resources.
+
+== Before upgrading
+
+. Record the current platform configuration and status:
++
+[source,bash]
+----
+kubectl get logicplatform -A -o yaml > logicplatform-backup.yaml
+----
+. Record the platform namespace and any PostgreSQL Secret and Service references. Confirm the
+  database schemas and credentials remain available after the upgrade.
+. Back up the PostgreSQL databases using your normal database backup process.
+. Review all `LogicFlowRuntime` resources that refer to the old platform or depend on its
+  persistence settings.
+
+== Replace the platform resource
+
+Create the target namespace if needed, then map the old platform settings into a
+`ClusterLogicPlatform`. The resource name is cluster-wide; the old platform namespace becomes
+`spec.targetNamespace`.
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: ClusterLogicPlatform
+metadata:
+  name: default
+spec:
+  targetNamespace: logic-platform # old LogicPlatform namespace
+  # Move old `workflowGateway` configuration to `gateway`.
+  gateway: {}
+  # Move Data Index settings to `dataIndex`; Data Index now requires persistence.
+  # Move Vector configuration to the top-level `vector` field.
+  # Move runtime and Quartz datastores to `runtime.persistence.runtime` and
+  # `runtime.persistence.quartz`.
+----
+
+Translate enabled component settings as follows:
+
+[cols="1,2,2",options="header"]
+|===
+|Old API |New API |Migration detail
+
+|Namespaced `LogicPlatform` object
+|Cluster-scoped `ClusterLogicPlatform`
+|Set `metadata.name` to the cluster's singleton platform name and set `spec.targetNamespace` to
+the old platform namespace.
+
+|`spec.workflowGateway`
+|`spec.gateway`
+|Move the application and ingress configuration without changing their inner settings.
+
+|`spec.dataIndex`
+|`spec.dataIndex`
+|Keep its application and ingress settings. Data Index requires a PostgreSQL configuration when
+enabled.
+
+|`spec.dataIndex.vector`
+|`spec.vector`
+|Vector is now a top-level platform component. Set `watchNamespaces` to the runtime namespace to
+collect logs there.
+
+|Runtime and Quartz datastore settings
+|`spec.runtime.persistence.runtime` and `spec.runtime.persistence.quartz`
+|Keep the connection settings and schema assignments for each datastore.
+|===
+
+Apply the new resource after the new CRD and operator are installed:
+
+[source,bash]
+----
+kubectl apply -f clusterlogicplatform.yaml
+kubectl get clusterlogicplatform default -o yaml
+----
+
+Use the new sample files as references:
+
+* `config/samples/logic_v1_clusterlogicplatform.yaml` is a minimal gateway-only platform and does
+  not enable persistence or Data Index.
+* `config/samples/persistence/logic_v1_clusterlogicplatform.yaml` shows Data Index, runtime, and
+  Quartz PostgreSQL configuration.
+
+== Update runtimes
+
+`LogicFlowRuntime.spec.platformRef` now contains only the platform name because the platform is
+cluster-scoped. Remove any obsolete namespace or kind fields from the reference. For runtimes that
+should use platform-provided PostgreSQL persistence, set `spec.persistenceMode: PlatformDB` and
+reference the platform. Runtimes that should remain ephemeral can omit the platform reference and
+use the default `Ephemeral` persistence mode.
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowRuntime
+metadata:
+  name: payments
+  namespace: payments
+spec:
+  platformRef:
+    name: default
+  persistenceMode: PlatformDB
+----
+
+Confirm that each runtime can reach the configured PostgreSQL Services. For a database Service in
+another namespace, specify its namespace in that datastore's `serviceRef`.
+
+== Remove the old resource
+
+After the replacement platform is ready and runtimes use the new API, remove old namespaced
+`LogicPlatform` objects if they remain. The old API is not served by the new CRD, so export and
+delete old resources before removing the old CRD if you are upgrading a cluster that still has it:
+
+[source,bash]
+----
+kubectl delete logicplatform --all -A
+----
+
+Verify component status and runtime readiness:
+
+[source,bash]
+----
+kubectl get clusterlogicplatform default
+kubectl get logicflowruntimes -A
+----
+
+If the new platform does not become ready, inspect `status.conditions` and the relevant component
+logs before removing or changing database resources.

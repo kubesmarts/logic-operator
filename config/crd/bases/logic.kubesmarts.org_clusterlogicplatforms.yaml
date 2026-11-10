@@ -36,9 +36,9 @@ spec:
           ClusterLogicPlatform\n\tmetadata:\n\t  name: global-platform\n\tspec:\n\t
           \ targetNamespace: workflows\n\t  dataIndex:\n\t    enabled: true\n\t  gateway:\n\t
           \   application:\n\t      image: quay.io/kubesmarts/workflow-gateway:2.0.0\n\t
-          \ runtime:\n\t    runtime:\n\t      postgresql:\n\t        secretRef:\n\t
-          \         name: postgres-credentials\n\t        serviceRef:\n\t          name:
-          postgres\n\t          databaseName: workflows\n\t          databaseSchema:
+          \ runtime:\n\t    persistence:\n\t      runtime:\n\t        postgresql:\n\t
+          \         secretRef:\n\t            name: postgres-credentials\n\t          serviceRef:\n\t
+          \           name: postgres\n\t            databaseName: workflows\n\t            databaseSchema:
           runtime"
         properties:
           apiVersion:
@@ -19327,7 +19327,7 @@ spec:
                       watchNamespaces:
                         description: |-
                           WatchNamespaces specifies the namespace Vector should tail logs from.
-                          When omitted, admission defaults this to the LogicPlatform namespace.
+                          When omitted, the ClusterLogicPlatform targetNamespace is used.
                           The current controller passes only the first entry as an exact namespace
                           filter; wildcard and multi-namespace filtering are not supported.
                         items:
@@ -28887,44 +28887,27 @@ spec:
                     type: object
                 type: object
               runtime:
-                description: Runtime configures per-datastore persistence for workflow
-                  runtimes.
+                description: Runtime configures runtime-wide platform settings, including
+                  persistence datastores.
                 properties:
-                  quartz:
-                    description: Quartz configures the datastore for Quartz scheduler
-                      tables.
+                  persistence:
+                    description: Persistence configures separate workflow runtime
+                      and Quartz datastores.
                     properties:
-                      dbMigrationStrategy:
-                        default: service
-                        description: Reserved migration strategy setting. The current
-                          controllers do not create migration Jobs or otherwise act
-                          on this field.
-                        type: string
-                      migrationSecretRef:
-                        description: MigrationSecretRef references the DDL (schema
-                          migration) credential. When nil, the operational secret
-                          (PostgreSQL.SecretRef) is used.
+                      quartz:
+                        description: Quartz optionally configures a separate datasource
+                          for Quartz scheduler tables.
                         properties:
-                          name:
-                            description: Name of the postgresql credentials secret.
+                          dbMigrationStrategy:
+                            default: service
+                            description: Reserved migration strategy setting. The
+                              current controllers do not create migration Jobs or
+                              otherwise act on this field.
                             type: string
-                          passwordKey:
-                            description: Defaults to POSTGRESQL_PASSWORD
-                            type: string
-                          userKey:
-                            description: Defaults to POSTGRESQL_USER
-                            type: string
-                        required:
-                        - name
-                        type: object
-                      postgresql:
-                        description: PostgreSQL configures the PostgreSQL connection;
-                          SecretRef is the DML (operational) credential.
-                        maxProperties: 3
-                        minProperties: 2
-                        properties:
-                          secretRef:
-                            description: Secret reference to the database user credentials
+                          migrationSecretRef:
+                            description: MigrationSecretRef references the DDL (schema
+                              migration) credential. When nil, the operational secret
+                              (PostgreSQL.SecretRef) is used.
                             properties:
                               name:
                                 description: Name of the postgresql credentials secret.
@@ -28938,101 +28921,104 @@ spec:
                             required:
                             - name
                             type: object
-                          serviceRef:
-                            description: Service reference to PostgreSQL. Required
-                              for operator to construct JDBC URL.
+                          postgresql:
+                            description: PostgreSQL configures the PostgreSQL connection;
+                              SecretRef is the DML (operational) credential.
+                            maxProperties: 3
+                            minProperties: 2
                             properties:
-                              databaseName:
-                                description: Name of postgresql database to be used.
-                                type: string
-                              databaseSchema:
-                                description: Schema of postgresql database to be used.
-                                  When empty, the database default schema is used
-                                  (typically "public").
-                                type: string
-                              name:
-                                description: Name of the DB k8s service.
-                                type: string
-                              namespace:
+                              secretRef:
+                                description: Secret reference to the database user
+                                  credentials
+                                properties:
+                                  name:
+                                    description: Name of the postgresql credentials
+                                      secret.
+                                    type: string
+                                  passwordKey:
+                                    description: Defaults to POSTGRESQL_PASSWORD
+                                    type: string
+                                  userKey:
+                                    description: Defaults to POSTGRESQL_USER
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                              serviceRef:
+                                description: Service reference to PostgreSQL. Required
+                                  for operator to construct JDBC URL.
+                                properties:
+                                  databaseName:
+                                    description: Name of postgresql database to be
+                                      used.
+                                    type: string
+                                  databaseSchema:
+                                    description: Schema of postgresql database to
+                                      be used. When empty, the database default schema
+                                      is used (typically "public").
+                                    type: string
+                                  name:
+                                    description: Name of the DB k8s service.
+                                    type: string
+                                  namespace:
+                                    description: |-
+                                      Namespace of a Kubernetes Service. When omitted, Name is used as a hostname and Kubernetes
+                                      DNS search resolves a same-namespace Service. Set Namespace to build a fully qualified
+                                      address for a Service in another namespace.
+                                    type: string
+                                  port:
+                                    description: Port to use when connecting to the
+                                      DB k8s service.
+                                    type: integer
+                                required:
+                                - name
+                                type: object
+                              tls:
                                 description: |-
-                                  Namespace of a Kubernetes Service. When omitted, Name is used as a hostname and Kubernetes
-                                  DNS search resolves a same-namespace Service. Set Namespace to build a fully qualified
-                                  address for a Service in another namespace.
-                                type: string
-                              port:
-                                description: Port to use when connecting to the DB
-                                  k8s service.
-                                type: integer
+                                  TLS configuration for PostgreSQL connections.
+                                  When enabled, the operator will append SSL parameters to the JDBC URL.
+                                properties:
+                                  enabled:
+                                    default: false
+                                    description: |-
+                                      Enabled determines whether to use TLS/SSL for PostgreSQL connections.
+                                      If true, SSL parameters will be added to the JDBC URL based on tlsMode.
+                                      Defaults to false.
+                                    type: boolean
+                                  tlsMode:
+                                    default: prefer
+                                    description: |-
+                                      TLSMode specifies the SSL connection mode for PostgreSQL.
+                                      Defaults to "prefer" when enabled is true.
+                                      See: https://www.postgresql.org/docs/current/libpq-ssl.html
+                                    enum:
+                                    - disable
+                                    - allow
+                                    - prefer
+                                    - require
+                                    - verify-ca
+                                    - verify-full
+                                    type: string
+                                type: object
                             required:
-                            - name
+                            - secretRef
+                            - serviceRef
                             type: object
-                          tls:
-                            description: |-
-                              TLS configuration for PostgreSQL connections.
-                              When enabled, the operator will append SSL parameters to the JDBC URL.
-                            properties:
-                              enabled:
-                                default: false
-                                description: |-
-                                  Enabled determines whether to use TLS/SSL for PostgreSQL connections.
-                                  If true, SSL parameters will be added to the JDBC URL based on tlsMode.
-                                  Defaults to false.
-                                type: boolean
-                              tlsMode:
-                                default: prefer
-                                description: |-
-                                  TLSMode specifies the SSL connection mode for PostgreSQL.
-                                  Defaults to "prefer" when enabled is true.
-                                  See: https://www.postgresql.org/docs/current/libpq-ssl.html
-                                enum:
-                                - disable
-                                - allow
-                                - prefer
-                                - require
-                                - verify-ca
-                                - verify-full
-                                type: string
-                            type: object
-                        required:
-                        - secretRef
-                        - serviceRef
                         type: object
-                    type: object
-                  runtime:
-                    description: Runtime configures the datastore for Quarkus Flow
-                      workflow state (DML operations, DDL migrations).
-                    properties:
-                      dbMigrationStrategy:
-                        default: service
-                        description: Reserved migration strategy setting. The current
-                          controllers do not create migration Jobs or otherwise act
-                          on this field.
-                        type: string
-                      migrationSecretRef:
-                        description: MigrationSecretRef references the DDL (schema
-                          migration) credential. When nil, the operational secret
-                          (PostgreSQL.SecretRef) is used.
+                      runtime:
+                        description: Runtime configures the datastore for Quarkus
+                          Flow workflow state.
                         properties:
-                          name:
-                            description: Name of the postgresql credentials secret.
+                          dbMigrationStrategy:
+                            default: service
+                            description: Reserved migration strategy setting. The
+                              current controllers do not create migration Jobs or
+                              otherwise act on this field.
                             type: string
-                          passwordKey:
-                            description: Defaults to POSTGRESQL_PASSWORD
-                            type: string
-                          userKey:
-                            description: Defaults to POSTGRESQL_USER
-                            type: string
-                        required:
-                        - name
-                        type: object
-                      postgresql:
-                        description: PostgreSQL configures the PostgreSQL connection;
-                          SecretRef is the DML (operational) credential.
-                        maxProperties: 3
-                        minProperties: 2
-                        properties:
-                          secretRef:
-                            description: Secret reference to the database user credentials
+                          migrationSecretRef:
+                            description: MigrationSecretRef references the DDL (schema
+                              migration) credential. When nil, the operational secret
+                              (PostgreSQL.SecretRef) is used.
                             properties:
                               name:
                                 description: Name of the postgresql credentials secret.
@@ -29046,64 +29032,89 @@ spec:
                             required:
                             - name
                             type: object
-                          serviceRef:
-                            description: Service reference to PostgreSQL. Required
-                              for operator to construct JDBC URL.
+                          postgresql:
+                            description: PostgreSQL configures the PostgreSQL connection;
+                              SecretRef is the DML (operational) credential.
+                            maxProperties: 3
+                            minProperties: 2
                             properties:
-                              databaseName:
-                                description: Name of postgresql database to be used.
-                                type: string
-                              databaseSchema:
-                                description: Schema of postgresql database to be used.
-                                  When empty, the database default schema is used
-                                  (typically "public").
-                                type: string
-                              name:
-                                description: Name of the DB k8s service.
-                                type: string
-                              namespace:
+                              secretRef:
+                                description: Secret reference to the database user
+                                  credentials
+                                properties:
+                                  name:
+                                    description: Name of the postgresql credentials
+                                      secret.
+                                    type: string
+                                  passwordKey:
+                                    description: Defaults to POSTGRESQL_PASSWORD
+                                    type: string
+                                  userKey:
+                                    description: Defaults to POSTGRESQL_USER
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                              serviceRef:
+                                description: Service reference to PostgreSQL. Required
+                                  for operator to construct JDBC URL.
+                                properties:
+                                  databaseName:
+                                    description: Name of postgresql database to be
+                                      used.
+                                    type: string
+                                  databaseSchema:
+                                    description: Schema of postgresql database to
+                                      be used. When empty, the database default schema
+                                      is used (typically "public").
+                                    type: string
+                                  name:
+                                    description: Name of the DB k8s service.
+                                    type: string
+                                  namespace:
+                                    description: |-
+                                      Namespace of a Kubernetes Service. When omitted, Name is used as a hostname and Kubernetes
+                                      DNS search resolves a same-namespace Service. Set Namespace to build a fully qualified
+                                      address for a Service in another namespace.
+                                    type: string
+                                  port:
+                                    description: Port to use when connecting to the
+                                      DB k8s service.
+                                    type: integer
+                                required:
+                                - name
+                                type: object
+                              tls:
                                 description: |-
-                                  Namespace of a Kubernetes Service. When omitted, Name is used as a hostname and Kubernetes
-                                  DNS search resolves a same-namespace Service. Set Namespace to build a fully qualified
-                                  address for a Service in another namespace.
-                                type: string
-                              port:
-                                description: Port to use when connecting to the DB
-                                  k8s service.
-                                type: integer
+                                  TLS configuration for PostgreSQL connections.
+                                  When enabled, the operator will append SSL parameters to the JDBC URL.
+                                properties:
+                                  enabled:
+                                    default: false
+                                    description: |-
+                                      Enabled determines whether to use TLS/SSL for PostgreSQL connections.
+                                      If true, SSL parameters will be added to the JDBC URL based on tlsMode.
+                                      Defaults to false.
+                                    type: boolean
+                                  tlsMode:
+                                    default: prefer
+                                    description: |-
+                                      TLSMode specifies the SSL connection mode for PostgreSQL.
+                                      Defaults to "prefer" when enabled is true.
+                                      See: https://www.postgresql.org/docs/current/libpq-ssl.html
+                                    enum:
+                                    - disable
+                                    - allow
+                                    - prefer
+                                    - require
+                                    - verify-ca
+                                    - verify-full
+                                    type: string
+                                type: object
                             required:
-                            - name
+                            - secretRef
+                            - serviceRef
                             type: object
-                          tls:
-                            description: |-
-                              TLS configuration for PostgreSQL connections.
-                              When enabled, the operator will append SSL parameters to the JDBC URL.
-                            properties:
-                              enabled:
-                                default: false
-                                description: |-
-                                  Enabled determines whether to use TLS/SSL for PostgreSQL connections.
-                                  If true, SSL parameters will be added to the JDBC URL based on tlsMode.
-                                  Defaults to false.
-                                type: boolean
-                              tlsMode:
-                                default: prefer
-                                description: |-
-                                  TLSMode specifies the SSL connection mode for PostgreSQL.
-                                  Defaults to "prefer" when enabled is true.
-                                  See: https://www.postgresql.org/docs/current/libpq-ssl.html
-                                enum:
-                                - disable
-                                - allow
-                                - prefer
-                                - require
-                                - verify-ca
-                                - verify-full
-                                type: string
-                            type: object
-                        required:
-                        - secretRef
-                        - serviceRef
                         type: object
                     type: object
                 type: object
@@ -38579,7 +38590,7 @@ spec:
                   watchNamespaces:
                     description: |-
                       WatchNamespaces specifies the namespace Vector should tail logs from.
-                      When omitted, admission defaults this to the LogicPlatform namespace.
+                      When omitted, the ClusterLogicPlatform targetNamespace is used.
                       The current controller passes only the first entry as an exact namespace
                       filter; wildcard and multi-namespace filtering are not supported.
                     items:
@@ -38906,6 +38917,14 @@ spec:
                 description: ObservedGeneration tracks the last reconciled spec generation.
                 format: int64
                 type: integer
+              phase:
+                description: Phase summarizes the readiness of all enabled platform
+                  components.
+                enum:
+                - Pending
+                - Ready
+                - Failed
+                type: string
               vector:
                 description: Vector contains status for the Vector component when
                   enabled.

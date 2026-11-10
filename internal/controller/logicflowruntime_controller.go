@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"sort"
 
 	"fmt"
@@ -48,6 +49,13 @@ type LogicFlowRuntimeReconciler struct {
 	Scheme *runtime.Scheme
 }
 
+type runtimePersistenceConfig struct {
+	Runtime *logicv1.DatastoreSpec
+	Quartz  *logicv1.DatastoreSpec
+}
+
+var errRuntimePersistenceNotConfigured = errors.New("runtime persistence is not configured")
+
 // +kubebuilder:rbac:groups=logic.kubesmarts.org,resources=logicflowruntimes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=logic.kubesmarts.org,resources=logicflowruntimes/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=logic.kubesmarts.org,resources=logicflowruntimes/finalizers,verbs=update
@@ -71,24 +79,44 @@ func (r *LogicFlowRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	// created before the webhook is ready still gets its expected replica count.
 	logicv1.ApplyLogicFlowRuntimeDefaults(&rt)
 
-	eff, err := r.effectiveRuntimePersistence(ctx, &rt)
-	if err != nil {
-		log.Error(err, "failed to resolve effective runtime persistence")
-		return ctrl.Result{}, err
-	}
-
 	configMaps, err := r.listConfigMaps(ctx, &rt)
 	if err != nil {
 		log.Error(err, "failed to list ConfigMaps")
 		return ctrl.Result{}, err
 	}
 
+	eff, err := r.effectiveRuntimePersistence(ctx, &rt)
+	if err != nil {
+		log.Error(err, "failed to resolve effective runtime persistence")
+		if !errors.Is(err, errRuntimePersistenceNotConfigured) {
+			return ctrl.Result{}, err
+		}
+
+		logicv1.SetCondition(&rt.Status.Conditions, logicv1.ConditionPersistenceReady,
+			metav1.ConditionFalse, rt.Generation,
+			logicv1.ReasonRuntimePersistenceNotConfigured, err.Error())
+		if statusErr := r.updateStatus(ctx, &rt, configMaps, nil); statusErr != nil {
+			return ctrl.Result{}, statusErr
+		}
+		return ctrl.Result{}, nil
+	}
+
+	persistenceMessage := "Platform runtime PostgreSQL datastore is configured"
+	if eff != nil && eff.Quartz != nil {
+		persistenceMessage += " with a separate Quartz datastore"
+	}
+	if logicv1.IsEphemeral(&rt) {
+		persistenceMessage = "Runtime uses Ephemeral mode; no platform database is required"
+	}
+	logicv1.SetCondition(&rt.Status.Conditions, logicv1.ConditionPersistenceReady,
+		metav1.ConditionTrue, rt.Generation, logicv1.ReasonReady, persistenceMessage)
+
 	if err := r.applyDeployment(ctx, &rt, configMaps, eff); err != nil {
 		log.Error(err, "failed to apply Deployment")
 		return ctrl.Result{}, err
 	}
 
-	if err := r.reconcilePodRBAC(ctx, &rt, eff); err != nil {
+	if err := r.reconcilePodRBAC(ctx, &rt, persistenceDatastore(eff)); err != nil {
 		log.Error(err, "failed to reconcile pod RBAC")
 		return ctrl.Result{}, err
 	}
@@ -99,13 +127,19 @@ func (r *LogicFlowRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			log.Error(err, "failed to resolve platform for DB secret replication")
 			return ctrl.Result{}, err
 		}
-		if err := r.reconcileRuntimeDBSecret(ctx, &rt, eff, platform); err != nil {
+		if err := r.reconcileRuntimeDBSecret(ctx, &rt, eff.Runtime, platform); err != nil {
 			log.Error(err, "failed to reconcile runtime DB secret")
 			return ctrl.Result{}, err
 		}
+		if eff.Quartz != nil {
+			if err := r.reconcileRuntimeDBSecret(ctx, &rt, eff.Quartz, platform); err != nil {
+				log.Error(err, "failed to reconcile Quartz DB secret")
+				return ctrl.Result{}, err
+			}
+		}
 	}
 
-	if err := r.reconcileLeases(ctx, &rt, eff); err != nil {
+	if err := r.reconcileLeases(ctx, &rt, persistenceDatastore(eff)); err != nil {
 		log.Error(err, "failed to reconcile leases")
 		return ctrl.Result{}, err
 	}
@@ -115,7 +149,7 @@ func (r *LogicFlowRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, err
 	}
 
-	if err := r.updateStatus(ctx, &rt, configMaps, eff); err != nil {
+	if err := r.updateStatus(ctx, &rt, configMaps, persistenceDatastore(eff)); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -136,11 +170,17 @@ func (r *LogicFlowRuntimeReconciler) listConfigMaps(ctx context.Context, rt *log
 	return cmList.Items, nil
 }
 
-func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *logicv1.LogicFlowRuntime, configMaps []corev1.ConfigMap, eff *logicv1.DatastoreSpec) error {
+func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *logicv1.LogicFlowRuntime, configMaps []corev1.ConfigMap, eff *runtimePersistenceConfig) error {
 	childLabels := ChildLabels(rt)
+	var runtimeDatastore, quartzDatastore *logicv1.DatastoreSpec
+	if eff != nil {
+		runtimeDatastore = eff.Runtime
+		quartzDatastore = eff.Quartz
+	}
 	opts := []ContainerOption{
-		DefaultRunnerImage(eff),
-		WithQuarkusPersistenceEnvVars(eff),
+		DefaultRunnerImage(runtimeDatastore),
+		WithQuarkusPersistenceEnvVars(runtimeDatastore),
+		WithQuarkusQuartzPersistenceEnvVars(quartzDatastore),
 		WithSecurityEnvVars(rt.Spec.Security),
 		WithStructuredLoggingEnvVars(rt.Spec.Logging),
 		DefaultQuarkusProbes(),
@@ -527,9 +567,9 @@ func (r *LogicFlowRuntimeReconciler) resolvePlatform(ctx context.Context, rt *lo
 	}
 }
 
-// effectiveRuntimePersistence resolves the operational (DML) persistence for this
-// runtime: nil when ephemeral, otherwise the platform's runtime datastore.
-func (r *LogicFlowRuntimeReconciler) effectiveRuntimePersistence(ctx context.Context, rt *logicv1.LogicFlowRuntime) (*logicv1.DatastoreSpec, error) {
+// effectiveRuntimePersistence resolves the operational runtime datastore and an
+// optional separate Quartz datastore: nil when ephemeral.
+func (r *LogicFlowRuntimeReconciler) effectiveRuntimePersistence(ctx context.Context, rt *logicv1.LogicFlowRuntime) (*runtimePersistenceConfig, error) {
 	if logicv1.IsEphemeral(rt) {
 		return nil, nil
 	}
@@ -537,14 +577,28 @@ func (r *LogicFlowRuntimeReconciler) effectiveRuntimePersistence(ctx context.Con
 	if err != nil {
 		return nil, err
 	}
-	if clp.Spec.Runtime == nil {
-		return nil, nil
+	if clp.Spec.Runtime == nil || clp.Spec.Runtime.Persistence == nil {
+		return nil, fmt.Errorf("%w: ClusterLogicPlatform %q must configure spec.runtime.persistence.runtime.postgresql, or set spec.persistenceMode to Ephemeral",
+			errRuntimePersistenceNotConfigured, clp.Name)
 	}
-	ds := clp.Spec.Runtime.Runtime // DatastoreSpec
-	if ds.PostgreSQL == nil {
-		return nil, nil
+	runtimeDatastore := &clp.Spec.Runtime.Persistence.Runtime
+	if runtimeDatastore.PostgreSQL == nil {
+		return nil, fmt.Errorf("%w: ClusterLogicPlatform %q must configure spec.runtime.persistence.runtime.postgresql, or set spec.persistenceMode to Ephemeral",
+			errRuntimePersistenceNotConfigured, clp.Name)
 	}
-	return &ds, nil
+	effective := &runtimePersistenceConfig{Runtime: runtimeDatastore}
+	quartzDatastore := &clp.Spec.Runtime.Persistence.Quartz
+	if quartzDatastore.PostgreSQL != nil {
+		effective.Quartz = quartzDatastore
+	}
+	return effective, nil
+}
+
+func persistenceDatastore(eff *runtimePersistenceConfig) *logicv1.DatastoreSpec {
+	if eff == nil {
+		return nil
+	}
+	return eff.Runtime
 }
 
 func (r *LogicFlowRuntimeReconciler) mapConfigMapToRuntime(_ context.Context, obj client.Object) []reconcile.Request {
@@ -591,27 +645,54 @@ func (r *LogicFlowRuntimeReconciler) mapPlatformToRuntimes(ctx context.Context, 
 }
 
 func (r *LogicFlowRuntimeReconciler) mapSecretToRuntimes(ctx context.Context, obj client.Object) []reconcile.Request {
-	// When a Secret changes, enqueue runtimes that might use it as a replicated DB secret.
-	// Simple implementation: check if the secret is in a platform's targetNamespace and
-	// enqueue runtimes that reference persistence.
+	// Resolve platform database Secrets to every runtime that consumes that platform,
+	// including runtimes in namespaces where the Secret is replicated.
+	var platformList logicv1.ClusterLogicPlatformList
+	if err := r.List(ctx, &platformList); err != nil {
+		return nil
+	}
+	platformsByName := make(map[string]logicv1.ClusterLogicPlatform, len(platformList.Items))
+	matchingPlatforms := make(map[string]struct{})
+	for _, platform := range platformList.Items {
+		platformsByName[platform.Name] = platform
+		if platform.Spec.TargetNamespace != obj.GetNamespace() || platform.Spec.Runtime == nil || platform.Spec.Runtime.Persistence == nil {
+			continue
+		}
+		persistence := platform.Spec.Runtime.Persistence
+		if datastoreReferencesSecret(&persistence.Runtime, obj.GetName()) || datastoreReferencesSecret(&persistence.Quartz, obj.GetName()) {
+			matchingPlatforms[platform.Name] = struct{}{}
+		}
+	}
+	if len(matchingPlatforms) == 0 {
+		return nil
+	}
+
 	var runtimeList logicv1.LogicFlowRuntimeList
 	if err := r.List(ctx, &runtimeList); err != nil {
 		return nil
 	}
 	var requests []reconcile.Request
 	for _, rt := range runtimeList.Items {
-		// Only enqueue runtimes with persistence enabled
 		if logicv1.IsEphemeral(&rt) {
 			continue
 		}
-		// Check if this secret could be relevant (simple heuristic: in same namespace or platform namespace)
-		if rt.Namespace == obj.GetNamespace() {
-			requests = append(requests, reconcile.Request{
-				NamespacedName: types.NamespacedName{Name: rt.Name, Namespace: rt.Namespace},
-			})
+		platformName := ""
+		if rt.Spec.PlatformRef != nil && rt.Spec.PlatformRef.Name != "" {
+			platformName = rt.Spec.PlatformRef.Name
+		} else if len(platformsByName) == 1 {
+			for name := range platformsByName {
+				platformName = name
+			}
+		}
+		if _, matches := matchingPlatforms[platformName]; matches {
+			requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Name: rt.Name, Namespace: rt.Namespace}})
 		}
 	}
 	return requests
+}
+
+func datastoreReferencesSecret(datastore *logicv1.DatastoreSpec, secretName string) bool {
+	return datastore != nil && datastore.PostgreSQL != nil && datastore.PostgreSQL.SecretRef.Name == secretName
 }
 
 func (r *LogicFlowRuntimeReconciler) SetupWithManager(mgr ctrl.Manager) error {

@@ -98,7 +98,7 @@ type DataIndexSpec struct {
 // When Vector is nil, the Vector DaemonSet is not deployed.
 type VectorSpec struct {
 	// WatchNamespaces specifies the namespace Vector should tail logs from.
-	// When omitted, admission defaults this to the LogicPlatform namespace.
+	// When omitted, the ClusterLogicPlatform targetNamespace is used.
 	// The current controller passes only the first entry as an exact namespace
 	// filter; wildcard and multi-namespace filtering are not supported.
 	//

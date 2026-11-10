@@ -13,10 +13,13 @@
 ** xref:components/workflow-gateway.adoc[Workflow Gateway]
 
 * CRD Reference
-** xref:crd-reference/logicplatform.adoc[LogicPlatform]
+** xref:crd-reference/clusterlogicplatform.adoc[ClusterLogicPlatform]
 ** xref:crd-reference/logicflowruntime.adoc[LogicFlowRuntime]
 ** xref:crd-reference/logicflowdefinition.adoc[LogicFlowDefinition]
 ** xref:crd-reference/logicflowservice.adoc[LogicFlowService]
+
+* Migration
+** xref:migration/logicplatform-to-clusterlogicplatform.adoc[Migrate from LogicPlatform]
 
 * Deployment
 ** xref:deployment/overview.adoc[Overview]

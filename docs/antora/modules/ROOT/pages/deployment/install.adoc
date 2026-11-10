@@ -11,7 +11,7 @@ Choose the installation path that matches your goal:
 
 |Released version with Helm
 |You want to try or operate a published version on a Kubernetes or OpenShift cluster that you manage.
-|A released operator chart, or the operator plus PostgreSQL and a sample LogicPlatform stack.
+|A released operator chart, or the operator plus PostgreSQL and a sample ClusterLogicPlatform stack.
 
 |Local development with KIND
 |You are developing, testing, or contributing to Logic Operator from a source checkout.

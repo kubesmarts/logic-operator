@@ -84,6 +84,11 @@ spec:
 			cmd.Stdin = strings.NewReader(fmt.Sprintf(validDef, namespace))
 			output, err := cmd.CombinedOutput()
 			Expect(err).NotTo(HaveOccurred(), "expected valid definition to be created: %s", string(output))
+			DeferCleanup(func() {
+				cmd := exec.Command("kubectl", "delete", "logicflowdefinition",
+					"immutable-ref-def", "-n", namespace, "--ignore-not-found")
+				_, _ = cmd.CombinedOutput()
+			})
 
 			// Try to change runtimeRef
 			updatedDef := `apiVersion: logic.kubesmarts.org/v1
@@ -110,11 +115,6 @@ spec:
 			output, err = cmd.CombinedOutput()
 			Expect(err).To(HaveOccurred(), "expected runtimeRef change to be rejected")
 			Expect(string(output)).To(ContainSubstring("runtimeRef"))
-
-			// Cleanup
-			cmd = exec.Command("kubectl", "delete", "logicflowdefinition",
-				"immutable-ref-def", "-n", namespace, "--ignore-not-found")
-			_ = cmd.Run()
 		})
 	})
 

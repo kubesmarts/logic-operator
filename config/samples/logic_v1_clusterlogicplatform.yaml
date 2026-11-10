@@ -1,0 +1,7 @@
+apiVersion: logic.kubesmarts.org/v1
+kind: ClusterLogicPlatform
+metadata:
+  name: default
+spec:
+  targetNamespace: logic-platform
+  gateway: {}

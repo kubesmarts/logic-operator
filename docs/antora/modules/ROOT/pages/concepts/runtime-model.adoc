@@ -65,7 +65,7 @@ logic, then direct traffic to the new definition through `LogicFlowService` or t
 == Relationship between resources
 
 ----
-LogicPlatform (optional shared components)
+ClusterLogicPlatform (optional shared components)
   └── Workflow Gateway (optional HTTP entry point)
 
 LogicFlowRuntime (runner pool)

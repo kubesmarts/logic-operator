@@ -118,7 +118,7 @@ Prometheus counters only appear after at least one increment.
 
 *Symptom:* `curl http://gateway.lvh.me/v1/runtime/default/hello-world/1.0.0/sync` returns a 404, 502, or refuses to connect.
 
-*Cause:* ingress-nginx is not ready, or the LogicPlatform-managed gateway Ingress has not been created yet.
+*Cause:* ingress-nginx is not ready, or the ClusterLogicPlatform-managed gateway Ingress has not been created yet.
 
 *Fix:*
 
@@ -129,13 +129,13 @@ kubectl get pods -n ingress-nginx
 
 # Check that the ingress resource exists
 kubectl get ingress
-kubectl get logicplatform logicplatform-sample -o yaml
+kubectl get clusterlogicplatform default -o yaml
 
 # Check the service behind the ingress
 kubectl get svc hello-runtime
 
 # Describe the ingress for events
-kubectl describe ingress logicplatform-sample-workflow-gateway
+kubectl describe ingress default-workflow-gateway
 ----
 
 If ingress-nginx is running but returning 502, the runner pod may still be starting.
