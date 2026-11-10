@@ -33,9 +33,15 @@ adr/handoff/
 docs/architecture-slide*.html
 docs/superpowers
 
-# Generated configs (synced from Go module dependencies)
+# Generated configs (synced from Go module dependencies), except the embedded Vector config.
 internal/controller/configs/*
 !internal/controller/configs/.gitkeep
+!internal/controller/configs/vector/
+internal/controller/configs/vector/*
+!internal/controller/configs/vector/mode1-postgresql/
+internal/controller/configs/vector/mode1-postgresql/*
+!internal/controller/configs/vector/mode1-postgresql/vector.yaml
 
 # Generated Helm chart packages and staging files
 dist/helm/
+charts/**/*.tgz

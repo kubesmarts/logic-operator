@@ -26,7 +26,22 @@ spec:
 
 Required namespace for platform-managed Deployments, Services, and other namespaced resources.
 Create this namespace before applying the resource unless another component (such as the stack
-Helm chart) creates it.
+Helm chart) creates it. This field is immutable after creation. To move the platform, delete the
+`ClusterLogicPlatform` and recreate it with the new namespace.
+
+[IMPORTANT]
+====
+Deleting the `ClusterLogicPlatform` removes its managed Data Index, Gateway, and Vector resources.
+Cleanup may take time; wait for the platform object to be fully deleted before recreating it. Do
+not delete the old target namespace first, because the Gateway finalizer needs it to clean up.
+
+Runtime resources and PostgreSQL databases are not moved or deleted with the platform. Before
+recreating it, ensure the new target namespace has the configured PostgreSQL Service and source
+credential Secrets. If the database itself is moving, back up and restore its Data Index, runtime,
+and Quartz schemas. Runtime credential copies are synced again during reconciliation after the
+platform is recreated, provided their referenced source Secrets are available. After recreation,
+wait for the platform and runtimes to become ready before removing old database resources.
+====
 
 === `dataIndex`
 
@@ -119,4 +134,3 @@ gateway, inspect its Deployment, Service, and optional Ingress or Route.
 * xref:components/workflow-gateway.adoc[Workflow Gateway]
 * xref:crd-reference/logicflowruntime.adoc[LogicFlowRuntime]
 * xref:concepts/workflow-instance-history.adoc[Workflow Instance History]
-* xref:migration/logicplatform-to-clusterlogicplatform.adoc[Migrate from LogicPlatform]

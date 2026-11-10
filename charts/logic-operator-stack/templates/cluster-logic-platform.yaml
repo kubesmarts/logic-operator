@@ -17,7 +17,7 @@ spec:
           name: {{ include "logic-operator-stack.fullname" . }}-postgresql
           namespace: {{ .Values.clusterLogicPlatform.targetNamespace | quote }}
           databaseName: {{ .Values.postgresql.auth.database | quote }}
-          databaseSchema: logicflow_dataindex
+          databaseSchema: data_index
 {{- end }}
 {{- if .Values.clusterLogicPlatform.vector.enabled }}
   vector: {}

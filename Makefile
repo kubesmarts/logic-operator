@@ -227,29 +227,29 @@ setup-test-e2e: manifests generate fmt vet ## Set up complete E2E test infrastru
 	@echo "Building operator image $(E2E_IMG)..."
 	$(CONTAINER_TOOL) build $(VERSION_BUILD_ARGS) -t $(E2E_IMG) .
 	@echo "Loading operator image into Kind cluster..."
-	$(KIND) load docker-image $(E2E_IMG) --name $(KIND_CLUSTER)
+	tools/load-kind-image.sh "$(KIND_CLUSTER)" "$(E2E_IMG)" "$(KIND)"
 	@echo "Loading postgres image for E2E tests..."
 	@docker image inspect $(POSTGRES_IMG) >/dev/null 2>&1 || docker pull $(POSTGRES_IMG)
-	$(KIND) load docker-image $(POSTGRES_IMG) --name $(KIND_CLUSTER)
+	tools/load-kind-image.sh "$(KIND_CLUSTER)" "$(POSTGRES_IMG)" "$(KIND)"
 	@echo "Loading quarkus-flow-runner (minimal) image for E2E tests..."
 	@docker image inspect $(QUARKUS_FLOW_RUNNER_MINIMAL_IMG) >/dev/null 2>&1 || docker pull $(QUARKUS_FLOW_RUNNER_MINIMAL_IMG)
-	$(KIND) load docker-image $(QUARKUS_FLOW_RUNNER_MINIMAL_IMG) --name $(KIND_CLUSTER)
+	tools/load-kind-image.sh "$(KIND_CLUSTER)" "$(QUARKUS_FLOW_RUNNER_MINIMAL_IMG)" "$(KIND)"
 	@echo "Loading quarkus-flow-runner (standard) image for E2E tests..."
 	@docker image inspect $(QUARKUS_FLOW_RUNNER_STANDARD_IMG) >/dev/null 2>&1 || docker pull $(QUARKUS_FLOW_RUNNER_STANDARD_IMG)
-	$(KIND) load docker-image $(QUARKUS_FLOW_RUNNER_STANDARD_IMG) --name $(KIND_CLUSTER)
+	tools/load-kind-image.sh "$(KIND_CLUSTER)" "$(QUARKUS_FLOW_RUNNER_STANDARD_IMG)" "$(KIND)"
 	@echo "Loading data-index-service image for E2E tests..."
 	@docker image inspect $(DATA_INDEX_IMG) >/dev/null 2>&1 || docker pull $(DATA_INDEX_IMG)
-	$(KIND) load docker-image $(DATA_INDEX_IMG) --name $(KIND_CLUSTER)
+	tools/load-kind-image.sh "$(KIND_CLUSTER)" "$(DATA_INDEX_IMG)" "$(KIND)"
 	@echo "Loading Vector image for E2E tests..."
 	@docker image inspect $(VECTOR_IMG) >/dev/null 2>&1 || docker pull $(VECTOR_IMG)
-	$(KIND) load docker-image $(VECTOR_IMG) --name $(KIND_CLUSTER)
+	tools/load-kind-image.sh "$(KIND_CLUSTER)" "$(VECTOR_IMG)" "$(KIND)"
 	@echo "Loading curl image for E2E tests..."
 	@docker image inspect $(CURL_IMG) >/dev/null 2>&1 || docker pull $(CURL_IMG)
-	$(KIND) load docker-image $(CURL_IMG) --name $(KIND_CLUSTER)
+	tools/load-kind-image.sh "$(KIND_CLUSTER)" "$(CURL_IMG)" "$(KIND)"
 	@echo "Building workflow-gateway image for E2E tests..."
 	$(CONTAINER_TOOL) build -t $(GATEWAY_IMG) -f workflow-gateway/Dockerfile .
 	@echo "Loading workflow-gateway image into Kind cluster..."
-	$(KIND) load docker-image $(GATEWAY_IMG) --name $(KIND_CLUSTER)
+	tools/load-kind-image.sh "$(KIND_CLUSTER)" "$(GATEWAY_IMG)" "$(KIND)"
 	@echo "Installing CRDs..."
 	$(MAKE) install
 	@echo "Deploying operator..."

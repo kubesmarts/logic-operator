@@ -3,6 +3,7 @@ package v1
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -21,7 +22,10 @@ func (v *ClusterLogicPlatformValidator) ValidateCreate(ctx context.Context, obj 
 	return nil, v.validate(ctx, obj)
 }
 
-func (v *ClusterLogicPlatformValidator) ValidateUpdate(ctx context.Context, _ /* oldObj */, newObj *ClusterLogicPlatform) (admission.Warnings, error) {
+func (v *ClusterLogicPlatformValidator) ValidateUpdate(ctx context.Context, oldObj, newObj *ClusterLogicPlatform) (admission.Warnings, error) {
+	if oldObj.Spec.TargetNamespace != newObj.Spec.TargetNamespace {
+		return nil, fmt.Errorf("spec.targetNamespace is immutable; delete and recreate ClusterLogicPlatform to change it")
+	}
 	return nil, v.validate(ctx, newObj)
 }
 
@@ -41,12 +45,34 @@ func (v *ClusterLogicPlatformValidator) validate(ctx context.Context, obj *Clust
 		(obj.Spec.DataIndex.Persistence == nil || obj.Spec.DataIndex.Persistence.PostgreSQL == nil) {
 		return fmt.Errorf("spec.dataIndex.persistence.postgresql is required when Data Index is enabled")
 	}
+	if obj.Spec.DataIndex != nil {
+		if err := validateDataIndexPostgreSQL(obj.Spec.DataIndex.Persistence.PostgreSQL); err != nil {
+			return err
+		}
+	}
 
 	// ClusterLogicPlatform must be singleton (only one per cluster).
 	if err := v.validateSingleton(ctx, obj); err != nil {
 		return err
 	}
 
+	return nil
+}
+
+func validateDataIndexPostgreSQL(pg *PersistencePostgreSQL) error {
+	const path = "spec.dataIndex.persistence.postgresql"
+	if strings.TrimSpace(pg.SecretRef.Name) == "" {
+		return fmt.Errorf("%s.secretRef.name is required", path)
+	}
+	if strings.TrimSpace(pg.ServiceRef.Name) == "" {
+		return fmt.Errorf("%s.serviceRef.name is required", path)
+	}
+	if strings.TrimSpace(pg.ServiceRef.DatabaseName) == "" {
+		return fmt.Errorf("%s.serviceRef.databaseName is required", path)
+	}
+	if strings.TrimSpace(pg.ServiceRef.DatabaseSchema) == "" {
+		return fmt.Errorf("%s.serviceRef.databaseSchema is required", path)
+	}
 	return nil
 }
 

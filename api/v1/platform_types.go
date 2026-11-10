@@ -156,6 +156,13 @@ type WorkflowGatewaySpec struct {
 	Ingress *DataIndexIngressSpec `json:"ingress,omitempty"`
 }
 
+// RuntimePlatformSpec contains platform-level settings used by runtimes.
+type RuntimePlatformSpec struct {
+	// Persistence configures separate workflow runtime and Quartz datastores.
+	// +optional
+	Persistence *RuntimePersistenceSpec `json:"persistence,omitempty"`
+}
+
 // DataIndexStatus contains status information for the Data Index component.
 type DataIndexStatus struct {
 	// Ready indicates whether the enabled Data Index component is ready to serve requests.

@@ -18,9 +18,6 @@
 ** xref:crd-reference/logicflowdefinition.adoc[LogicFlowDefinition]
 ** xref:crd-reference/logicflowservice.adoc[LogicFlowService]
 
-* Migration
-** xref:migration/logicplatform-to-clusterlogicplatform.adoc[Migrate from LogicPlatform]
-
 * Deployment
 ** xref:deployment/overview.adoc[Overview]
 ** xref:deployment/install.adoc[Installation Options]

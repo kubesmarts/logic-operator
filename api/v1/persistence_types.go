@@ -159,13 +159,6 @@ type DatastoreSpec struct {
 	DBMigrationStrategy DBMigrationStrategyType `json:"dbMigrationStrategy,omitempty"`
 }
 
-// RuntimePlatformSpec contains platform-level settings used by runtimes.
-type RuntimePlatformSpec struct {
-	// Persistence configures separate workflow runtime and Quartz datastores.
-	// +optional
-	Persistence *RuntimePersistenceSpec `json:"persistence,omitempty"`
-}
-
 // RuntimePersistenceSpec configures workflow state and, optionally, a separate Quartz datasource.
 // When Quartz is omitted, the runner profile uses the workflow runtime datasource for Quartz.
 type RuntimePersistenceSpec struct {
