@@ -107,6 +107,17 @@ func TestLogicFlowServiceValidator_ValidateCreate(t *testing.T) {
 			svc:  testService(withDefaultDefinition("def-v1")),
 		},
 		{
+			name: "definition already exposed by another service",
+			objs: []runtime.Object{func() *LogicFlowDefinition {
+				def := testDefinition("def-v1", testRuntimeName, "payment")
+				def.Status.FlowServiceRef = &corev1.LocalObjectReference{Name: "existing-svc"}
+				return def
+			}()},
+			svc:     testService(withDefaultDefinition("def-v1")),
+			wantErr: true,
+			errMsg:  `already exposed by the LogicFlowService "existing-svc"`,
+		},
+		{
 			name: "valid traffic single entry",
 			objs: []runtime.Object{def1},
 			svc:  testService(withTraffic(traffic("def-v1", 100))),
@@ -263,22 +274,41 @@ func TestLogicFlowServiceValidator_ValidateUpdate(t *testing.T) {
 	base := testService(withDefaultDefinition("def-v1"))
 
 	tests := []struct {
-		name    string
-		oldObj  *LogicFlowService
-		newObj  *LogicFlowService
-		wantErr bool
-		errMsg  string
+		name       string
+		oldObj     *LogicFlowService
+		newObj     *LogicFlowService
+		serviceRef string
+		wantErr    bool
+		errMsg     string
 	}{
 		{
 			name:   "no-op update allowed",
 			oldObj: base,
 			newObj: base.DeepCopy(),
 		},
+		{
+			name:       "update allowed when this service already exposes the definition",
+			oldObj:     base,
+			newObj:     base.DeepCopy(),
+			serviceRef: "test-svc",
+		},
+		{
+			name:       "update rejected when another service exposes the definition",
+			oldObj:     base,
+			newObj:     base.DeepCopy(),
+			serviceRef: "other-svc",
+			wantErr:    true,
+			errMsg:     `already exposed by the LogicFlowService "other-svc"`,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v := testServiceValidator(def1)
+			definition := def1.DeepCopy()
+			if tt.serviceRef != "" {
+				definition.Status.FlowServiceRef = &corev1.LocalObjectReference{Name: tt.serviceRef}
+			}
+			v := testServiceValidator(definition)
 			_, err := v.ValidateUpdate(context.Background(), tt.oldObj, tt.newObj)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ValidateUpdate() error = %v, wantErr %v", err, tt.wantErr)

@@ -607,6 +607,11 @@ func (in *LogicFlowDefinitionStatus) DeepCopyInto(out *LogicFlowDefinitionStatus
 		*out = new(corev1.LocalObjectReference)
 		**out = **in
 	}
+	if in.FlowServiceRef != nil {
+		in, out := &in.FlowServiceRef, &out.FlowServiceRef
+		*out = new(corev1.LocalObjectReference)
+		**out = **in
+	}
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
 		*out = make([]metav1.Condition, len(*in))
