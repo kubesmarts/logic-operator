@@ -24,6 +24,7 @@ import (
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
 	"github.com/open-workflow-specification/sdk-go/v4/model"
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -154,6 +155,9 @@ func (r *LogicFlowDefinitionReconciler) updateStatusWithConflictRetry(ctx contex
 		if err := r.Get(ctx, client.ObjectKeyFromObject(def), def); err != nil {
 			return err
 		}
+		if apiequality.Semantic.DeepEqual(def.Status, *savedStatus) {
+			return nil
+		}
 		// Restore accumulated changes onto freshly fetched object
 		def.Status = *savedStatus
 		return r.Status().Update(ctx, def)
@@ -226,15 +230,33 @@ func (r *LogicFlowDefinitionReconciler) mapRuntimeToDefinitions(ctx context.Cont
 }
 
 func (r *LogicFlowDefinitionReconciler) mapServiceToDefinitions(ctx context.Context, obj client.Object) []reconcile.Request {
+	svc, ok := obj.(*logicv1.LogicFlowService)
+	if !ok {
+		return nil
+	}
+	refs := make(map[string]struct{})
+	if svc.Spec.DefaultDefinition != nil {
+		refs[svc.Spec.DefaultDefinition.Name] = struct{}{}
+	}
+	for _, traffic := range svc.Spec.Traffic {
+		refs[traffic.DefinitionRef.Name] = struct{}{}
+	}
+
 	var defs logicv1.LogicFlowDefinitionList
 	if err := r.List(ctx, &defs, client.InNamespace(obj.GetNamespace())); err != nil {
 		return nil
 	}
-	requests := make([]reconcile.Request, len(defs.Items))
+	requests := make([]reconcile.Request, 0, len(refs))
 	for i := range defs.Items {
-		requests[i] = reconcile.Request{NamespacedName: types.NamespacedName{
+		def := &defs.Items[i]
+		_, referenced := refs[def.Name]
+		previouslyLinked := def.Status.FlowServiceRef != nil && def.Status.FlowServiceRef.Name == svc.Name
+		if !referenced && !previouslyLinked {
+			continue
+		}
+		requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{
 			Name: defs.Items[i].Name, Namespace: defs.Items[i].Namespace,
-		}}
+		}})
 	}
 	return requests
 }
