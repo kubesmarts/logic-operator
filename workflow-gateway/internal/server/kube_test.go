@@ -205,11 +205,11 @@ func TestE2EDataIndexDiscoveryAndProxy(t *testing.T) {
 	// Start gateway with catalog and platform watchers
 	resolver, reader, platformStore := startGateway(ctx, t)
 
-	// Create LogicPlatform
+	// Create ClusterLogicPlatform
 	c := testutil.NewTestClient(t, testCfg, testScheme)
-	lp := &logicv1.LogicPlatform{
-		ObjectMeta: v1.ObjectMeta{Namespace: "default", Name: "test-platform"},
-		Spec:       logicv1.LogicPlatformSpec{},
+	lp := &logicv1.ClusterLogicPlatform{
+		ObjectMeta: v1.ObjectMeta{Name: "test-platform"},
+		Spec:       logicv1.ClusterLogicPlatformSpec{TargetNamespace: "default"},
 	}
 	require.NoError(t, c.Create(ctx, lp))
 

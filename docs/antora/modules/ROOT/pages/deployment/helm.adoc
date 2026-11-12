@@ -6,7 +6,7 @@ include::partial$versions.adoc[]
 The release workflow packages two Helm charts and a versioned CRD bundle:
 
 * `logic-operator` installs the operator and its required Kubernetes resources.
-* `logic-operator-stack` installs the operator, PostgreSQL, and a `LogicPlatform` custom resource. The operator then manages the Workflow Gateway and Data Index components.
+* `logic-operator-stack` installs the operator, PostgreSQL, and a `ClusterLogicPlatform` custom resource. The operator then manages the Workflow Gateway and Data Index components.
 * `crds.yaml` contains the Logic Operator custom resource definitions. The charts do not contain CRDs; apply this file separately before a first install and before each chart upgrade.
 
 The charts are published as OCI artifacts in GitHub Container Registry and are also attached to each GitHub Release. Run the *Publish Images* workflow for the release before installing the charts so the referenced Quay images are available.
@@ -82,7 +82,7 @@ helm upgrade --install logic-operator \
 
 == Expose the Workflow Gateway
 
-Gateway exposure is opt-in. Set `logicPlatform.workflowGateway.ingress.enabled` and choose a host appropriate for the cluster. Helm cannot reliably determine whether a cluster has a working Ingress controller, so the chart does not enable external access automatically.
+Gateway exposure is opt-in. Set `clusterLogicPlatform.gateway.ingress.enabled` and choose a host appropriate for the cluster. Helm cannot reliably determine whether a cluster has a working Ingress controller, so the chart does not enable external access automatically.
 
 === KIND with ingress-nginx
 
@@ -90,12 +90,12 @@ The repository's `make kind-create` recipe configures ingress-nginx and maps HTT
 
 [source,yaml]
 ----
-logicPlatform:
-  workflowGateway:
+clusterLogicPlatform:
+  gateway:
     ingress:
       enabled: true
       host: gateway.lvh.me
-      className: nginx
+      ingressClassName: nginx
 ----
 
 `lvh.me` resolves to `127.0.0.1`; this host is useful for a local KIND cluster configured with the repository's ingress setup. It is not a general hostname for remote clusters.
@@ -106,18 +106,18 @@ The operator detects OpenShift and creates a Route when gateway ingress is enabl
 
 [source,yaml]
 ----
-logicPlatform:
-  workflowGateway:
+clusterLogicPlatform:
+  gateway:
     ingress:
       enabled: true
       host: gateway.apps.example.com
 ----
 
-Do not set `className` for an OpenShift Route. The current `LogicPlatform` validation requires a host, so use an explicit apps-domain hostname.
+Do not set `ingressClassName` for an OpenShift Route. The `ClusterLogicPlatform` validation requires a host, so use an explicit apps-domain hostname.
 
 === Other Kubernetes clusters
 
-Set `host` to a DNS name that resolves to the cluster's external ingress address. Set `className` to the installed controller's IngressClass; omit it to use the cluster's default class. Enabling this setting creates a Kubernetes Ingress, but the cluster must already have a compatible Ingress controller and DNS configured.
+Set `host` to a DNS name that resolves to the cluster's external ingress address. Set `ingressClassName` to the installed controller's IngressClass; omit it to use the cluster's default class. Enabling this setting creates a Kubernetes Ingress, but the cluster must already have a compatible Ingress controller and DNS configured.
 
 == Install the sample stack
 
@@ -139,12 +139,12 @@ postgresql:
     username: logicflow
     password: replace-this-demo-password
     database: logicflow
-logicPlatform:
-  workflowGateway:
+clusterLogicPlatform:
+  gateway:
     ingress:
       enabled: true
       host: gateway.example.com
-      className: nginx
+      ingressClassName: nginx
 ----
 
 [source,bash]
@@ -156,7 +156,7 @@ helm upgrade --install logic-stack \
   --values my-values.yaml
 ----
 
-The stack chart enables Vector by default so Data Index can ingest workflow history. If Vector is not suitable for your cluster, set `logicPlatform.dataIndex.vector.enabled` to `false` in your values file.
+The stack chart creates the configured target namespace and installs PostgreSQL there so Data Index and workflow runtimes can use the database and credentials. If the target namespace already exists, set `clusterLogicPlatform.createNamespace: false`. It enables Data Index and Vector by default. To disable either component, set `clusterLogicPlatform.dataIndex.enabled` or `clusterLogicPlatform.vector.enabled` to `false` in your values file.
 
 == Upgrade
 

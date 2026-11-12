@@ -106,6 +106,12 @@ var _ = AfterSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 })
 
+var _ = BeforeEach(func() {
+	// Create ClusterLogicPlatform with persistence for each test.
+	// The helper will delete any existing platform first.
+	createClusterLogicPlatform(context.TODO())
+})
+
 // getFirstFoundEnvTestBinaryDir locates the first binary in the specified path.
 // ENVTEST-based tests depend on specific binaries, usually located in paths set by
 // controller-runtime. When running tests directly (e.g., via an IDE) without using

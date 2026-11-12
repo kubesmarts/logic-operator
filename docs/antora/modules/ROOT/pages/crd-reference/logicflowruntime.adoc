@@ -153,7 +153,7 @@ API key roles are `flow-admin` and `flow-invoker`. OIDC settings include `authSe
 `logging` optionally configures structured workflow logs. `enabled` defaults to `true` when the
 field is provided, and payload inclusion defaults to `false`. Payload logging may expose sensitive
 workflow data and should be enabled only when required. Vector collection is configured separately
-on `LogicPlatform.spec.dataIndex.vector`.
+on `ClusterLogicPlatform.spec.vector`.
 
 [source,yaml]
 ----
@@ -224,4 +224,4 @@ embedded in the operator build and creates `Deployment/hello-runtime` and `Servi
 
 * xref:concepts/runtime-model.adoc[Runtime Model]
 * xref:concepts/durable-workflows.adoc[Durable Workflows]
-* xref:crd-reference/logicplatform.adoc[LogicPlatform]
+* xref:crd-reference/clusterlogicplatform.adoc[ClusterLogicPlatform]

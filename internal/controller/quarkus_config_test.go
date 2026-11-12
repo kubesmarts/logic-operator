@@ -17,12 +17,47 @@ import (
 func TestPersistenceEnvVars_NilReturnsNil(t *testing.T) {
 	g := gomega.NewWithT(t)
 	g.Expect(persistenceQuarkusEnvVars(nil)).To(gomega.BeNil())
-	g.Expect(persistenceQuarkusEnvVars(&logicv1.PersistenceOptionsSpec{})).To(gomega.BeNil())
+	g.Expect(persistenceQuarkusEnvVars(&logicv1.DatastoreSpec{})).To(gomega.BeNil())
+}
+
+func TestQuartzPersistenceEnvVars_UsesNamedDatasourceAndIndependentConfiguration(t *testing.T) {
+	g := gomega.NewWithT(t)
+	p := &logicv1.DatastoreSpec{
+		PostgreSQL: &logicv1.PersistencePostgreSQL{
+			SecretRef: logicv1.PostgreSQLSecretOptions{
+				Name:        "quartz-creds",
+				UserKey:     "SCHEDULER_USER",
+				PasswordKey: "SCHEDULER_PASSWORD",
+			},
+			ServiceRef: logicv1.PostgreSQLServiceOptions{
+				Name:           "scheduler-postgres",
+				Namespace:      "databases",
+				DatabaseName:   "schedulers",
+				DatabaseSchema: "quartz-state",
+			},
+		},
+	}
+
+	envs := quartzPersistenceQuarkusEnvVars(p)
+	g.Expect(envs).To(gomega.HaveLen(3))
+	g.Expect(*envs[0].Name).To(gomega.Equal("QUARKUS_DATASOURCE__FLOW_QUARTZ__USERNAME"))
+	g.Expect(*envs[0].ValueFrom.SecretKeyRef.Name).To(gomega.Equal("quartz-creds"))
+	g.Expect(*envs[0].ValueFrom.SecretKeyRef.Key).To(gomega.Equal("SCHEDULER_USER"))
+	g.Expect(*envs[1].Name).To(gomega.Equal("QUARKUS_DATASOURCE__FLOW_QUARTZ__PASSWORD"))
+	g.Expect(*envs[1].ValueFrom.SecretKeyRef.Key).To(gomega.Equal("SCHEDULER_PASSWORD"))
+	g.Expect(*envs[2].Name).To(gomega.Equal("QUARKUS_DATASOURCE__FLOW_QUARTZ__JDBC_URL"))
+	g.Expect(*envs[2].Value).To(gomega.Equal("jdbc:postgresql://scheduler-postgres.databases.svc.cluster.local:5432/schedulers?currentSchema=quartz-state"))
+}
+
+func TestQuartzPersistenceEnvVars_NilUsesEmbeddedDefaultDatasourceFallback(t *testing.T) {
+	g := gomega.NewWithT(t)
+	g.Expect(quartzPersistenceQuarkusEnvVars(nil)).To(gomega.BeNil())
+	g.Expect(quartzPersistenceQuarkusEnvVars(&logicv1.DatastoreSpec{})).To(gomega.BeNil())
 }
 
 func TestPersistenceEnvVars_CustomSecretKeys(t *testing.T) {
 	g := gomega.NewWithT(t)
-	p := &logicv1.PersistenceOptionsSpec{
+	p := &logicv1.DatastoreSpec{
 		PostgreSQL: &logicv1.PersistencePostgreSQL{
 			SecretRef: logicv1.PostgreSQLSecretOptions{
 				Name:        testPGCreds,
@@ -30,9 +65,7 @@ func TestPersistenceEnvVars_CustomSecretKeys(t *testing.T) {
 				PasswordKey: "DB_PASS",
 			},
 			ServiceRef: logicv1.PostgreSQLServiceOptions{
-				SQLServiceOptions: &logicv1.SQLServiceOptions{
-					Name: testPostgresName,
-				},
+				Name: testPostgresName,
 			},
 		},
 	}
@@ -44,16 +77,14 @@ func TestPersistenceEnvVars_CustomSecretKeys(t *testing.T) {
 
 func TestPersistenceEnvVars_ServiceRefBuildsJdbcUrl(t *testing.T) {
 	g := gomega.NewWithT(t)
-	p := &logicv1.PersistenceOptionsSpec{
+	p := &logicv1.DatastoreSpec{
 		PostgreSQL: &logicv1.PersistencePostgreSQL{
 			SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
 			ServiceRef: logicv1.PostgreSQLServiceOptions{
-				SQLServiceOptions: &logicv1.SQLServiceOptions{
-					Name:         testPostgresName,
-					Namespace:    "databases",
-					Port:         ptr.To(5433),
-					DatabaseName: "workflows",
-				},
+				Name:           testPostgresName,
+				Namespace:      "databases",
+				Port:           ptr.To(5433),
+				DatabaseName:   "workflows",
 				DatabaseSchema: "runtime-schema",
 			},
 		},
@@ -66,14 +97,12 @@ func TestPersistenceEnvVars_ServiceRefBuildsJdbcUrl(t *testing.T) {
 
 func TestPersistenceEnvVars_ExplicitNamespace(t *testing.T) {
 	g := gomega.NewWithT(t)
-	p := &logicv1.PersistenceOptionsSpec{
+	p := &logicv1.DatastoreSpec{
 		PostgreSQL: &logicv1.PersistencePostgreSQL{
 			SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
 			ServiceRef: logicv1.PostgreSQLServiceOptions{
-				SQLServiceOptions: &logicv1.SQLServiceOptions{
-					Name:      testPostgresName,
-					Namespace: "my-namespace",
-				},
+				Name:      testPostgresName,
+				Namespace: "my-namespace",
 			},
 		},
 	}
@@ -87,12 +116,12 @@ func TestPersistenceEnvVars_TLSAppendsSslMode(t *testing.T) {
 
 	t.Run("with schema query param", func(t *testing.T) {
 		g = gomega.NewWithT(t)
-		p := &logicv1.PersistenceOptionsSpec{
+		p := &logicv1.DatastoreSpec{
 			PostgreSQL: &logicv1.PersistencePostgreSQL{
 				SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
 				ServiceRef: logicv1.PostgreSQLServiceOptions{
-					SQLServiceOptions: &logicv1.SQLServiceOptions{Name: testPostgresName},
-					DatabaseSchema:    "myschema",
+					Name:           testPostgresName,
+					DatabaseSchema: "myschema",
 				},
 				TLS: &logicv1.TLSConnection{Enabled: true, TLSMode: logicv1.TLSModeVerifyFull},
 			},
@@ -104,15 +133,13 @@ func TestPersistenceEnvVars_TLSAppendsSslMode(t *testing.T) {
 
 	t.Run("without query params uses question mark", func(t *testing.T) {
 		g = gomega.NewWithT(t)
-		p := &logicv1.PersistenceOptionsSpec{
+		p := &logicv1.DatastoreSpec{
 			PostgreSQL: &logicv1.PersistencePostgreSQL{
 				SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
 				ServiceRef: logicv1.PostgreSQLServiceOptions{
-					SQLServiceOptions: &logicv1.SQLServiceOptions{
-						Name:         "postgres",
-						Port:         ptr.To(5432),
-						DatabaseName: "mydb",
-					},
+					Name:         "postgres",
+					Port:         ptr.To(5432),
+					DatabaseName: "mydb",
 				},
 				TLS: &logicv1.TLSConnection{Enabled: true, TLSMode: logicv1.TLSModeRequire},
 			},
@@ -123,15 +150,13 @@ func TestPersistenceEnvVars_TLSAppendsSslMode(t *testing.T) {
 
 	t.Run("defaults to prefer when mode empty", func(t *testing.T) {
 		g = gomega.NewWithT(t)
-		p := &logicv1.PersistenceOptionsSpec{
+		p := &logicv1.DatastoreSpec{
 			PostgreSQL: &logicv1.PersistencePostgreSQL{
 				SecretRef: logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
 				ServiceRef: logicv1.PostgreSQLServiceOptions{
-					SQLServiceOptions: &logicv1.SQLServiceOptions{
-						Name:         "postgres",
-						Port:         ptr.To(5432),
-						DatabaseName: "mydb",
-					},
+					Name:         "postgres",
+					Port:         ptr.To(5432),
+					DatabaseName: "mydb",
 				},
 				TLS: &logicv1.TLSConnection{Enabled: true},
 			},
@@ -269,7 +294,7 @@ func TestDefaultRunnerImage_AutoSelect(t *testing.T) {
 	t.Run("with persistence selects standard", func(t *testing.T) {
 		g = gomega.NewWithT(t)
 		c := corev1ac.Container().WithName(ContainerNameRunner)
-		persistence := &logicv1.PersistenceOptionsSpec{
+		persistence := &logicv1.DatastoreSpec{
 			PostgreSQL: &logicv1.PersistencePostgreSQL{},
 		}
 		DefaultRunnerImage(persistence)(c)
@@ -290,7 +315,7 @@ func TestDefaultRunnerImage_PreservesUserImage(t *testing.T) {
 	t.Run("explicit image not overwritten even with persistence", func(t *testing.T) {
 		g = gomega.NewWithT(t)
 		c := corev1ac.Container().WithName(ContainerNameRunner).WithImage("my-registry/custom-runner:1.0")
-		persistence := &logicv1.PersistenceOptionsSpec{PostgreSQL: &logicv1.PersistencePostgreSQL{}}
+		persistence := &logicv1.DatastoreSpec{PostgreSQL: &logicv1.PersistencePostgreSQL{}}
 		DefaultRunnerImage(persistence)(c)
 		g.Expect(*c.Image).To(gomega.Equal("my-registry/custom-runner:1.0"))
 	})
@@ -672,4 +697,136 @@ func TestStructuredLoggingEnvVars_AllSettings(t *testing.T) {
 	g.Expect(envMap["QUARKUS_FLOW_STRUCTURED_LOGGING_ENABLED"]).To(gomega.Equal("true"))
 	g.Expect(envMap["QUARKUS_FLOW_STRUCTURED_LOGGING_INCLUDE_WORKFLOW_PAYLOADS"]).To(gomega.Equal("true"))
 	g.Expect(envMap["QUARKUS_FLOW_STRUCTURED_LOGGING_INCLUDE_TASK_PAYLOADS"]).To(gomega.Equal("false"))
+}
+
+func TestSchedName_IsNamespaceSlashName(t *testing.T) {
+	g := gomega.NewWithT(t)
+	rt := &logicv1.LogicFlowRuntime{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "my-ns",
+			Name:      "my-runtime",
+		},
+	}
+	result := schedName(rt)
+	g.Expect(result).To(gomega.Equal("my-ns/my-runtime"))
+}
+
+func TestQuartzEnv_ClusteredWhenReplicasGreaterThanOne(t *testing.T) {
+	g := gomega.NewWithT(t)
+
+	t.Run("replicas=2 returns clustered=true", func(t *testing.T) {
+		g = gomega.NewWithT(t)
+		rt := &logicv1.LogicFlowRuntime{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "ns",
+				Name:      "rt",
+			},
+			Spec: logicv1.LogicFlowRuntimeSpec{
+				RuntimeSpec: logicv1.RuntimeSpec{
+					ApplicationSpec: logicv1.ApplicationSpec{
+						Replicas: ptr.To(int32(2)),
+					},
+				},
+			},
+		}
+		c := corev1ac.Container().WithName(ContainerNameRunner)
+		WithQuartzSchedulerEnvVars(rt)(c)
+
+		envMap := make(map[string]string)
+		for _, e := range c.Env {
+			if e.Name != nil {
+				envMap[*e.Name] = ""
+				if e.Value != nil {
+					envMap[*e.Name] = *e.Value
+				}
+			}
+		}
+		g.Expect(envMap["QUARKUS_QUARTZ_CLUSTERED"]).To(gomega.Equal("true"))
+	})
+
+	t.Run("replicas=1 returns clustered=false", func(t *testing.T) {
+		g = gomega.NewWithT(t)
+		rt := &logicv1.LogicFlowRuntime{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "ns",
+				Name:      "rt",
+			},
+			Spec: logicv1.LogicFlowRuntimeSpec{
+				RuntimeSpec: logicv1.RuntimeSpec{
+					ApplicationSpec: logicv1.ApplicationSpec{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+		}
+		c := corev1ac.Container().WithName(ContainerNameRunner)
+		WithQuartzSchedulerEnvVars(rt)(c)
+
+		envMap := make(map[string]string)
+		for _, e := range c.Env {
+			if e.Name != nil {
+				envMap[*e.Name] = ""
+				if e.Value != nil {
+					envMap[*e.Name] = *e.Value
+				}
+			}
+		}
+		g.Expect(envMap["QUARKUS_QUARTZ_CLUSTERED"]).To(gomega.Equal("false"))
+	})
+}
+
+func TestQuartzEnv_InstanceIdIsAuto(t *testing.T) {
+	g := gomega.NewWithT(t)
+	rt := &logicv1.LogicFlowRuntime{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "ns",
+			Name:      "rt",
+		},
+		Spec: logicv1.LogicFlowRuntimeSpec{
+			RuntimeSpec: logicv1.RuntimeSpec{
+				ApplicationSpec: logicv1.ApplicationSpec{
+					Replicas: ptr.To(int32(1)),
+				},
+			},
+		},
+	}
+	c := corev1ac.Container().WithName(ContainerNameRunner)
+	WithQuartzSchedulerEnvVars(rt)(c)
+
+	envMap := make(map[string]string)
+	for _, e := range c.Env {
+		if e.Name != nil {
+			envMap[*e.Name] = ""
+			if e.Value != nil {
+				envMap[*e.Name] = *e.Value
+			}
+		}
+	}
+	g.Expect(envMap["QUARKUS_QUARTZ_INSTANCE_ID"]).To(gomega.Equal("AUTO"))
+}
+
+func TestQuartzEnv_OmittedWhenEphemeral(t *testing.T) {
+	g := gomega.NewWithT(t)
+
+	// Build a deployment as applyDeployment does, with eff == nil (ephemeral).
+	// WithQuartzSchedulerEnvVars is NOT included in opts, so quartz env vars should not be present.
+	c := corev1ac.Container().WithName(ContainerNameRunner)
+	opts := []ContainerOption{
+		DefaultRunnerImage(nil),
+		WithQuarkusPersistenceEnvVars(nil),
+		DefaultQuarkusProbes(),
+		WithFlowSourcePath(),
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	// Assert that NONE of the Quartz env vars are present
+	for _, e := range c.Env {
+		if e.Name != nil {
+			g.Expect(*e.Name).NotTo(gomega.Equal("QUARKUS_QUARTZ_INSTANCE_NAME"))
+			g.Expect(*e.Name).NotTo(gomega.Equal("QUARKUS_QUARTZ_CLUSTERED"))
+			g.Expect(*e.Name).NotTo(gomega.Equal("QUARKUS_QUARTZ_INSTANCE_ID"))
+		}
+	}
 }

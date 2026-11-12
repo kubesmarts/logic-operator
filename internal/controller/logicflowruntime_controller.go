@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"sort"
 
 	"fmt"
@@ -48,6 +49,13 @@ type LogicFlowRuntimeReconciler struct {
 	Scheme *runtime.Scheme
 }
 
+type runtimePersistenceConfig struct {
+	Runtime *logicv1.DatastoreSpec
+	Quartz  *logicv1.DatastoreSpec
+}
+
+var errRuntimePersistenceNotConfigured = errors.New("runtime persistence is not configured")
+
 // +kubebuilder:rbac:groups=logic.kubesmarts.org,resources=logicflowruntimes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=logic.kubesmarts.org,resources=logicflowruntimes/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=logic.kubesmarts.org,resources=logicflowruntimes/finalizers,verbs=update
@@ -55,6 +63,7 @@ type LogicFlowRuntimeReconciler struct {
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;delete
@@ -76,17 +85,61 @@ func (r *LogicFlowRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, err
 	}
 
-	if err := r.applyDeployment(ctx, &rt, configMaps); err != nil {
+	eff, err := r.effectiveRuntimePersistence(ctx, &rt)
+	if err != nil {
+		log.Error(err, "failed to resolve effective runtime persistence")
+		if !errors.Is(err, errRuntimePersistenceNotConfigured) {
+			return ctrl.Result{}, err
+		}
+
+		logicv1.SetCondition(&rt.Status.Conditions, logicv1.ConditionPersistenceReady,
+			metav1.ConditionFalse, rt.Generation,
+			logicv1.ReasonRuntimePersistenceNotConfigured, err.Error())
+		if statusErr := r.updateStatus(ctx, &rt, configMaps, nil); statusErr != nil {
+			return ctrl.Result{}, statusErr
+		}
+		return ctrl.Result{}, nil
+	}
+
+	persistenceMessage := "Platform runtime PostgreSQL datastore is configured"
+	if eff != nil && eff.Quartz != nil {
+		persistenceMessage += " with a separate Quartz datastore"
+	}
+	if logicv1.IsEphemeral(&rt) {
+		persistenceMessage = "Runtime uses Ephemeral mode; no platform database is required"
+	}
+	logicv1.SetCondition(&rt.Status.Conditions, logicv1.ConditionPersistenceReady,
+		metav1.ConditionTrue, rt.Generation, logicv1.ReasonReady, persistenceMessage)
+
+	if err := r.applyDeployment(ctx, &rt, configMaps, eff); err != nil {
 		log.Error(err, "failed to apply Deployment")
 		return ctrl.Result{}, err
 	}
 
-	if err := r.reconcilePodRBAC(ctx, &rt); err != nil {
+	if err := r.reconcilePodRBAC(ctx, &rt, persistenceDatastore(eff)); err != nil {
 		log.Error(err, "failed to reconcile pod RBAC")
 		return ctrl.Result{}, err
 	}
 
-	if err := r.reconcileLeases(ctx, &rt); err != nil {
+	if eff != nil {
+		platform, err := r.resolvePlatform(ctx, &rt)
+		if err != nil {
+			log.Error(err, "failed to resolve platform for DB secret replication")
+			return ctrl.Result{}, err
+		}
+		if err := r.reconcileRuntimeDBSecret(ctx, &rt, eff.Runtime, platform); err != nil {
+			log.Error(err, "failed to reconcile runtime DB secret")
+			return ctrl.Result{}, err
+		}
+		if eff.Quartz != nil {
+			if err := r.reconcileRuntimeDBSecret(ctx, &rt, eff.Quartz, platform); err != nil {
+				log.Error(err, "failed to reconcile Quartz DB secret")
+				return ctrl.Result{}, err
+			}
+		}
+	}
+
+	if err := r.reconcileLeases(ctx, &rt, persistenceDatastore(eff)); err != nil {
 		log.Error(err, "failed to reconcile leases")
 		return ctrl.Result{}, err
 	}
@@ -96,7 +149,7 @@ func (r *LogicFlowRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, err
 	}
 
-	if err := r.updateStatus(ctx, &rt, configMaps); err != nil {
+	if err := r.updateStatus(ctx, &rt, configMaps, persistenceDatastore(eff)); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -117,19 +170,25 @@ func (r *LogicFlowRuntimeReconciler) listConfigMaps(ctx context.Context, rt *log
 	return cmList.Items, nil
 }
 
-func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *logicv1.LogicFlowRuntime, configMaps []corev1.ConfigMap) error {
+func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *logicv1.LogicFlowRuntime, configMaps []corev1.ConfigMap, eff *runtimePersistenceConfig) error {
 	childLabels := ChildLabels(rt)
+	var runtimeDatastore, quartzDatastore *logicv1.DatastoreSpec
+	if eff != nil {
+		runtimeDatastore = eff.Runtime
+		quartzDatastore = eff.Quartz
+	}
 	opts := []ContainerOption{
-		DefaultRunnerImage(rt.Spec.Persistence),
-		WithQuarkusPersistenceEnvVars(rt.Spec.Persistence),
+		DefaultRunnerImage(runtimeDatastore),
+		WithQuarkusPersistenceEnvVars(runtimeDatastore),
+		WithQuarkusQuartzPersistenceEnvVars(quartzDatastore),
 		WithSecurityEnvVars(rt.Spec.Security),
 		WithStructuredLoggingEnvVars(rt.Spec.Logging),
 		DefaultQuarkusProbes(),
 		WithFlowSourcePath(),
 		WithFlowVolumeMounts(configMaps),
 	}
-	if rt.Spec.Persistence != nil {
-		opts = append(opts, WithDurableEnvVars(rt), DurableStartupProbe())
+	if eff != nil {
+		opts = append(opts, WithDurableEnvVars(rt), WithQuartzSchedulerEnvVars(rt), DurableStartupProbe())
 	}
 	spec := ToDeploymentSpec(
 		ContainerNameRunner,
@@ -141,7 +200,7 @@ func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *lo
 	if len(configMaps) > 0 {
 		spec.Template.Spec.WithVolumes(FlowVolumes(configMaps)...)
 	}
-	if rt.Spec.Persistence != nil {
+	if eff != nil {
 		spec.Template.Spec.WithServiceAccountName(rt.Name)
 		spec.WithStrategy(durableDeploymentStrategy(effectiveReplicas(&rt.Spec.ApplicationSpec)))
 	}
@@ -153,10 +212,10 @@ func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *lo
 	return r.Apply(ctx, deployment, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
 }
 
-func (r *LogicFlowRuntimeReconciler) reconcileLeases(ctx context.Context, rt *logicv1.LogicFlowRuntime) error {
+func (r *LogicFlowRuntimeReconciler) reconcileLeases(ctx context.Context, rt *logicv1.LogicFlowRuntime, eff *logicv1.DatastoreSpec) error {
 	log := logf.FromContext(ctx)
 
-	if rt.Spec.Persistence == nil {
+	if eff == nil {
 		return nil
 	}
 
@@ -214,8 +273,8 @@ func (r *LogicFlowRuntimeReconciler) reconcileLeases(ctx context.Context, rt *lo
 	return nil
 }
 
-func (r *LogicFlowRuntimeReconciler) reconcilePodRBAC(ctx context.Context, rt *logicv1.LogicFlowRuntime) error {
-	if rt.Spec.Persistence == nil {
+func (r *LogicFlowRuntimeReconciler) reconcilePodRBAC(ctx context.Context, rt *logicv1.LogicFlowRuntime, eff *logicv1.DatastoreSpec) error {
+	if eff == nil {
 		return nil
 	}
 
@@ -266,8 +325,88 @@ func (r *LogicFlowRuntimeReconciler) reconcilePodRBAC(ctx context.Context, rt *l
 	return nil
 }
 
-func (r *LogicFlowRuntimeReconciler) updateStatusLeases(ctx context.Context, rt *logicv1.LogicFlowRuntime) error {
-	if rt.Spec.Persistence == nil {
+func (r *LogicFlowRuntimeReconciler) reconcileRuntimeDBSecret(ctx context.Context, rt *logicv1.LogicFlowRuntime, eff *logicv1.DatastoreSpec, platform *logicv1.ClusterLogicPlatform) error {
+	log := logf.FromContext(ctx)
+
+	if eff == nil || eff.PostgreSQL == nil {
+		return nil
+	}
+
+	sourceSecretName := eff.PostgreSQL.SecretRef.Name
+	sourceNamespace := platform.Spec.TargetNamespace
+
+	// Same-namespace guard: if runtime is in the platform's target namespace,
+	// the pod-local secret IS the source — skip replication to avoid GC loop.
+	if rt.Namespace == sourceNamespace {
+		return nil
+	}
+
+	// Get source secret from platform's target namespace
+	var sourceSecret corev1.Secret
+	if err := r.Get(ctx, client.ObjectKey{Name: sourceSecretName, Namespace: sourceNamespace}, &sourceSecret); err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Error(err, "source DB secret not found in platform namespace", "secret", sourceSecretName, "namespace", sourceNamespace)
+			return err
+		}
+		return err
+	}
+
+	// Create owner reference for the runtime
+	isController := true
+	ownerRef := metav1.OwnerReference{
+		APIVersion:         logicv1.GroupVersion.String(),
+		Kind:               logicv1.LogicFlowRuntimeKind,
+		Name:               rt.Name,
+		UID:                rt.UID,
+		Controller:         &isController,
+		BlockOwnerDeletion: &isController,
+	}
+
+	// Create or update replica secret in runtime's namespace
+	replicaSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            sourceSecretName,
+			Namespace:       rt.Namespace,
+			OwnerReferences: []metav1.OwnerReference{ownerRef},
+			Labels: map[string]string{
+				"logic.kubesmarts.org/managed-by": "logic-operator",
+			},
+		},
+		Type: sourceSecret.Type,
+		Data: sourceSecret.Data,
+	}
+
+	if err := r.Create(ctx, replicaSecret); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			return err
+		}
+		// Adopt-only-managed guard: only overwrite secrets already managed by logic-operator
+		var existing corev1.Secret
+		if err := r.Get(ctx, client.ObjectKey{Name: sourceSecretName, Namespace: rt.Namespace}, &existing); err != nil {
+			return err
+		}
+
+		// Check if the existing secret is managed by logic-operator
+		if existing.Labels == nil || existing.Labels["logic.kubesmarts.org/managed-by"] != "logic-operator" {
+			// Unmanaged secret exists with same name — don't clobber it
+			return fmt.Errorf("unmanaged secret %s/%s already exists; refusing to overwrite unmanaged resource (name collision)", rt.Namespace, sourceSecretName)
+		}
+
+		// Secret is already managed; update it
+		existing.Data = sourceSecret.Data
+		existing.Type = sourceSecret.Type
+		existing.Labels["logic.kubesmarts.org/managed-by"] = "logic-operator"
+		existing.OwnerReferences = []metav1.OwnerReference{ownerRef}
+		if err := r.Update(ctx, &existing); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *LogicFlowRuntimeReconciler) updateStatusLeases(ctx context.Context, rt *logicv1.LogicFlowRuntime, eff *logicv1.DatastoreSpec) error {
+	if eff == nil {
 		return nil
 	}
 
@@ -298,7 +437,7 @@ func (r *LogicFlowRuntimeReconciler) applyService(ctx context.Context, rt *logic
 	return r.Apply(ctx, svc, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
 }
 
-func (r *LogicFlowRuntimeReconciler) updateStatus(ctx context.Context, rt *logicv1.LogicFlowRuntime, configMaps []corev1.ConfigMap) error {
+func (r *LogicFlowRuntimeReconciler) updateStatus(ctx context.Context, rt *logicv1.LogicFlowRuntime, configMaps []corev1.ConfigMap, eff *logicv1.DatastoreSpec) error {
 	rt.Status.ObservedGeneration = rt.Generation
 	rt.Status.DeploymentRef.Name = rt.Name
 	rt.Status.ServiceRef.Name = rt.Name
@@ -313,7 +452,7 @@ func (r *LogicFlowRuntimeReconciler) updateStatus(ctx context.Context, rt *logic
 	if err := r.updateStatusSvc(ctx, rt); err != nil {
 		return err
 	}
-	if err := r.updateStatusLeases(ctx, rt); err != nil {
+	if err := r.updateStatusLeases(ctx, rt, eff); err != nil {
 		return err
 	}
 
@@ -404,6 +543,64 @@ func (r *LogicFlowRuntimeReconciler) updateStatusSvc(ctx context.Context, rt *lo
 	return nil
 }
 
+// resolvePlatform returns the ClusterLogicPlatform this runtime targets.
+// Uses platformRef.Name when set; otherwise the single cluster platform.
+func (r *LogicFlowRuntimeReconciler) resolvePlatform(ctx context.Context, rt *logicv1.LogicFlowRuntime) (*logicv1.ClusterLogicPlatform, error) {
+	if rt.Spec.PlatformRef != nil && rt.Spec.PlatformRef.Name != "" {
+		var clp logicv1.ClusterLogicPlatform
+		if err := r.Get(ctx, client.ObjectKey{Name: rt.Spec.PlatformRef.Name}, &clp); err != nil {
+			return nil, err
+		}
+		return &clp, nil
+	}
+	var list logicv1.ClusterLogicPlatformList
+	if err := r.List(ctx, &list); err != nil {
+		return nil, err
+	}
+	switch len(list.Items) {
+	case 0:
+		return nil, fmt.Errorf("no ClusterLogicPlatform found; cannot resolve platform for runtime %s/%s", rt.Namespace, rt.Name)
+	case 1:
+		return &list.Items[0], nil
+	default:
+		return nil, fmt.Errorf("multiple ClusterLogicPlatforms found; set spec.platformRef.name on runtime %s/%s", rt.Namespace, rt.Name)
+	}
+}
+
+// effectiveRuntimePersistence resolves the operational runtime datastore and an
+// optional separate Quartz datastore: nil when ephemeral.
+func (r *LogicFlowRuntimeReconciler) effectiveRuntimePersistence(ctx context.Context, rt *logicv1.LogicFlowRuntime) (*runtimePersistenceConfig, error) {
+	if logicv1.IsEphemeral(rt) {
+		return nil, nil
+	}
+	clp, err := r.resolvePlatform(ctx, rt)
+	if err != nil {
+		return nil, err
+	}
+	if clp.Spec.Runtime == nil || clp.Spec.Runtime.Persistence == nil {
+		return nil, fmt.Errorf("%w: ClusterLogicPlatform %q must configure spec.runtime.persistence.runtime.postgresql, or set spec.persistenceMode to Ephemeral",
+			errRuntimePersistenceNotConfigured, clp.Name)
+	}
+	runtimeDatastore := &clp.Spec.Runtime.Persistence.Runtime
+	if runtimeDatastore.PostgreSQL == nil {
+		return nil, fmt.Errorf("%w: ClusterLogicPlatform %q must configure spec.runtime.persistence.runtime.postgresql, or set spec.persistenceMode to Ephemeral",
+			errRuntimePersistenceNotConfigured, clp.Name)
+	}
+	effective := &runtimePersistenceConfig{Runtime: runtimeDatastore}
+	quartzDatastore := &clp.Spec.Runtime.Persistence.Quartz
+	if quartzDatastore.PostgreSQL != nil {
+		effective.Quartz = quartzDatastore
+	}
+	return effective, nil
+}
+
+func persistenceDatastore(eff *runtimePersistenceConfig) *logicv1.DatastoreSpec {
+	if eff == nil {
+		return nil
+	}
+	return eff.Runtime
+}
+
 func (r *LogicFlowRuntimeReconciler) mapConfigMapToRuntime(_ context.Context, obj client.Object) []reconcile.Request {
 	rtName := obj.GetLabels()[logicv1.LabelRuntimeRef]
 	if rtName == "" {
@@ -432,6 +629,72 @@ func runtimeRefLabelPredicate() predicate.Predicate {
 	})
 }
 
+func (r *LogicFlowRuntimeReconciler) mapPlatformToRuntimes(ctx context.Context, _ client.Object) []reconcile.Request {
+	// When ClusterLogicPlatform changes (or is created), enqueue all LogicFlowRuntimes
+	var runtimeList logicv1.LogicFlowRuntimeList
+	if err := r.List(ctx, &runtimeList); err != nil {
+		return nil
+	}
+	var requests []reconcile.Request
+	for _, rt := range runtimeList.Items {
+		requests = append(requests, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: rt.Name, Namespace: rt.Namespace},
+		})
+	}
+	return requests
+}
+
+func (r *LogicFlowRuntimeReconciler) mapSecretToRuntimes(ctx context.Context, obj client.Object) []reconcile.Request {
+	// Resolve platform database Secrets to every runtime that consumes that platform,
+	// including runtimes in namespaces where the Secret is replicated.
+	var platformList logicv1.ClusterLogicPlatformList
+	if err := r.List(ctx, &platformList); err != nil {
+		return nil
+	}
+	platformsByName := make(map[string]logicv1.ClusterLogicPlatform, len(platformList.Items))
+	matchingPlatforms := make(map[string]struct{})
+	for _, platform := range platformList.Items {
+		platformsByName[platform.Name] = platform
+		if platform.Spec.TargetNamespace != obj.GetNamespace() || platform.Spec.Runtime == nil || platform.Spec.Runtime.Persistence == nil {
+			continue
+		}
+		persistence := platform.Spec.Runtime.Persistence
+		if datastoreReferencesSecret(&persistence.Runtime, obj.GetName()) || datastoreReferencesSecret(&persistence.Quartz, obj.GetName()) {
+			matchingPlatforms[platform.Name] = struct{}{}
+		}
+	}
+	if len(matchingPlatforms) == 0 {
+		return nil
+	}
+
+	var runtimeList logicv1.LogicFlowRuntimeList
+	if err := r.List(ctx, &runtimeList); err != nil {
+		return nil
+	}
+	var requests []reconcile.Request
+	for _, rt := range runtimeList.Items {
+		if logicv1.IsEphemeral(&rt) {
+			continue
+		}
+		platformName := ""
+		if rt.Spec.PlatformRef != nil && rt.Spec.PlatformRef.Name != "" {
+			platformName = rt.Spec.PlatformRef.Name
+		} else if len(platformsByName) == 1 {
+			for name := range platformsByName {
+				platformName = name
+			}
+		}
+		if _, matches := matchingPlatforms[platformName]; matches {
+			requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Name: rt.Name, Namespace: rt.Namespace}})
+		}
+	}
+	return requests
+}
+
+func datastoreReferencesSecret(datastore *logicv1.DatastoreSpec, secretName string) bool {
+	return datastore != nil && datastore.PostgreSQL != nil && datastore.PostgreSQL.SecretRef.Name == secretName
+}
+
 func (r *LogicFlowRuntimeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&logicv1.LogicFlowRuntime{}).
@@ -444,6 +707,12 @@ func (r *LogicFlowRuntimeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&corev1.Pod{},
 			handler.EnqueueRequestsFromMapFunc(r.mapPodToRuntime),
 			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
+		).
+		Watches(&logicv1.ClusterLogicPlatform{},
+			handler.EnqueueRequestsFromMapFunc(r.mapPlatformToRuntimes),
+		).
+		Watches(&corev1.Secret{},
+			handler.EnqueueRequestsFromMapFunc(r.mapSecretToRuntimes),
 		).
 		Named("logicflowruntime").
 		Complete(r)

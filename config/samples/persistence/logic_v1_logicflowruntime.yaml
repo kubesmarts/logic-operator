@@ -6,15 +6,15 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: hello-runtime
 spec:
-  replicas: 3
+  replicas: 2
+
+  # Reference to the ClusterLogicPlatform
+  platformRef:
+    name: default
+
+  # Use platform-managed persistence
+  persistenceMode: PlatformDB
+
   logging:
     enabled: true
     includeWorkflowPayloads: true
-  persistence:
-    postgresql:
-      secretRef:
-        name: postgresql-secret
-      serviceRef:
-        name: postgresql
-        databaseName: logicflow
-        databaseSchema: public

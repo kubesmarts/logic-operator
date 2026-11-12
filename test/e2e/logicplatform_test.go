@@ -9,12 +9,15 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/kubesmarts/logic-operator/api/version"
 	"github.com/kubesmarts/logic-operator/test/utils"
 )
 
-const platformName = "logicplatform-sample"
+const platformName = "default"
+const platformNamespace = "logic-platform"
 const dataIndexName = platformName + "-data-index"
 const runtimeName = "hello-runtime"
+const runtimeReplicaCount = "2"
 
 // dataIndexIntegrationWorkflowYAML - test-specific workflow for DataIndex integration verification
 const dataIndexIntegrationWorkflowYAML = `
@@ -39,20 +42,13 @@ spec:
 `
 
 func platformTests() {
-	Context("LogicPlatform with DataIndex", Ordered, func() {
+	Context("ClusterLogicPlatform with DataIndex", Ordered, func() {
 		BeforeAll(func() {
-			By("creating infra namespace for PostgreSQL (if not exists)")
-			cmd := exec.Command("kubectl", "create", "namespace", durableInfraNamespace)
+			By("creating ClusterLogicPlatform target namespace and PostgreSQL")
+			cmd := exec.Command("kubectl", "create", "namespace", platformNamespace)
 			_, _ = utils.Run(cmd) // ignore error if namespace already exists
-
-			By("applying all resources from config/samples/persistence/")
 			cmd = exec.Command("kubectl", "apply",
-				"-f", "config/samples/persistence/postgresql.yaml",
-				"-f", "config/samples/persistence/logic_v1_logicplatform.yaml",
-				"-f", "config/samples/persistence/logic_v1_logicflowruntime.yaml",
-				"-f", "config/samples/persistence/logic_v1_logicflowdefinition_sleepy.yaml",
-				"-f", "config/samples/persistence/logic_v1_logicflowservice_sleepy.yaml",
-				"-n", namespace)
+				"-f", "config/samples/persistence/postgresql.yaml", "-n", platformNamespace)
 			_, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -60,7 +56,7 @@ func platformTests() {
 			waitForPG := func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "pod",
 					"-l", "app=postgresql",
-					"-n", namespace,
+					"-n", platformNamespace,
 					"-o", "jsonpath={.items[0].status.conditions[?(@.type=='Ready')].status}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
@@ -68,10 +64,26 @@ func platformTests() {
 			}
 			Eventually(waitForPG, 3*time.Minute, 5*time.Second).Should(Succeed())
 
-			By("waiting for LogicPlatform to be deployed")
+			By("applying the ClusterLogicPlatform and runtime resources")
+			cmd = exec.Command("kubectl", "apply",
+				"-f", "config/samples/persistence/logic_v1_clusterlogicplatform.yaml",
+				"-f", "config/samples/persistence/logic_v1_logicflowruntime.yaml",
+				"-f", "config/samples/persistence/logic_v1_logicflowdefinition_sleepy.yaml",
+				"-f", "config/samples/persistence/logic_v1_logicflowservice_sleepy.yaml",
+				"-n", namespace)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("configuring Vector to watch the namespace where this test deploys runtimes")
+			cmd = exec.Command("kubectl", "patch", "clusterlogicplatform", platformName,
+				"--type=merge",
+				"-p", `{"spec":{"vector":{"watchNamespaces":["`+namespace+`"]}}}`)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("waiting for ClusterLogicPlatform to be deployed")
 			waitForPlatform := func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "logicplatform", platformName,
-					"-n", namespace,
+				cmd := exec.Command("kubectl", "get", "clusterlogicplatform", platformName,
 					"-o", "jsonpath={.metadata.name}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
@@ -92,14 +104,21 @@ func platformTests() {
 		})
 
 		AfterAll(func() {
-			By("deleting all resources from config/samples/persistence/")
+			By("deleting the runtime resources and ClusterLogicPlatform")
 			cmd := exec.Command("kubectl", "delete",
-				"-f", "config/samples/persistence/postgresql.yaml",
-				"-f", "config/samples/persistence/logic_v1_logicplatform.yaml",
+				"-f", "config/samples/persistence/logic_v1_clusterlogicplatform.yaml",
 				"-f", "config/samples/persistence/logic_v1_logicflowruntime.yaml",
 				"-f", "config/samples/persistence/logic_v1_logicflowdefinition_sleepy.yaml",
 				"-f", "config/samples/persistence/logic_v1_logicflowservice_sleepy.yaml",
 				"-n", namespace, "--ignore-not-found")
+			_, _ = utils.Run(cmd)
+			By("waiting for ClusterLogicPlatform cleanup before the next singleton test")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "clusterlogicplatform", platformName)
+				_, err := utils.Run(cmd)
+				g.Expect(err).To(HaveOccurred())
+			}).WithTimeout(2 * time.Minute).Should(Succeed())
+			cmd = exec.Command("kubectl", "delete", "namespace", platformNamespace, "--ignore-not-found")
 			_, _ = utils.Run(cmd)
 		})
 
@@ -107,7 +126,7 @@ func platformTests() {
 			By("waiting for DataIndex deployment to be created")
 			waitForDeployment := func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "deployment", dataIndexName,
-					"-n", namespace,
+					"-n", platformNamespace,
 					"-o", "jsonpath={.metadata.name}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
@@ -117,16 +136,16 @@ func platformTests() {
 
 			By("verifying deployment has correct image")
 			cmd := exec.Command("kubectl", "get", "deployment", dataIndexName,
-				"-n", namespace,
+				"-n", platformNamespace,
 				"-o", "jsonpath={.spec.template.spec.containers[0].image}")
 			out, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(out).To(ContainSubstring("data-index-service"))
+			Expect(out).To(ContainSubstring("data-index-service:" + version.GetDataIndexVersion()))
 			Expect(out).To(ContainSubstring("postgresql"))
 
 			By("verifying deployment has default resources")
 			cmd = exec.Command("kubectl", "get", "deployment", dataIndexName,
-				"-n", namespace,
+				"-n", platformNamespace,
 				"-o", "jsonpath={.spec.template.spec.containers[0].resources}")
 			out, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
@@ -138,7 +157,7 @@ func platformTests() {
 			By("waiting for DataIndex service to be created")
 			waitForService := func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "service", dataIndexName,
-					"-n", namespace,
+					"-n", platformNamespace,
 					"-o", "jsonpath={.metadata.name}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
@@ -148,7 +167,7 @@ func platformTests() {
 
 			By("verifying service has correct ports")
 			cmd := exec.Command("kubectl", "get", "service", dataIndexName,
-				"-n", namespace,
+				"-n", platformNamespace,
 				"-o", "jsonpath={.spec.ports[0].port}")
 			out, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
@@ -160,7 +179,7 @@ func platformTests() {
 			waitForPod := func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "pod",
 					"-l", "app.kubernetes.io/name="+dataIndexName,
-					"-n", namespace,
+					"-n", platformNamespace,
 					"-o", "jsonpath={.items[0].status.conditions[?(@.type=='Ready')].status}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
@@ -170,11 +189,10 @@ func platformTests() {
 			Eventually(waitForPod, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 
-		It("should update LogicPlatform status", func() {
+		It("should update ClusterLogicPlatform status", func() {
 			By("verifying status has deployment available condition")
 			waitForStatus := func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "logicplatform", platformName,
-					"-n", namespace,
+				cmd := exec.Command("kubectl", "get", "clusterlogicplatform", platformName,
 					"-o", "jsonpath={.status.conditions[?(@.type=='DataIndexDeploymentAvailable')].status}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
@@ -183,24 +201,21 @@ func platformTests() {
 			Eventually(waitForStatus, 2*time.Minute, 5*time.Second).Should(Succeed())
 
 			By("verifying status has service ready condition")
-			cmd := exec.Command("kubectl", "get", "logicplatform", platformName,
-				"-n", namespace,
+			cmd := exec.Command("kubectl", "get", "clusterlogicplatform", platformName,
 				"-o", "jsonpath={.status.conditions[?(@.type=='DataIndexServiceReady')].status}")
 			out, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(out).To(Equal("True"))
 
 			By("verifying status has persistence config valid")
-			cmd = exec.Command("kubectl", "get", "logicplatform", platformName,
-				"-n", namespace,
+			cmd = exec.Command("kubectl", "get", "clusterlogicplatform", platformName,
 				"-o", "jsonpath={.status.conditions[?(@.type=='DataIndexPersistenceReady')].status}")
 			out, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(out).To(Equal("True"))
 
 			By("verifying status has GraphQL endpoint")
-			cmd = exec.Command("kubectl", "get", "logicplatform", platformName,
-				"-n", namespace,
+			cmd = exec.Command("kubectl", "get", "clusterlogicplatform", platformName,
 				"-o", "jsonpath={.status.dataIndex.service.graphqlEndpoint}")
 			out, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
@@ -208,8 +223,7 @@ func platformTests() {
 
 			By("verifying status phase is Ready")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "logicplatform", platformName,
-					"-n", namespace,
+				cmd := exec.Command("kubectl", "get", "clusterlogicplatform", platformName,
 					"-o", "jsonpath={.status.phase}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
@@ -219,8 +233,7 @@ func platformTests() {
 
 		It("should have working GraphQL endpoint", func() {
 			By("getting the GraphQL endpoint from status")
-			cmd := exec.Command("kubectl", "get", "logicplatform", platformName,
-				"-n", namespace,
+			cmd := exec.Command("kubectl", "get", "clusterlogicplatform", platformName,
 				"-o", "jsonpath={.status.dataIndex.service.graphqlEndpoint}")
 			endpoint, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
@@ -237,7 +250,7 @@ spec:
   restartPolicy: Never
   containers:
   - name: curl
-    image: curlimages/curl:latest
+    image: %s
     command:
     - /bin/sh
     - -c
@@ -245,12 +258,17 @@ spec:
       curl -s -X POST %s \
         -H "Content-Type: application/json" \
         -d '{"query":"{ __schema { queryType { name } } }"}'
-`, namespace, endpoint)
+`, namespace, utils.CurlImage(), endpoint)
 
 			cmd = exec.Command("kubectl", "apply", "-f", "-")
 			cmd.Stdin = strings.NewReader(curlPod)
 			_, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func() {
+				cmd := exec.Command("kubectl", "delete", "pod", "curl-graphql-test",
+					"-n", namespace, "--ignore-not-found")
+				_, _ = utils.Run(cmd)
+			})
 
 			By("waiting for curl pod to complete")
 			waitForCurl := func(g Gomega) {
@@ -268,19 +286,45 @@ spec:
 			out, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(out).To(ContainSubstring("Query")) // GraphQL schema introspection response
-
-			By("cleaning up curl pod")
-			cmd = exec.Command("kubectl", "delete", "pod", "curl-graphql-test",
-				"-n", namespace, "--ignore-not-found")
-			_, _ = utils.Run(cmd)
 		})
 
 		It("should capture workflow data in DataIndex via structured logging", func() {
+			verifyRuntimeDeploymentReady := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "deployment", runtimeName,
+					"-n", namespace,
+					"-o", "jsonpath={.status.availableReplicas} {.status.updatedReplicas} {.spec.replicas}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(strings.Fields(out)).To(Equal([]string{runtimeReplicaCount, runtimeReplicaCount, runtimeReplicaCount}))
+			}
+
+			By("waiting for both runtime replicas before adding the integration workflow")
+			Eventually(verifyRuntimeDeploymentReady, 3*time.Minute, 5*time.Second).Should(Succeed())
+
 			By("creating the workflow definition for DataIndex integration test")
 			cmd := exec.Command("kubectl", "apply", "-f", "-")
 			cmd.Stdin = strings.NewReader(dataIndexIntegrationWorkflowYAML)
 			_, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func() {
+				cmd := exec.Command("kubectl", "delete", "logicflowdefinition", "e2e-dataindex-integration-wf",
+					"-n", namespace, "--ignore-not-found")
+				_, _ = utils.Run(cmd)
+			})
+
+			By("waiting for the runtime to observe the integration workflow")
+			waitForRuntimeDefinition := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "logicflowruntime", runtimeName,
+					"-n", namespace,
+					"-o", `jsonpath={.status.definitions[?(@.name=="dataindex-test")].name}`)
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("dataindex-test"))
+			}
+			Eventually(waitForRuntimeDefinition, 2*time.Minute, 5*time.Second).Should(Succeed())
+
+			By("waiting for the runtime Deployment rollout to finish")
+			Eventually(verifyRuntimeDeploymentReady, 3*time.Minute, 5*time.Second).Should(Succeed())
 
 			By("waiting for workflow to be registered in runtime")
 			waitForWorkflow := func(g Gomega) {
@@ -294,8 +338,7 @@ spec:
 			Eventually(waitForWorkflow, 3*time.Minute, 10*time.Second).Should(Succeed())
 
 			By("verifying databaseConnected is true in platform status")
-			cmd = exec.Command("kubectl", "get", "logicplatform", platformName,
-				"-n", namespace,
+			cmd = exec.Command("kubectl", "get", "clusterlogicplatform", platformName,
 				"-o", "jsonpath={.status.dataIndex.persistence.databaseConnected}")
 			out, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
@@ -313,8 +356,7 @@ spec:
 			Eventually(execWorkflow, 1*time.Minute, 5*time.Second).Should(Succeed())
 
 			By("waiting for workflow data to appear in DataIndex")
-			graphqlEndpoint, err := utils.Run(exec.Command("kubectl", "get", "logicplatform", platformName,
-				"-n", namespace,
+			graphqlEndpoint, err := utils.Run(exec.Command("kubectl", "get", "clusterlogicplatform", platformName,
 				"-o", "jsonpath={.status.dataIndex.service.graphqlEndpoint}"))
 			Expect(err).NotTo(HaveOccurred())
 
@@ -325,7 +367,12 @@ spec:
 					`curl -s -X POST -H 'Content-Type: application/json' -d '%s' %s`,
 					graphqlQuery, graphqlEndpoint)
 
-				podName := fmt.Sprintf("curl-workflow-data-%d", time.Now().UnixNano()%10000)
+				podName := fmt.Sprintf("curl-workflow-data-%d", time.Now().UnixNano())
+				defer func() {
+					cmd := exec.Command("kubectl", "delete", "pod", podName,
+						"-n", namespace, "--ignore-not-found")
+					_, _ = utils.Run(cmd)
+				}()
 				_, err := utils.RunCurlPod(podName, namespace, graphqlCurl)
 				g.Expect(err).NotTo(HaveOccurred())
 
@@ -345,11 +392,6 @@ spec:
 				g.Expect(graphqlResponse).To(ContainSubstring("getWorkflowInstances"))
 				g.Expect(graphqlResponse).To(ContainSubstring("COMPLETED"))
 				g.Expect(graphqlResponse).NotTo(ContainSubstring("outputData\":null"))
-
-				// Cleanup this curl pod
-				cmd := exec.Command("kubectl", "delete", "pod", podName,
-					"-n", namespace, "--ignore-not-found")
-				_, _ = utils.Run(cmd)
 			}
 			Eventually(waitForWorkflowData, 3*time.Minute, 10*time.Second).Should(Succeed())
 

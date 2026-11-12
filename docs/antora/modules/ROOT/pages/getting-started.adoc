@@ -61,20 +61,26 @@ kubectl wait --namespace logic-operator-system \
 make kind-demo
 ----
 
-This creates a `LogicPlatform` with the workflow gateway enabled, a `LogicFlowRuntime`, and a `LogicFlowDefinition` (the hello-world workflow) in the `default` namespace. The gateway routes to the runtime Service using `spec.runtimeRef`; no `LogicFlowService` is required.
+This creates:
+
+* A `ClusterLogicPlatform` singleton (cluster-scoped) deployed to `logic-platform` namespace with the workflow gateway enabled
+* An ephemeral `LogicFlowRuntime` (`hello-runtime`) in the `default` namespace; it does not use platform persistence
+* A `LogicFlowDefinition` (the hello-world workflow) in the `default` namespace
+
+The gateway routes to the runtime Service; no `LogicFlowService` is required.
 
 Verify everything is ready:
 
 [source,bash]
 ----
-kubectl get logicplatforms,logicflowruntimes,logicflowdefinitions
+kubectl get clusterlogicplatforms,logicflowruntimes,logicflowdefinitions
 ----
 
-Inspect gateway readiness and its public URL in the LogicPlatform status:
+Inspect the platform status:
 
 [source,bash]
 ----
-kubectl get logicplatform logicplatform-sample -o yaml
+kubectl get clusterlogicplatform default -o yaml
 ----
 
 == 5. Invoke the workflow
@@ -119,7 +125,7 @@ Now that you have the operator running, explore these topics:
 
 **Reference:**
 
-* xref:crd-reference/logicplatform.adoc[LogicPlatform CRD] — Data Index, Vector, and Workflow Gateway configuration
+* xref:crd-reference/clusterlogicplatform.adoc[ClusterLogicPlatform CRD] — Data Index, Vector, and Workflow Gateway configuration
 * xref:crd-reference/logicflowruntime.adoc[LogicFlowRuntime CRD] — Runtime configuration and structured logging
 * xref:concepts/runtime-model.adoc[Runtime Model] — How the operator manages runtimes
 * xref:components/workflow-gateway.adoc[Workflow Gateway] — API, routing behavior, and limitations

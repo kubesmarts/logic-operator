@@ -45,38 +45,6 @@ const (
 	TLSModeVerifyFull TLSMode = "verify-full"
 )
 
-// PersistenceOptionsSpec configures PostgreSQL connectivity for Data Index or
-// a LogicFlowRuntime. Each component receives its own settings; the current
-// operator does not inherit global LogicPlatform persistence defaults. The
-// dbMigrationStrategy field is accepted for API compatibility but is not yet
-// acted on by the current controllers.
-//
-// Example:
-//
-//	persistence:
-//	  postgresql:
-//	    secretRef:
-//	      name: postgres-credentials
-//	    serviceRef:
-//	      name: postgres
-//	      namespace: databases
-//	      databaseName: logicflow
-//	  dbMigrationStrategy: service
-//
-// +optional
-// +kubebuilder:validation:MaxProperties=2
-type PersistenceOptionsSpec struct {
-	// Connect configured services to a postgresql database.
-	// +optional
-	PostgreSQL *PersistencePostgreSQL `json:"postgresql,omitempty"`
-
-	// Reserved migration strategy setting. The current controllers do not create
-	// migration Jobs or otherwise act on this field.
-	// +optional
-	// +kubebuilder:default:=service
-	DBMigrationStrategy DBMigrationStrategyType `json:"dbMigrationStrategy,omitempty"`
-}
-
 // PersistencePostgreSQL configures a PostgreSQL database connection via Kubernetes Service reference.
 //
 // The operator constructs the JDBC URL dynamically from the service endpoint.
@@ -153,7 +121,9 @@ type PostgreSQLSecretOptions struct {
 	PasswordKey string `json:"passwordKey,omitempty"`
 }
 
-type SQLServiceOptions struct {
+// PostgreSQLServiceOptions configures a Kubernetes Service reference for PostgreSQL database connectivity.
+// The operator constructs the JDBC URL dynamically from the service endpoint.
+type PostgreSQLServiceOptions struct {
 	// Name of the DB k8s service.
 	Name string `json:"name"`
 	// Namespace of a Kubernetes Service. When omitted, Name is used as a hostname and Kubernetes
@@ -167,12 +137,53 @@ type SQLServiceOptions struct {
 	// Name of postgresql database to be used.
 	// +optional
 	DatabaseName string `json:"databaseName,omitempty"`
-}
-
-// PostgreSQLServiceOptions use k8s service to configure postgresql jdbc url.
-type PostgreSQLServiceOptions struct {
-	*SQLServiceOptions `json:",inline"`
 	// Schema of postgresql database to be used. When empty, the database default schema is used (typically "public").
 	// +optional
 	DatabaseSchema string `json:"databaseSchema,omitempty"`
+}
+
+// DatastoreSpec configures a single PostgreSQL datastore with separate DDL (migration) and DML (operational) credentials.
+// Used by ClusterLogicPlatform for runtime/quartz datastores, and by DataIndex for persistence.
+// The PostgreSQL field provides the operational (DML) connection via SecretRef.
+// The MigrationSecretRef field provides the DDL (schema migration) credential; when nil, the operational secret is reused.
+type DatastoreSpec struct {
+	// PostgreSQL configures the PostgreSQL connection; SecretRef is the DML (operational) credential.
+	// +optional
+	PostgreSQL *PersistencePostgreSQL `json:"postgresql,omitempty"`
+	// MigrationSecretRef references the DDL (schema migration) credential. When nil, the operational secret (PostgreSQL.SecretRef) is used.
+	// +optional
+	MigrationSecretRef *PostgreSQLSecretOptions `json:"migrationSecretRef,omitempty"`
+	// Reserved migration strategy setting. The current controllers do not create migration Jobs or otherwise act on this field.
+	// +optional
+	// +kubebuilder:default:=service
+	DBMigrationStrategy DBMigrationStrategyType `json:"dbMigrationStrategy,omitempty"`
+}
+
+// RuntimePersistenceSpec configures workflow state and, optionally, a separate Quartz datasource.
+// When Quartz is omitted, the runner profile uses the workflow runtime datasource for Quartz.
+type RuntimePersistenceSpec struct {
+	// Runtime configures the datastore for Quarkus Flow workflow state.
+	// +optional
+	Runtime DatastoreSpec `json:"runtime,omitempty"`
+	// Quartz optionally configures a separate datasource for Quartz scheduler tables.
+	// +optional
+	Quartz DatastoreSpec `json:"quartz,omitempty"`
+}
+
+// OperationalSecret returns the DML (operational) database credential from the datastore.
+func OperationalSecret(d DatastoreSpec) PostgreSQLSecretOptions {
+	if d.PostgreSQL != nil {
+		return d.PostgreSQL.SecretRef
+	}
+	return PostgreSQLSecretOptions{}
+}
+
+// MigrationSecret returns the DDL (schema migration) credential from the datastore.
+// When MigrationSecretRef is nil, it falls back to the operational secret (SecretRef).
+func MigrationSecret(d DatastoreSpec) PostgreSQLSecretOptions {
+	if d.MigrationSecretRef != nil {
+		return *d.MigrationSecretRef
+	}
+	// Fall back to operational secret
+	return OperationalSecret(d)
 }

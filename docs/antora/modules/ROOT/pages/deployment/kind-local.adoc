@@ -96,7 +96,7 @@ make kind-demo
 
 This applies `config/samples/` which creates:
 
-* `LogicPlatform/logicplatform-sample` — manages the workflow gateway and its Ingress at `gateway.lvh.me`
+* `ClusterLogicPlatform/default` — manages the workflow gateway and its Ingress at `gateway.lvh.me`
 * `LogicFlowRuntime/hello-runtime` — a stateless runner (defaults to the operator's Quarkus Flow Runner version, `{quarkus-flow-runner-version}-minimal` in this release)
 * `LogicFlowDefinition/hello-world-v1-0-0` — the hello-world workflow
 
@@ -107,7 +107,7 @@ Wait for the runtime pod to be ready, then invoke the workflow:
 [source,bash]
 ----
 kubectl wait --for=condition=available deployment/hello-runtime --timeout=120s
-kubectl wait --for=condition=available deployment/logicplatform-sample-workflow-gateway --timeout=120s
+kubectl wait --for=condition=available deployment/default-workflow-gateway --timeout=120s
 
 curl -X POST http://gateway.lvh.me/v1/runtime/default/hello-world/1.0.0/sync \
   -H "Content-Type: application/json" \
@@ -148,7 +148,7 @@ See xref:deployment/troubleshooting.adoc[Troubleshooting] for more common issues
 [source,bash]
 ----
 # Check all Logic Operator CRs
-kubectl get logicplatforms,logicflowruntimes,logicflowdefinitions
+kubectl get clusterlogicplatforms,logicflowruntimes,logicflowdefinitions
 
 # Check runtime pod logs
 kubectl logs -l app.kubernetes.io/name=hello-runtime -f
@@ -178,11 +178,11 @@ To test durable workflows and Data Index integration:
 
 [source,bash]
 ----
-# Apply PostgreSQL and LogicPlatform
+# Apply PostgreSQL and ClusterLogicPlatform
 kubectl apply -k config/samples/persistence/
 
 # Wait for everything
-kubectl wait --for=condition=available deployment/postgresql deployment/hello-runtime deployment/logicplatform-sample-data-index --timeout=120s
+kubectl wait --for=condition=available deployment/postgresql deployment/hello-runtime deployment/default-data-index --timeout=120s
 
 # Test a durable workflow
 curl -X POST http://sleepy.lvh.me/ \
@@ -190,7 +190,7 @@ curl -X POST http://sleepy.lvh.me/ \
   -d '{"name": "local-test"}'
 
 # Query Data Index GraphQL
-GRAPHQL_ENDPOINT=$(kubectl get logicplatform logicplatform-sample \
+GRAPHQL_ENDPOINT=$(kubectl get clusterlogicplatform default \
   -o jsonpath='{.status.dataIndex.service.graphqlEndpoint}')
 
 curl -X POST "$GRAPHQL_ENDPOINT" \

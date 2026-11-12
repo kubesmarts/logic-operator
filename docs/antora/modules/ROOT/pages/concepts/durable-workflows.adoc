@@ -175,7 +175,7 @@ unavailability.
 
 Durable mode persists workflow instance state in PostgreSQL so that pods can recover in-flight instances.
 
-For visibility into completed workflow executions and their outcomes, enable xref:concepts/workflow-instance-history.adoc[workflow instance history] via LogicPlatform:
+For visibility into completed workflow executions and their outcomes, enable xref:concepts/workflow-instance-history.adoc[workflow instance history] via ClusterLogicPlatform:
 
 [source,yaml]
 ----
@@ -184,8 +184,9 @@ kind: LogicFlowRuntime
 metadata:
   name: order-processing
 spec:
-  persistence:
-    postgresql: ...
+  platformRef:
+    name: order-platform
+  persistenceMode: PlatformDB
   logging:
     enabled: true
     includeWorkflowPayloads: true
@@ -194,22 +195,43 @@ spec:
 [source,yaml]
 ----
 apiVersion: logic.kubesmarts.org/v1
-kind: LogicPlatform
+kind: ClusterLogicPlatform
 metadata:
   name: order-platform
 spec:
+  targetNamespace: logic-platform
   dataIndex:
-    enabled: true
     persistence:
       postgresql:
         secretRef:
           name: postgresql-secret
         serviceRef:
           name: postgresql
-        databaseName: logicflow
-        databaseSchema: logicflow_dataindex
-    vector:
-      enabled: true
+          databaseName: logicflow
+          databaseSchema: logicflow_dataindex
+  vector:
+    watchNamespaces:
+      - logic-platform
+  runtime:
+    persistence:
+      runtime:
+        postgresql:
+          secretRef:
+            name: postgresql-secret
+          serviceRef:
+            name: postgresql
+            namespace: logic-platform
+            databaseName: logicflow
+            databaseSchema: runtime
+      quartz:
+        postgresql:
+          secretRef:
+            name: postgresql-secret
+          serviceRef:
+            name: postgresql
+            namespace: logic-platform
+            databaseName: logicflow
+            databaseSchema: quartz
 ----
 
 This enables GraphQL queries over the workflow execution history while maintaining durability for in-flight instances.

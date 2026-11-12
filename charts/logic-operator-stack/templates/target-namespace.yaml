@@ -1,0 +1,11 @@
+{{- if .Values.clusterLogicPlatform.createNamespace }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ required "clusterLogicPlatform.targetNamespace is required" .Values.clusterLogicPlatform.targetNamespace | quote }}
+  labels:
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    helm.sh/resource-policy: keep
+{{- end }}

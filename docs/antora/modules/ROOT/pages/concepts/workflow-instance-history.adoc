@@ -21,8 +21,8 @@ Workflow history requires PostgreSQL, structured runtime logging, Vector, and Da
 components are configured independently from runtime persistence; workflows can execute without
 workflow history enabled.
 
-Configure `LogicPlatform.spec.dataIndex.persistence.postgresql` for Data Index and enable
-`dataIndex.vector`. Data Index's admission validation requires the Secret, Service, database name,
+Configure `ClusterLogicPlatform.spec.dataIndex.persistence.postgresql` for Data Index and enable
+`vector`. Data Index's admission validation requires the Secret, Service, database name,
 and database schema. Configure structured logging on the relevant `LogicFlowRuntime`:
 
 [source,yaml]
@@ -43,24 +43,33 @@ Payloads can contain sensitive data and increase log volume.
 
 == Vector namespace filter
 
-When `dataIndex.vector.watchNamespaces` is omitted, the admission webhook defaults it to the
-LogicPlatform namespace. The current controller passes only the first list entry to Vector as an
-exact namespace filter. Use one namespace name; wildcard values and multiple namespace filtering
-are not currently supported.
+When `vector.watchNamespaces` is omitted, the admission webhook defaults it to the
+`targetNamespace`. The current controller passes only the first list entry to Vector as an exact
+namespace filter. Use one namespace name; wildcard values and multiple namespace filtering are not
+currently supported.
 
 [source,yaml]
 ----
 apiVersion: logic.kubesmarts.org/v1
-kind: LogicPlatform
+kind: ClusterLogicPlatform
 metadata:
   name: flow-platform
-  namespace: workflows
 spec:
+  targetNamespace: workflows
   dataIndex:
-    vector:
-      enabled: true
-      watchNamespaces:
-        - workflows
+    persistence:
+      postgresql:
+        secretRef:
+          name: postgresql-secret
+        serviceRef:
+          name: postgresql
+          namespace: workflows
+          databaseName: logicflow
+          databaseSchema: data_index
+  vector:
+    watchNamespaces:
+      - workflows
+  gateway: {}
 ----
 
 == Query Data Index
@@ -90,9 +99,9 @@ If instance history is empty, check that:
 * the runtime has structured logging enabled;
 * Vector watches the namespace where the runner pod is running;
 * Vector and Data Index pods are ready;
-* the LogicPlatform persistence Secret and Service references are valid; and
+* the ClusterLogicPlatform persistence Secret and Service references are valid; and
 * the database is reachable and Data Index has completed its schema initialization.
 
 The gateway can execute workflows without Data Index, but its `/v1/instances` endpoints return
-`503 Service Unavailable` when the same-namespace LogicPlatform does not publish a Data Index
+`503 Service Unavailable` when the same-namespace ClusterLogicPlatform does not publish a Data Index
 GraphQL endpoint. See xref:components/workflow-gateway.adoc[Workflow Gateway].

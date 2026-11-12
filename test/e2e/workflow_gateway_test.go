@@ -29,17 +29,15 @@ func workflowGatewayTests() {
 			_, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create test namespace")
 
-			By("creating LogicPlatform with gateway enabled")
+			By("creating ClusterLogicPlatform with gateway enabled")
 			lpYAML := fmt.Sprintf(`
 apiVersion: logic.kubesmarts.org/v1
-kind: LogicPlatform
+kind: ClusterLogicPlatform
 metadata:
   name: gateway-test-platform
-  namespace: %s
 spec:
-  dataIndex:
-    enabled: false
-  workflowGateway:
+  targetNamespace: %s
+  gateway:
     application:
       image: quay.io/kubesmarts/workflow-gateway:%s
     ingress:
@@ -50,7 +48,7 @@ spec:
 			cmd = exec.Command("kubectl", "apply", "-f", "-")
 			cmd.Stdin = bytes.NewReader([]byte(lpYAML))
 			_, err = utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred(), "Failed to create LogicPlatform")
+			Expect(err).NotTo(HaveOccurred(), "Failed to create ClusterLogicPlatform")
 
 			By("waiting for gateway Deployment to be ready")
 			verifyGatewayReady := func(g Gomega) {
@@ -124,8 +122,17 @@ spec:
 		})
 
 		AfterAll(func() {
+			By("deleting the ClusterLogicPlatform")
+			cmd := exec.Command("kubectl", "delete", "clusterlogicplatform", "gateway-test-platform", "--ignore-not-found")
+			_, _ = utils.Run(cmd)
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "clusterlogicplatform", "gateway-test-platform")
+				_, err := utils.Run(cmd)
+				g.Expect(err).To(HaveOccurred())
+			}).WithTimeout(2 * time.Minute).Should(Succeed())
+
 			By("cleaning up test namespace")
-			cmd := exec.Command("kubectl", "delete", "namespace", testNamespace, "--ignore-not-found")
+			cmd = exec.Command("kubectl", "delete", "namespace", testNamespace, "--ignore-not-found")
 			_, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to delete test namespace")
 		})

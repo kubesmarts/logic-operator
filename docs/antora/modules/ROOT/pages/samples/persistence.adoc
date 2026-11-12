@@ -23,14 +23,14 @@ make kind-demo
 
 [source,bash]
 ----
-kubectl apply -k config/samples/persistence/
+kubectl apply -k config/samples/persistence/ -n logic-platform
 ----
 
 This applies the following resources:
 
-* `postgresql.yaml` — PostgreSQL 16 pod, PVC, and Service (shared by both features)
-* `logic_v1_logicplatform.yaml` — Adds Data Index and Vector to the existing demo LogicPlatform, preserving its Workflow Gateway (only one LogicPlatform is allowed per namespace)
-* `logic_v1_logicflowruntime.yaml` — Upgrades `hello-runtime` to 3 replicas with PostgreSQL persistence and structured logging
+* `postgresql.yaml` — PostgreSQL 16 pod, PVC, and Service, with initialization for the `runtime`, `quartz`, and `data_index` schemas
+* `logic_v1_clusterlogicplatform.yaml` — Cluster-scoped platform with runtime, Quartz, Data Index, Gateway, and Vector configured
+* `logic_v1_logicflowruntime.yaml` — Upgrades `hello-runtime` to 2 replicas with PlatformDB persistence mode and structured logging
 * `logic_v1_logicflowdefinition_sleepy.yaml` — A 30-second wait workflow for testing durable coordination
 * `logic_v1_logicflowservice_sleepy.yaml` — Service exposing the sleepy workflow
 
@@ -52,44 +52,62 @@ stringData:
 A `postgres:16-alpine` pod connects to a 1 Gi PVC.
 The database is named `logicflow`.
 The secret provides credentials used by both the runtime (for durable state) and Data Index (for workflow instance history).
+On first initialization, the sample creates the schemas used by the runtime, Quartz, and Data Index.
 
 IMPORTANT: Both durable workflows and Data Index integration require PostgreSQL. Without it, neither feature will work.
 
-=== LogicPlatform (Data Index & Vector)
+=== ClusterLogicPlatform (Data Index & Vector)
 
 [source,yaml,subs="attributes+"]
 ----
 apiVersion: logic.kubesmarts.org/v1
-kind: LogicPlatform
+kind: ClusterLogicPlatform
 metadata:
-  name: logicplatform-sample
+  name: default
 spec:
+  targetNamespace: logic-platform
   dataIndex:
-    enabled: true
     persistence:
       postgresql:
         secretRef:
           name: postgresql-secret
         serviceRef:
           name: postgresql
+          namespace: logic-platform
           databaseName: logicflow
-          databaseSchema: logicflow_dataindex
-    vector:
-      enabled: true
-  workflowGateway:
-    application:
-      image: quay.io/kubesmarts/workflow-gateway:{workflow-gateway-version}
-      replicas: 1
-    ingress:
-      enabled: true
-      host: gateway.lvh.me
-      ingressClassName: nginx
+          databaseSchema: data_index
+  vector:
+    watchNamespaces:
+      - logic-platform
+  gateway:
+    application: {}
+  runtime:
+    persistence:
+      runtime:
+        postgresql:
+          secretRef:
+            name: postgresql-secret
+          serviceRef:
+            name: postgresql
+            namespace: logic-platform
+            databaseName: logicflow
+            databaseSchema: runtime
+      quartz:
+        postgresql:
+          secretRef:
+            name: postgresql-secret
+          serviceRef:
+            name: postgresql
+            namespace: logic-platform
+            databaseName: logicflow
+            databaseSchema: quartz
 ----
 
-The operator deploys:
+The operator deploys the following components into `targetNamespace` (`logic-platform`):
 
 * **Data Index Service** — Exposes a GraphQL API to query workflow instances and their execution history
-* **Vector DaemonSet** — Collects structured logs from workflow pods in the configured namespace and forwards them to PostgreSQL. The current controller uses only the first exact namespace in `watchNamespaces`; omitted configuration defaults to the LogicPlatform namespace.
+* **Vector DaemonSet** — Collects structured logs from the configured runtime namespace and forwards them to Data Index
+* **Workflow Gateway** — Routes API requests to workflow runtimes
 
 === Updated LogicFlowRuntime (Durable + Structured Logging)
 
@@ -100,26 +118,22 @@ kind: LogicFlowRuntime
 metadata:
   name: hello-runtime
 spec:
-  replicas: 3
+  replicas: 2
+  platformRef:
+    name: default
+  persistenceMode: PlatformDB
   logging:
     enabled: true
     includeWorkflowPayloads: true
-  persistence:
-    postgresql:
-      secretRef:
-        name: postgresql-secret
-      serviceRef:
-        name: postgresql
-        databaseName: logicflow
-        databaseSchema: logicflow_runtime
 ----
 
-The operator updates the existing `hello-runtime` Deployment to:
+The operator scales the existing `hello-runtime` Deployment to:
 
-* Scale to 3 replicas
+* Scale to 2 replicas
 * Switch to the `{quarkus-flow-runner-version}-standard` runner image (includes Quarkus datasource extension)
-* Inject `QUARKUS_DATASOURCE_*` environment variables for persistence
-* Configure structured logging to emit workflow events (start, end, task completion) as JSON to stdout
+* Discover the `ClusterLogicPlatform` and inject `QUARKUS_DATASOURCE_*` environment variables from `spec.runtime.persistence.runtime`
+* Enable structured logging to emit workflow events (start, end, task completion) as JSON to stdout
+* Enable durable coordination via Kubernetes leases
 
 === Sleepy Workflow Definition
 
@@ -159,7 +173,7 @@ During that window the instance is in a `waiting` state, persisted in PostgreSQL
 ----
 kubectl wait --for=condition=available deployment/postgresql --timeout=120s
 kubectl wait --for=condition=available deployment/hello-runtime --timeout=120s
-kubectl wait --for=condition=available deployment/logicplatform-sample-data-index --timeout=120s
+kubectl wait --for=condition=available deployment/default-data-index --timeout=120s
 ----
 
 == Section A: Durable Workflow Execution
@@ -197,7 +211,7 @@ No workflow instances are lost.
 
 === How Lease Coordination Works
 
-With 3 replicas, each workflow instance is assigned an owner pod via a Kubernetes `Lease` object.
+With 2 replicas, each workflow instance is assigned an owner pod via a Kubernetes `Lease` object.
 The owning pod is responsible for running that instance and resuming it after waits.
 If the owner pod dies, the lease expires and another pod claims ownership.
 
@@ -250,7 +264,7 @@ Port-forward the Data Index Service to your local machine:
 
 [source,bash]
 ----
-kubectl port-forward svc/logicplatform-sample-data-index 8080:80 &
+kubectl port-forward svc/default-data-index 8080:80 &
 ----
 
 Then query workflow instances and their execution data:
@@ -324,7 +338,7 @@ Start with `false` for both and enable only if you need specific payload data in
 
 [source,bash]
 ----
-kubectl logs -l app.kubernetes.io/name=logicplatform-sample-vector -f
+kubectl -n logic-platform logs -l app.kubernetes.io/name=logic-platform-vector -f
 ----
 
 Look for messages about workflow events being processed.
@@ -333,15 +347,15 @@ Look for messages about workflow events being processed.
 
 [source,bash]
 ----
-kubectl exec -it <postgresql-pod> -- psql -U flowuser logicflow \
-  -c "SELECT COUNT(*) FROM logicflow_dataindex.workflow_events_raw;"
+kubectl exec -n logic-platform -it <postgresql-pod> -- psql -U flowuser logicflow \
+  -c "SELECT COUNT(*) FROM data_index.workflow_events_raw;"
 ----
 
 *Check Data Index pod logs:*
 
 [source,bash]
 ----
-kubectl logs -l app.kubernetes.io/name=logicplatform-sample-data-index -f
+kubectl -n logic-platform logs -l app.kubernetes.io/name=logic-platform-data-index -f
 ----
 
 *Verify GraphQL connectivity:*
@@ -357,11 +371,11 @@ curl -X POST http://localhost:8080/graphql \
 
 If this returns `Query`, the GraphQL endpoint is working.
 
-(Use `kubectl port-forward svc/logicplatform-sample-data-index 8080:80` from your workstation to reach the service.)
+(Use `kubectl -n logic-platform port-forward svc/logic-platform-data-index 8080:80` from your workstation to reach the service.)
 
 === Data Index PostgreSQL Schema
 
-Vector creates and populates two raw event tables:
+Vector creates and populates two raw event tables in the `data_index` schema:
 
 [cols="1,2"]
 |===
@@ -379,23 +393,24 @@ You can inspect the raw events:
 
 [source,bash]
 ----
-kubectl exec -it <postgresql-pod> -- psql -U flowuser logicflow \
-  -c "SELECT id, event_type, payload FROM logicflow_dataindex.workflow_events_raw LIMIT 5;"
+kubectl exec -n logic-platform -it <postgresql-pod> -- psql -U flowuser logicflow \
+  -c "SELECT id, event_type, payload FROM data_index.workflow_events_raw LIMIT 5;"
 ----
 
 == Clean Up
 
 [source,bash]
 ----
-kubectl delete -k config/samples/persistence/ --ignore-not-found=true
+kubectl delete -k config/samples/persistence/ -n logic-platform --ignore-not-found=true
 ----
 
 == Key Takeaways
 
+* **ClusterLogicPlatform is a singleton** — one per cluster, deployed to the target namespace
 * **PostgreSQL is required** for both durable workflows and Data Index integration
 * **Durable workflows** use leases and database state to survive pod restarts
 * **Data Index integration** requires structured logging enabled on the runtime
-* **Vector** is deployed in the LogicPlatform namespace and watches only that namespace by default. The current controller supports one exact namespace filter; wildcard and multi-namespace filtering are not implemented.
+* **Vector** is deployed in the target namespace and automatically collects logs from all workflow pods across all namespaces
 * **Structured logging** must be explicitly enabled; control workflow and task payloads separately (`includeWorkflowPayloads` and `includeTaskPayloads`)
 * **GraphQL queries** can retrieve workflow instance history, status, and payload data
-* **Both features use the same PostgreSQL instance** with separate schemas (`public` and `logicflow_dataindex`)
+* **All features use the same PostgreSQL instance** with separate schemas (`runtime`, `quartz`, and `data_index`)

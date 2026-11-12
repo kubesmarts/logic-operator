@@ -91,12 +91,6 @@ func TestWebhookIntegration(t *testing.T) {
 		Complete(); err != nil {
 		t.Fatalf("register LFS webhook: %v", err)
 	}
-	if err := builder.WebhookManagedBy(mgr, &LogicPlatform{}).
-		WithDefaulter(&LogicPlatformDefaulter{}).
-		WithValidator(&LogicPlatformValidator{Reader: mgr.GetClient()}).
-		Complete(); err != nil {
-		t.Fatalf("register LogicPlatform webhook: %v", err)
-	}
 
 	go func() {
 		if err := mgr.Start(ctx); err != nil {
@@ -283,25 +277,14 @@ func testLFRWebhooks(ctx context.Context, t *testing.T, k8sClient client.Client)
 					ApplicationSpec: ApplicationSpec{
 						Image: fmt.Sprintf("%s/%s:0.15.1-%s", FlowRunnerRegistry, FlowRunnerImage, ImageVariantMinimal),
 					},
-					Persistence: &PersistenceOptionsSpec{
-						PostgreSQL: &PersistencePostgreSQL{
-							SecretRef: PostgreSQLSecretOptions{Name: testPGSecret},
-							ServiceRef: PostgreSQLServiceOptions{
-								SQLServiceOptions: &SQLServiceOptions{
-									Name:         "postgres",
-									DatabaseName: "test",
-								},
-								DatabaseSchema: "public",
-							},
-						},
-					},
 				},
+				PersistenceMode: &[]PersistenceMode{PersistenceModePlatformDB}[0],
 			},
 		}
 		err := k8sClient.Create(ctx, rt)
 		if err == nil {
 			t.Cleanup(func() { _ = k8sClient.Delete(ctx, rt) })
-			t.Fatal("expected minimal image with persistence to be rejected")
+			t.Fatal("expected minimal image with persistence mode to be rejected")
 		}
 		if !errors.IsForbidden(err) {
 			t.Errorf("expected Forbidden, got: %v", err)

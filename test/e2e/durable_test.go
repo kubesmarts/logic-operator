@@ -17,124 +17,26 @@ import (
 	"github.com/kubesmarts/logic-operator/test/utils"
 )
 
-func init() {
-	// Ensure e2e-durable.lvh.me resolves via the ingress controller
-	// The DNS record is typically managed by the ingress infrastructure
-	// or by adding it to /etc/hosts on the test machine.
-}
-
-// durableRuntimeName uses a distinct name to avoid collision with demo samples.
-const durableRuntimeName = "e2e-durable-rt"
-
-// durableInfraNamespace is a separate namespace for PostgreSQL infra.
-// logic-operator-system enforces the restricted Pod Security Standard which
-// rejects the postgres:16-alpine image (runs as root). A separate namespace
-// without that restriction is used instead.
-const durableInfraNamespace = "e2e-durable-infra"
-
-// durableRuntimeYAML — spec.image intentionally omitted so the operator defaults to
-// QuarkusFlowVersion + "-" + "standard" (e.g. "1.0.0-standard") via DefaultRunnerImage
-// in internal/controller/quarkus_config.go.
-// serviceRef.namespace points to durableInfraNamespace where PostgreSQL runs
-// (logic-operator-system enforces restricted Pod Security which rejects postgres:16-alpine).
-const durableRuntimeYAML = `
-apiVersion: logic.kubesmarts.org/v1
-kind: LogicFlowRuntime
-metadata:
-  name: e2e-durable-rt
-  namespace: logic-operator-system
-spec:
-  replicas: 2
-  persistence:
-    postgresql:
-      secretRef:
-        name: postgresql-secret
-      serviceRef:
-        name: postgresql
-        namespace: e2e-durable-infra
-        databaseName: logicflow
-`
-
-// durablePGSecretYAML creates the credentials secret (no namespace in spec so it inherits from command line).
-// Will be created in both e2e-durable-infra and logic-operator-system namespaces.
-const durablePGSecretYAML = `
-apiVersion: v1
-kind: Secret
-metadata:
-  name: postgresql-secret
-type: Opaque
-stringData:
-  POSTGRESQL_USER: flowuser
-  POSTGRESQL_PASSWORD: flowpass
-`
-
-const durableSleepyDefinitionYAML = `
-apiVersion: logic.kubesmarts.org/v1
-kind: LogicFlowDefinition
-metadata:
-  name: e2e-sleepy-v1-0-0
-  namespace: logic-operator-system
-spec:
-  runtimeRef:
-    name: e2e-durable-rt
-  flow:
-    document:
-      dsl: "1.0.0"
-      namespace: e2e
-      name: sleepy
-      version: "1.0.0"
-    do:
-      - greet:
-          set:
-            message: '${ "Hello, " + .name + "! Sleeping for 30s..." }'
-      - nap:
-          wait:
-            seconds: 30
-      - wakeUp:
-          set:
-            message: '${ "Done! Woke up." }'
-`
-
-const durableServiceYAML = `
-apiVersion: logic.kubesmarts.org/v1
-kind: LogicFlowService
-metadata:
-  name: e2e-durable-service
-  namespace: logic-operator-system
-spec:
-  defaultDefinition:
-    name: e2e-sleepy-v1-0-0
-  ingress:
-    host: e2e-durable.lvh.me
-    ingressClassName: nginx
-`
+const durableRuntimeName = "hello-runtime"
+const durableDefinitionName = "sleepy-workflow-v1-0-0"
+const durableServiceName = "sleepy-workflow"
+const durableNamespace = "logic-platform"
+const durableWorkflowName = "sleepy-workflow"
+const durableWorkflowHost = "sleepy.lvh.me"
 
 func durableTests() {
 	Context("Durable LogicFlowRuntime with PostgreSQL persistence", Ordered, func() {
 		BeforeAll(func() {
-			By("creating infra namespace for PostgreSQL (no Pod Security restrictions)")
-			cmd := exec.Command("kubectl", "create", "namespace", durableInfraNamespace)
-			_, _ = utils.Run(cmd) // ignore error if namespace already exists
-
-			By("creating PostgreSQL credentials secret in operator namespace")
-			secretOp := strings.NewReader(durablePGSecretYAML)
-			cmd = exec.Command("kubectl", "apply", "-f", "-", "-n", namespace)
-			cmd.Stdin = secretOp
+			By("applying the persistence sample bundle")
+			cmd := exec.Command("kubectl", "apply", "-k", "config/samples/persistence/", "-n", durableNamespace)
 			_, err := utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("deploying PostgreSQL infra from persistence sample")
-			cmd = exec.Command("kubectl", "apply",
-				"-f", "config/samples/persistence/postgresql.yaml",
-				"-n", durableInfraNamespace)
-			_, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("waiting for PostgreSQL to be ready")
 			waitForPG := func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "pod",
 					"-l", "app=postgresql",
-					"-n", durableInfraNamespace,
+					"-n", durableNamespace,
 					"-o", "jsonpath={.items[0].status.conditions[?(@.type=='Ready')].status}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
@@ -142,38 +44,32 @@ func durableTests() {
 			}
 			Eventually(waitForPG, 3*time.Minute, 5*time.Second).Should(Succeed())
 
-			By("creating the durable LogicFlowRuntime")
-			cmd = exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(durableRuntimeYAML)
-			_, err = utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("creating the sleepy LogicFlowDefinition")
-			cmd = exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(durableSleepyDefinitionYAML)
-			_, err = utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("creating the durable LogicFlowService")
-			cmd = exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(durableServiceYAML)
-			_, err = utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred())
+			By("waiting for the sample runtime")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "logicflowruntime", durableRuntimeName, "-n", durableNamespace)
+				_, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+			}, 30*time.Second, time.Second).Should(Succeed())
 		})
 
 		AfterAll(func() {
 			for _, args := range [][]string{
-				{"logicflowservice", "e2e-durable-service"},
-				{"logicflowdefinition", "e2e-sleepy-v1-0-0"},
+				{"logicflowservice", durableServiceName},
+				{"logicflowdefinition", durableDefinitionName},
 				{"logicflowruntime", durableRuntimeName},
-				{"secret", "postgresql-secret"},
 			} {
 				cmd := exec.Command("kubectl", "delete", args[0], args[1],
-					"-n", namespace, "--ignore-not-found")
+					"-n", durableNamespace, "--ignore-not-found")
 				_, _ = utils.Run(cmd)
 			}
-			cmd := exec.Command("kubectl", "delete", "namespace",
-				durableInfraNamespace, "--ignore-not-found")
+			cmd := exec.Command("kubectl", "delete", "clusterlogicplatform", "default", "--ignore-not-found")
+			_, _ = utils.Run(cmd)
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "clusterlogicplatform", "default")
+				_, err := utils.Run(cmd)
+				g.Expect(err).To(HaveOccurred())
+			}).WithTimeout(2 * time.Minute).Should(Succeed())
+			cmd = exec.Command("kubectl", "delete", "namespace", durableNamespace, "--ignore-not-found")
 			_, _ = utils.Run(cmd)
 		})
 
@@ -183,13 +79,13 @@ func durableTests() {
 				By("collecting logs from durable runtime pods on test failure")
 				cmd := exec.Command("kubectl", "get", "pods",
 					"-l", fmt.Sprintf("app.kubernetes.io/name=%s", durableRuntimeName),
-					"-n", namespace,
+					"-n", durableNamespace,
 					"-o", "jsonpath={.items[*].metadata.name}")
 				podNames, err := utils.Run(cmd)
 				if err == nil {
 					for _, podName := range strings.Fields(podNames) {
 						By(fmt.Sprintf("fetching logs from pod %s", podName))
-						cmd := exec.Command("kubectl", "logs", podName, "-n", namespace)
+						cmd := exec.Command("kubectl", "logs", podName, "-n", durableNamespace)
 						logs, err := utils.Run(cmd)
 						if err == nil {
 							_, _ = fmt.Fprintf(GinkgoWriter, "Pod %s logs:\n%s\n", podName, logs)
@@ -204,7 +100,7 @@ func durableTests() {
 		It("should create the durable Deployment with 2 ready replicas", func() {
 			verifyDeployment := func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "deployment",
-					durableRuntimeName, "-n", namespace,
+					durableRuntimeName, "-n", durableNamespace,
 					"-o", "jsonpath={.status.availableReplicas}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
@@ -216,7 +112,7 @@ func durableTests() {
 		It("should create one Lease per replica", func() {
 			verifyLeases := func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "leases",
-					"-n", namespace,
+					"-n", durableNamespace,
 					"-l", fmt.Sprintf("%s=%s", controller.LabelDurablePool, durableRuntimeName),
 					"--no-headers")
 				out, err := utils.Run(cmd)
@@ -231,7 +127,7 @@ func durableTests() {
 			verifyHolders := func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "pods",
 					"-l", fmt.Sprintf("app.kubernetes.io/name=%s", durableRuntimeName),
-					"-n", namespace,
+					"-n", durableNamespace,
 					"-o", "jsonpath={.items[*].metadata.name}")
 				podNames, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
@@ -239,7 +135,7 @@ func durableTests() {
 				g.Expect(pods).To(HaveLen(2))
 
 				cmd = exec.Command("kubectl", "get", "leases",
-					"-n", namespace,
+					"-n", durableNamespace,
 					"-l", fmt.Sprintf("%s=%s", controller.LabelDurablePool, durableRuntimeName),
 					"-o", "jsonpath={.items[*].spec.holderIdentity}")
 				holders, err := utils.Run(cmd)
@@ -255,8 +151,8 @@ func durableTests() {
 		It("should recover an in-flight workflow after pod crash", func() {
 			// The operator overrides flow.document.namespace with the CR's Kubernetes namespace.
 			// URL format: /q/flow/exec/{document.namespace}/{document.name}/{document.version}
-			svcURL := fmt.Sprintf("http://e2e-durable.lvh.me/q/flow/exec/%s/sleepy/1.0.0", namespace)
-			healthURL := "http://e2e-durable.lvh.me/q/health/ready"
+			svcURL := fmt.Sprintf("http://%s/q/flow/exec/%s/%s/1.0.0", durableWorkflowHost, durableNamespace, durableWorkflowName)
+			healthURL := "http://" + durableWorkflowHost + "/q/health/ready"
 
 			By("verifying runtime pods are ready to accept requests")
 			verifyHealthy := func(g Gomega) {
@@ -284,7 +180,7 @@ func durableTests() {
 
 			By("finding the pod that holds the workflow's application lease")
 			cmd := exec.Command("kubectl", "get", "lease", invocation.WorkflowApplicationID,
-				"-n", namespace, "-o", "jsonpath={.spec.holderIdentity}")
+				"-n", durableNamespace, "-o", "jsonpath={.spec.holderIdentity}")
 			podName, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
 			podName = strings.TrimSpace(podName)
@@ -298,13 +194,13 @@ func durableTests() {
 
 			By("killing the pod that owns the workflow lease")
 			_, err = utils.Run(exec.Command("kubectl", "delete", "pod",
-				podName, "-n", namespace, "--grace-period=0", "--force"))
+				podName, "-n", durableNamespace, "--grace-period=0", "--force"))
 			Expect(err).NotTo(HaveOccurred())
 
 			By("waiting for 2 ready replicas again after crash")
 			verifyTwoReady := func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "deployment",
-					durableRuntimeName, "-n", namespace,
+					durableRuntimeName, "-n", durableNamespace,
 					"-o", "jsonpath={.status.availableReplicas}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
@@ -316,7 +212,7 @@ func durableTests() {
 			replacementPodName := ""
 			verifyLeaseRecovery := func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "lease", invocation.WorkflowApplicationID,
-					"-n", namespace, "-o", "jsonpath={.spec.holderIdentity}")
+					"-n", durableNamespace, "-o", "jsonpath={.spec.holderIdentity}")
 				holder, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				holder = strings.TrimSpace(holder)
@@ -324,7 +220,7 @@ func durableTests() {
 				g.Expect(holder).NotTo(Equal(podName), "expected lease to move off the deleted pod")
 
 				cmd = exec.Command("kubectl", "get", "pod", holder,
-					"-n", namespace,
+					"-n", durableNamespace,
 					"-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}")
 				ready, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
@@ -385,18 +281,42 @@ func durableTests() {
 				invocation.WorkflowApplicationID, invocation.InstanceID, recoveredStatus, replacementPodName)
 		})
 
-		It("should persist leases after scaling down to 1", func() {
-			By("verifying leases persist after scale-down")
-			verifyLeasePersist := func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "leases",
-					"-n", namespace,
-					"-l", fmt.Sprintf("%s=%s", controller.LabelDurablePool, durableRuntimeName),
-					"--no-headers")
+		It("should preserve both Leases after scaling down to 1 replica", func() {
+			By("recording the two leases before scale-down")
+			cmd := exec.Command("kubectl", "get", "leases",
+				"-n", durableNamespace,
+				"-l", fmt.Sprintf("%s=%s", controller.LabelDurablePool, durableRuntimeName),
+				"-o", "jsonpath={.items[*].metadata.name}")
+			out, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			leaseNames := strings.Fields(out)
+			Expect(leaseNames).To(HaveLen(2))
+
+			By("scaling the LogicFlowRuntime down to one replica")
+			cmd = exec.Command("kubectl", "patch", "logicflowruntime", durableRuntimeName,
+				"-n", durableNamespace, "--type=merge", "-p", `{"spec":{"replicas":1}}`)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("waiting for the Deployment to have one available replica")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "deployment", durableRuntimeName,
+					"-n", durableNamespace,
+					"-o", "jsonpath={.spec.replicas} {.status.availableReplicas}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
-				lines := strings.Split(strings.TrimSpace(out), "\n")
-				// Leases should persist (at least the ones from 2 replicas)
-				g.Expect(lines).ToNot(BeEmpty(), "expected at least 1 lease to persist")
+				g.Expect(strings.Fields(out)).To(Equal([]string{"1", "1"}))
+			}, time.Minute, 5*time.Second).Should(Succeed())
+
+			By("verifying that the original leases remain after scale-down")
+			verifyLeasePersist := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "leases",
+					"-n", durableNamespace,
+					"-l", fmt.Sprintf("%s=%s", controller.LabelDurablePool, durableRuntimeName),
+					"-o", "jsonpath={.items[*].metadata.name}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(strings.Fields(out)).To(ConsistOf(leaseNames[0], leaseNames[1]))
 			}
 			Eventually(verifyLeasePersist, time.Minute, 5*time.Second).Should(Succeed())
 		})
@@ -404,7 +324,7 @@ func durableTests() {
 }
 
 func startRunnerPortForward(podName string) (string, func(), error) {
-	return startRunnerPortForwardInNamespace(namespace, podName)
+	return startRunnerPortForwardInNamespace(durableNamespace, podName)
 }
 
 func startRunnerPortForwardInNamespace(namespace, podName string) (string, func(), error) {

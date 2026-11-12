@@ -6,7 +6,7 @@ A Kubernetes operator for managing Serverless Logic workflows powered by Quarkus
 
 The Logic Operator provides a Kubernetes-native way to deploy, manage, and scale Serverless Logic workflows. Built on top of Quarkus Flow, it offers four core CRDs for defining and orchestrating workflow-based applications:
 
-- **LogicPlatform**: Data Index, optional Vector, and optional Workflow Gateway management
+- **ClusterLogicPlatform**: Data Index, optional Vector, and optional Workflow Gateway management
 - **LogicFlowService**: External workflow endpoint and optional traffic-split policy
 - **LogicFlowDefinition**: Workflow definitions and specifications
 - **LogicFlowRuntime**: Runtime instances of deployed workflows
@@ -14,7 +14,7 @@ The Logic Operator provides a Kubernetes-native way to deploy, manage, and scale
 This repository tracks the 2.0 development line. Operator and component versions are declared in `versions.mk`.
 
 The standalone Workflow Gateway accepts execution and lifecycle requests and can route directly
-to a workflow's runtime Service. See the [Workflow Gateway guide](docs/antora/modules/ROOT/pages/components/workflow-gateway.adoc) for its API, LogicPlatform integration, and current scaling limitations.
+to a workflow's runtime Service. See the [Workflow Gateway guide](docs/antora/modules/ROOT/pages/components/workflow-gateway.adoc) for its API, ClusterLogicPlatform integration, and current scaling limitations.
 
 ## Getting Started
 
@@ -22,7 +22,7 @@ For a released version, install the Helm chart into a Kubernetes or OpenShift cl
 
 ### Install a released stack
 
-The `logic-operator-stack` chart installs the operator, PostgreSQL, and a `LogicPlatform` with Data Index, Vector, and Workflow Gateway. You remain responsible for creating and managing the cluster.
+The `logic-operator-stack` chart installs the operator, PostgreSQL, and a `ClusterLogicPlatform` with Data Index, Vector, and Workflow Gateway. You remain responsible for creating and managing the cluster.
 
 Prerequisites:
 
@@ -86,8 +86,8 @@ Gateway ingress is disabled by default. Enable it with a hostname and, for Kuber
 For a local KIND cluster created by `make kind-create`, use the host from the sample:
 
 ```yaml
-logicPlatform:
-  workflowGateway:
+clusterLogicPlatform:
+  gateway:
     ingress:
       enabled: true
       host: gateway.lvh.me
@@ -128,9 +128,9 @@ A newly created cluster gets ingress-nginx and cert-manager. If the KIND cluster
 Check that the sample resources were created and invoke the workflow:
 
 ```sh
-kubectl get logicplatforms,logicflowruntimes,logicflowdefinitions
+kubectl get clusterlogicplatforms,logicflowruntimes,logicflowdefinitions
 kubectl wait --for=condition=available deployment/hello-runtime --timeout=120s
-kubectl wait --for=condition=available deployment/logicplatform-sample-workflow-gateway --timeout=120s
+kubectl wait --for=condition=available deployment/default-workflow-gateway --timeout=120s
 curl -X POST http://gateway.lvh.me/v1/runtime/default/hello-world/1.0.0/sync \
   -H "Content-Type: application/json" \
   -d '{"name": "World"}'

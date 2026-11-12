@@ -7,7 +7,7 @@ Logic Operator provides two complementary observability patterns:
 * **Data Index + GraphQL** — Workflow instance history, status, and execution data
 
 This page covers Prometheus/Grafana.
-For Data Index, see xref:crd-reference/logicplatform.adoc[LogicPlatform CRD] and xref:samples/persistence.adoc#section-b-workflow-history[Persistence & Data Index sample].
+For Data Index, see xref:crd-reference/clusterlogicplatform.adoc[ClusterLogicPlatform CRD] and xref:samples/persistence.adoc#section-b-workflow-history[Persistence & Data Index sample].
 
 == Deploy the Monitoring Stack
 

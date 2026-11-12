@@ -20,15 +20,17 @@ const (
 	ConditionDeploymentAvailable = "DeploymentAvailable"
 	ConditionServiceReady        = "ServiceReady"
 	ConditionLeaseReady          = "LeaseReady"
+	ConditionPersistenceReady    = "PersistenceReady"
 )
 
 const (
-	ReasonDeploymentNotFound       = "DeploymentNotFound"
-	ReasonServiceNotFound          = "ServiceNotFound"
-	ReasonLeaseNotFound            = "LeaseNotFound"
-	ReasonReady                    = "Ready"
-	ReasonDeploymentProgressing    = "DeploymentProgressing"
-	ReasonProgressDeadlineExceeded = "ProgressDeadlineExceeded"
+	ReasonDeploymentNotFound              = "DeploymentNotFound"
+	ReasonServiceNotFound                 = "ServiceNotFound"
+	ReasonLeaseNotFound                   = "LeaseNotFound"
+	ReasonRuntimePersistenceNotConfigured = "RuntimePersistenceNotConfigured"
+	ReasonReady                           = "Ready"
+	ReasonDeploymentProgressing           = "DeploymentProgressing"
+	ReasonProgressDeadlineExceeded        = "ProgressDeadlineExceeded"
 )
 
 const (
@@ -62,6 +64,8 @@ const (
 	ConditionDataIndexPersistenceReady    = "DataIndexPersistenceReady"
 	ConditionVectorReady                  = "VectorReady"
 	ConditionWorkflowGatewayReady         = "WorkflowGatewayReady"
+	ConditionTargetNamespaceResolved      = "TargetNamespaceResolved"
+	ConditionDBMigration                  = "DBMigration"
 )
 
 // LogicPlatform reasons
@@ -70,11 +74,10 @@ const (
 	ReasonDataIndexServiceNotFound    = "DataIndexServiceNotFound"
 	ReasonPersistenceConfigInvalid    = "PersistenceConfigInvalid"
 	ReasonDatabaseUnreachable         = "DatabaseUnreachable"
-	ReasonDataIndexUnhealthy          = "DataIndexUnhealthy"
 	ReasonDaemonSetNotFound           = "DaemonSetNotFound"
 	ReasonDaemonSetProgressing        = "DaemonSetProgressing"
 	ReasonComponentsNotReady          = "ComponentsNotReady"
-	ReasonDisabled                    = "Disabled"
+	ReasonTargetNamespaceMissing      = "TargetNamespaceMissing"
 )
 
 // SetCondition sets a condition on a Conditions slice, handling insert/update

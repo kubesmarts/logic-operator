@@ -3,7 +3,6 @@ package e2e
 import (
 	"fmt"
 	"os/exec"
-	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -12,42 +11,14 @@ import (
 	"github.com/kubesmarts/logic-operator/test/utils"
 )
 
-const testRuntimeName = "e2e-minimal-rt"
-const testRuntimeYAML = `apiVersion: logic.kubesmarts.org/v1
-kind: LogicFlowRuntime
-metadata:
-  name: e2e-minimal-rt
-  namespace: logic-operator-system
-spec: {}
-`
-
-const testDefinitionName = "e2e-hello-world"
-const testDefinitionYAML = `apiVersion: logic.kubesmarts.org/v1
-kind: LogicFlowDefinition
-metadata:
-  name: e2e-hello-world
-  namespace: logic-operator-system
-spec:
-  runtimeRef:
-    name: e2e-minimal-rt
-  flow:
-    document:
-      dsl: "1.0.0"
-      namespace: examples
-      name: hello-world
-      version: "1.0.0"
-    do:
-      - greet:
-          set:
-            message: '${ "Hello, " + .name + "!" }'
-`
+const testRuntimeName = "hello-runtime"
+const testDefinitionName = "hello-world-v1-0-0"
 
 func logicFlowRuntimeLifecycleTests() {
 	Context("LogicFlowRuntime minimal lifecycle", Ordered, func() {
 		BeforeAll(func() {
-			By("applying a minimal LogicFlowRuntime CR")
-			cmd := exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(testRuntimeYAML)
+			By("applying the sample ephemeral LogicFlowRuntime")
+			cmd := exec.Command("kubectl", "apply", "-f", "config/samples/logic_v1_logicflowruntime.yaml", "-n", namespace)
 			_, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create LogicFlowRuntime")
 		})
@@ -126,8 +97,7 @@ func logicFlowRuntimeLifecycleTests() {
 
 		It("should mount a LogicFlowDefinition's ConfigMap after definition is applied", func() {
 			By("applying a LogicFlowDefinition CR")
-			cmd := exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(testDefinitionYAML)
+			cmd := exec.Command("kubectl", "apply", "-f", "config/samples/logic_v1_logicflowdefinition.yaml", "-n", namespace)
 			_, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create LogicFlowDefinition")
 
@@ -218,7 +188,7 @@ func logicFlowRuntimeLifecycleTests() {
 			output, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to get curl-workflow logs")
 			_, _ = fmt.Fprintf(GinkgoWriter, "Workflow response:\n%s\n", output)
-			Expect(output).To(ContainSubstring("Hello, world!"), "Workflow output should contain the greeting")
+			Expect(output).To(ContainSubstring("Hi, world!"), "Workflow output should contain the greeting")
 			Expect(output).To(ContainSubstring("COMPLETED"), "Workflow status should be COMPLETED")
 
 			By("cleaning up the curl pod")

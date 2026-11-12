@@ -227,23 +227,29 @@ setup-test-e2e: manifests generate fmt vet ## Set up complete E2E test infrastru
 	@echo "Building operator image $(E2E_IMG)..."
 	$(CONTAINER_TOOL) build $(VERSION_BUILD_ARGS) -t $(E2E_IMG) .
 	@echo "Loading operator image into Kind cluster..."
-	$(KIND) load docker-image $(E2E_IMG) --name $(KIND_CLUSTER)
+	tools/load-kind-image.sh "$(KIND_CLUSTER)" "$(E2E_IMG)" "$(KIND)"
 	@echo "Loading postgres image for E2E tests..."
 	@docker image inspect $(POSTGRES_IMG) >/dev/null 2>&1 || docker pull $(POSTGRES_IMG)
-	$(KIND) load docker-image $(POSTGRES_IMG) --name $(KIND_CLUSTER)
+	tools/load-kind-image.sh "$(KIND_CLUSTER)" "$(POSTGRES_IMG)" "$(KIND)"
 	@echo "Loading quarkus-flow-runner (minimal) image for E2E tests..."
 	@docker image inspect $(QUARKUS_FLOW_RUNNER_MINIMAL_IMG) >/dev/null 2>&1 || docker pull $(QUARKUS_FLOW_RUNNER_MINIMAL_IMG)
-	$(KIND) load docker-image $(QUARKUS_FLOW_RUNNER_MINIMAL_IMG) --name $(KIND_CLUSTER)
+	tools/load-kind-image.sh "$(KIND_CLUSTER)" "$(QUARKUS_FLOW_RUNNER_MINIMAL_IMG)" "$(KIND)"
 	@echo "Loading quarkus-flow-runner (standard) image for E2E tests..."
 	@docker image inspect $(QUARKUS_FLOW_RUNNER_STANDARD_IMG) >/dev/null 2>&1 || docker pull $(QUARKUS_FLOW_RUNNER_STANDARD_IMG)
-	$(KIND) load docker-image $(QUARKUS_FLOW_RUNNER_STANDARD_IMG) --name $(KIND_CLUSTER)
+	tools/load-kind-image.sh "$(KIND_CLUSTER)" "$(QUARKUS_FLOW_RUNNER_STANDARD_IMG)" "$(KIND)"
 	@echo "Loading data-index-service image for E2E tests..."
 	@docker image inspect $(DATA_INDEX_IMG) >/dev/null 2>&1 || docker pull $(DATA_INDEX_IMG)
-	$(KIND) load docker-image $(DATA_INDEX_IMG) --name $(KIND_CLUSTER)
+	tools/load-kind-image.sh "$(KIND_CLUSTER)" "$(DATA_INDEX_IMG)" "$(KIND)"
+	@echo "Loading Vector image for E2E tests..."
+	@docker image inspect $(VECTOR_IMG) >/dev/null 2>&1 || docker pull $(VECTOR_IMG)
+	tools/load-kind-image.sh "$(KIND_CLUSTER)" "$(VECTOR_IMG)" "$(KIND)"
+	@echo "Loading curl image for E2E tests..."
+	@docker image inspect $(CURL_IMG) >/dev/null 2>&1 || docker pull $(CURL_IMG)
+	tools/load-kind-image.sh "$(KIND_CLUSTER)" "$(CURL_IMG)" "$(KIND)"
 	@echo "Building workflow-gateway image for E2E tests..."
 	$(CONTAINER_TOOL) build -t $(GATEWAY_IMG) -f workflow-gateway/Dockerfile .
 	@echo "Loading workflow-gateway image into Kind cluster..."
-	$(KIND) load docker-image $(GATEWAY_IMG) --name $(KIND_CLUSTER)
+	tools/load-kind-image.sh "$(KIND_CLUSTER)" "$(GATEWAY_IMG)" "$(KIND)"
 	@echo "Installing CRDs..."
 	$(MAKE) install
 	@echo "Deploying operator..."
@@ -270,25 +276,25 @@ setup-test-e2e: manifests generate fmt vet ## Set up complete E2E test infrastru
 
 .PHONY: test-e2e
 test-e2e: ## Run all E2E tests (requires setup-test-e2e to be run first)
-	KIND_CLUSTER=$(KIND_CLUSTER) go test -ldflags "$(VERSION_LDFLAGS)" ./test/e2e/ -v -ginkgo.v
+	E2E_CURL_IMAGE=$(CURL_IMG) KIND_CLUSTER=$(KIND_CLUSTER) go test -ldflags "$(VERSION_LDFLAGS)" ./test/e2e/ -v -ginkgo.v
 
-test-e2e-platform: ## Run LogicPlatform E2E tests
-	KIND_CLUSTER=$(KIND_CLUSTER) go test -ldflags "$(VERSION_LDFLAGS)" ./test/e2e/ -v -ginkgo.v -ginkgo.focus="LogicPlatform"
+test-e2e-platform: ## Run ClusterLogicPlatform E2E tests
+	E2E_CURL_IMAGE=$(CURL_IMG) KIND_CLUSTER=$(KIND_CLUSTER) go test -ldflags "$(VERSION_LDFLAGS)" ./test/e2e/ -v -ginkgo.v -ginkgo.focus="LogicPlatform"
 
 test-e2e-runtime: ## Run LogicFlowRuntime E2E tests
-	KIND_CLUSTER=$(KIND_CLUSTER) go test -ldflags "$(VERSION_LDFLAGS)" ./test/e2e/ -v -ginkgo.v -ginkgo.focus="LogicFlowRuntime"
+	E2E_CURL_IMAGE=$(CURL_IMG) KIND_CLUSTER=$(KIND_CLUSTER) go test -ldflags "$(VERSION_LDFLAGS)" ./test/e2e/ -v -ginkgo.v -ginkgo.focus="LogicFlowRuntime"
 
 test-e2e-service: ## Run LogicFlowService E2E tests
-	KIND_CLUSTER=$(KIND_CLUSTER) go test -ldflags "$(VERSION_LDFLAGS)" ./test/e2e/ -v -ginkgo.v -ginkgo.focus="LogicFlowService"
+	E2E_CURL_IMAGE=$(CURL_IMG) KIND_CLUSTER=$(KIND_CLUSTER) go test -ldflags "$(VERSION_LDFLAGS)" ./test/e2e/ -v -ginkgo.v -ginkgo.focus="LogicFlowService"
 
 test-e2e-traffic: ## Run LogicFlowService multi-version traffic splitting E2E tests
-	KIND_CLUSTER=$(KIND_CLUSTER) go test -ldflags "$(VERSION_LDFLAGS)" ./test/e2e/ -v -ginkgo.v -ginkgo.focus="multi-version traffic splitting"
+	E2E_CURL_IMAGE=$(CURL_IMG) KIND_CLUSTER=$(KIND_CLUSTER) go test -ldflags "$(VERSION_LDFLAGS)" ./test/e2e/ -v -ginkgo.v -ginkgo.focus="multi-version traffic splitting"
 
 test-e2e-webhook: ## Run webhook validation E2E tests
-	KIND_CLUSTER=$(KIND_CLUSTER) go test -ldflags "$(VERSION_LDFLAGS)" ./test/e2e/ -v -ginkgo.v -ginkgo.focus="webhook"
+	E2E_CURL_IMAGE=$(CURL_IMG) KIND_CLUSTER=$(KIND_CLUSTER) go test -ldflags "$(VERSION_LDFLAGS)" ./test/e2e/ -v -ginkgo.v -ginkgo.focus="webhook"
 
 test-e2e-custom: ## Run custom E2E test. Use TEST=<pattern> (e.g. TEST="DataIndex" or TEST="should capture workflow")
-	KIND_CLUSTER=$(KIND_CLUSTER) go test -ldflags "$(VERSION_LDFLAGS)" ./test/e2e/ -v -ginkgo.v -ginkgo.focus="$(TEST)"
+	E2E_CURL_IMAGE=$(CURL_IMG) KIND_CLUSTER=$(KIND_CLUSTER) go test -ldflags "$(VERSION_LDFLAGS)" ./test/e2e/ -v -ginkgo.v -ginkgo.focus="$(TEST)"
 
 .PHONY: cleanup-test-e2e
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
@@ -304,12 +310,14 @@ INGRESS_NGINX_VERSION ?= v1.12.2
 INGRESS_NGINX_URL ?= https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-$(INGRESS_NGINX_VERSION)/deploy/static/provider/kind/deploy.yaml
 
 # E2E test images
+CURL_IMG ?= curlimages/curl:8.12.1
 QUARKUS_FLOW_RUNNER_MINIMAL_IMG ?= quay.io/quarkiverse/quarkus-flow-runner:$(QUARKUS_FLOW_RUNNER_VERSION)-minimal
 QUARKUS_FLOW_RUNNER_STANDARD_IMG ?= quay.io/quarkiverse/quarkus-flow-runner:$(QUARKUS_FLOW_RUNNER_VERSION)-standard
 QUARKUS_FLOW_RUNNER_IMG ?= $(QUARKUS_FLOW_RUNNER_STANDARD_IMG)
 POSTGRES_VERSION ?= 16-alpine
 POSTGRES_IMG ?= postgres:$(POSTGRES_VERSION)
 DATA_INDEX_IMG ?= quay.io/kubesmarts/data-index-service:$(DATA_INDEX_VERSION)
+VECTOR_IMG ?= timberio/vector:0.54.0-distroless-libc
 
 .PHONY: kind-create
 kind-create: ## Create a KIND cluster for local development.
@@ -369,7 +377,7 @@ kind-demo: kind-build-gateway ## Apply the gateway-backed hello workflow sample.
 	$(KUBECTL) apply -k config/samples/
 	@echo "Sample CRs applied. The gateway ingress is the public workflow endpoint."
 	@echo "Check status with:"
-	@echo "  kubectl get logicplatform,logicflowruntimes,logicflowdefinitions"
+	@echo "  kubectl get clusterlogicplatforms,logicflowruntimes,logicflowdefinitions"
 	@echo ""
 	@echo "Call the synchronous hello workflow through the gateway ingress:"
 	@echo "  curl -X POST http://gateway.lvh.me/v1/runtime/default/hello-world/1.0.0/sync -H 'Content-Type: application/json' -d '{\"name\":\"World\"}'"

@@ -17,6 +17,8 @@
 
 package version
 
+const VectorVersion = "0.54.0-distroless-libc"
+
 // These values are populated by the Go linker from versions.mk. Keep defaults
 // useful for builds that bypass the Makefile, but don't use them for releases.
 var (

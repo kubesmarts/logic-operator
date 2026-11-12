@@ -3,6 +3,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: {{ include "logic-operator-stack.fullname" . }}-postgresql
+  namespace: {{ .Values.clusterLogicPlatform.targetNamespace | quote }}
   labels:
     app.kubernetes.io/name: postgresql
     app.kubernetes.io/instance: {{ .Release.Name }}
@@ -15,9 +16,24 @@ data:
 {{- end }}
 ---
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "logic-operator-stack.fullname" . }}-postgresql-init
+  namespace: {{ .Values.clusterLogicPlatform.targetNamespace | quote }}
+  labels:
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  init.sql: |
+    CREATE SCHEMA IF NOT EXISTS data_index;
+    CREATE SCHEMA IF NOT EXISTS runtime;
+    CREATE SCHEMA IF NOT EXISTS quartz;
+---
+apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "logic-operator-stack.fullname" . }}-postgresql
+  namespace: {{ .Values.clusterLogicPlatform.targetNamespace | quote }}
   labels:
     app.kubernetes.io/name: postgresql
     app.kubernetes.io/instance: {{ .Release.Name }}
@@ -36,6 +52,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: {{ include "logic-operator-stack.fullname" . }}-postgresql
+  namespace: {{ .Values.clusterLogicPlatform.targetNamespace | quote }}
   labels:
     app.kubernetes.io/name: postgresql
     app.kubernetes.io/instance: {{ .Release.Name }}
@@ -50,6 +67,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: {{ include "logic-operator-stack.fullname" . }}-postgresql
+  namespace: {{ .Values.clusterLogicPlatform.targetNamespace | quote }}
   labels:
     app.kubernetes.io/name: postgresql
     app.kubernetes.io/instance: {{ .Release.Name }}
@@ -64,6 +82,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "logic-operator-stack.fullname" . }}-postgresql
+  namespace: {{ .Values.clusterLogicPlatform.targetNamespace | quote }}
   labels:
     app.kubernetes.io/name: postgresql
     app.kubernetes.io/instance: {{ .Release.Name }}
@@ -109,6 +128,9 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d/init.sql
+              subPath: init.sql
       volumes:
         - name: data
           {{ if .Values.postgresql.persistence.enabled }}
@@ -117,3 +139,6 @@ spec:
           {{ else }}
           emptyDir: {}
           {{ end }}
+        - name: init
+          configMap:
+            name: {{ include "logic-operator-stack.fullname" . }}-postgresql-init

@@ -1,6 +1,6 @@
 # Logic Operator Stack chart source
 
-This directory contains the hand-maintained source for the `logic-operator-stack` chart. Its local dependency on `logic-operator` is resolved during packaging; the generated operator templates are staged from `config/default` and are not committed under `charts/`.
+This directory contains the hand-maintained source for the `logic-operator-stack` chart. Its local dependency on `logic-operator` is resolved during packaging; the generated operator templates are staged from `config/default` and are not committed under `charts/`. The stack creates the configured target namespace by default, PostgreSQL resources, and a `ClusterLogicPlatform` that points to those resources. Set `clusterLogicPlatform.createNamespace=false` when the target namespace already exists.
 
 Do not install this source directory directly. Build the release artifacts from the repository root:
 

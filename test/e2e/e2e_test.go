@@ -49,6 +49,7 @@ var _ = Describe("Manager", Ordered, func() {
 	// This only validates the infrastructure is ready.
 	BeforeAll(func() {
 		By("validating that infrastructure is ready")
+		Expect(utils.CurlImage()).NotTo(BeEmpty(), "run E2E tests through Make so E2E_CURL_IMAGE is set from CURL_IMG")
 		// Validate controller is running
 		cmd := exec.Command("kubectl", "get", "pods",
 			"-l", "control-plane=controller-manager",
@@ -85,10 +86,6 @@ var _ = Describe("Manager", Ordered, func() {
 			metricsRoleBindingName, "--ignore-not-found")
 		_, _ = utils.Run(cmd)
 
-		By("cleaning up PostgreSQL infra namespace")
-		cmd = exec.Command("kubectl", "delete", "namespace", "e2e-durable-infra", "--ignore-not-found")
-		_, _ = utils.Run(cmd)
-
 		// Note: Controller, CRDs, cert-manager, and namespace are preserved for test reuse
 		// Use 'make cleanup-test-e2e' to tear down the entire cluster
 	})
@@ -114,15 +111,6 @@ var _ = Describe("Manager", Ordered, func() {
 				_, _ = fmt.Fprintf(GinkgoWriter, "Kubernetes events:\n%s", eventsOutput)
 			} else {
 				_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get Kubernetes events: %s", err)
-			}
-
-			By("Fetching curl-metrics logs")
-			cmd = exec.Command("kubectl", "logs", "curl-metrics", "-n", namespace)
-			metricsOutput, err := utils.Run(cmd)
-			if err == nil {
-				_, _ = fmt.Fprintf(GinkgoWriter, "Metrics logs:\n %s", metricsOutput)
-			} else {
-				_, _ = fmt.Fprintf(GinkgoWriter, "Failed to get curl-metrics logs: %s", err)
 			}
 
 			By("Fetching controller manager pod description")
@@ -216,13 +204,13 @@ var _ = Describe("Manager", Ordered, func() {
 			By("creating the curl-metrics pod to access the metrics endpoint")
 			cmd = exec.Command("kubectl", "run", "curl-metrics", "--restart=Never",
 				"--namespace", namespace,
-				"--image=curlimages/curl:latest",
+				"--image="+utils.CurlImage(),
 				"--overrides",
 				fmt.Sprintf(`{
 					"spec": {
 						"containers": [{
 							"name": "curl",
-							"image": "curlimages/curl:latest",
+							"image": "%s",
 							"command": ["/bin/sh", "-c"],
 							"args": ["curl -v -k -H 'Authorization: Bearer %s' https://%s.%s.svc.cluster.local:8443/metrics"],
 							"securityContext": {
@@ -239,7 +227,7 @@ var _ = Describe("Manager", Ordered, func() {
 						}],
 						"serviceAccount": "%s"
 					}
-				}`, token, metricsServiceName, namespace, serviceAccountName))
+				}`, utils.CurlImage(), token, metricsServiceName, namespace, serviceAccountName))
 			_, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create curl-metrics pod")
 

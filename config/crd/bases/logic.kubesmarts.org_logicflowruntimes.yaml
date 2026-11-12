@@ -1429,97 +1429,24 @@ spec:
                       WARNING: Enable only if you can store payloads securely.
                     type: boolean
                 type: object
-              persistence:
+              persistenceMode:
+                default: Ephemeral
                 description: |-
-                  Persistence configures database connectivity.
-                  Avoid using the same schema as the Data Index.
-                maxProperties: 2
+                  PersistenceMode specifies the persistence strategy for this runtime.
+                  Defaults to Ephemeral.
+                enum:
+                - PlatformDB
+                - Ephemeral
+                type: string
+              platformRef:
+                description: PlatformRef references the platform object managing this
+                  runtime.
                 properties:
-                  dbMigrationStrategy:
-                    default: service
-                    description: |-
-                      Reserved migration strategy setting. The current controllers do not create
-                      migration Jobs or otherwise act on this field.
+                  name:
+                    description: Name of the platform object.
                     type: string
-                  postgresql:
-                    description: Connect configured services to a postgresql database.
-                    maxProperties: 3
-                    minProperties: 2
-                    properties:
-                      secretRef:
-                        description: Secret reference to the database user credentials
-                        properties:
-                          name:
-                            description: Name of the postgresql credentials secret.
-                            type: string
-                          passwordKey:
-                            description: Defaults to POSTGRESQL_PASSWORD
-                            type: string
-                          userKey:
-                            description: Defaults to POSTGRESQL_USER
-                            type: string
-                        required:
-                        - name
-                        type: object
-                      serviceRef:
-                        description: Service reference to PostgreSQL. Required for
-                          operator to construct JDBC URL.
-                        properties:
-                          databaseName:
-                            description: Name of postgresql database to be used.
-                            type: string
-                          databaseSchema:
-                            description: Schema of postgresql database to be used.
-                              When empty, the database default schema is used (typically
-                              "public").
-                            type: string
-                          name:
-                            description: Name of the DB k8s service.
-                            type: string
-                          namespace:
-                            description: |-
-                              Namespace of a Kubernetes Service. When omitted, Name is used as a hostname and Kubernetes
-                              DNS search resolves a same-namespace Service. Set Namespace to build a fully qualified
-                              address for a Service in another namespace.
-                            type: string
-                          port:
-                            description: Port to use when connecting to the DB k8s
-                              service.
-                            type: integer
-                        required:
-                        - name
-                        type: object
-                      tls:
-                        description: |-
-                          TLS configuration for PostgreSQL connections.
-                          When enabled, the operator will append SSL parameters to the JDBC URL.
-                        properties:
-                          enabled:
-                            default: false
-                            description: |-
-                              Enabled determines whether to use TLS/SSL for PostgreSQL connections.
-                              If true, SSL parameters will be added to the JDBC URL based on tlsMode.
-                              Defaults to false.
-                            type: boolean
-                          tlsMode:
-                            default: prefer
-                            description: |-
-                              TLSMode specifies the SSL connection mode for PostgreSQL.
-                              Defaults to "prefer" when enabled is true.
-                              See: https://www.postgresql.org/docs/current/libpq-ssl.html
-                            enum:
-                            - disable
-                            - allow
-                            - prefer
-                            - require
-                            - verify-ca
-                            - verify-full
-                            type: string
-                        type: object
-                    required:
-                    - secretRef
-                    - serviceRef
-                    type: object
+                required:
+                - name
                 type: object
               podTemplate:
                 description: PodTemplate allows full pod customization.

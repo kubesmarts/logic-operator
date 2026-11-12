@@ -8,6 +8,16 @@ stringData:
   POSTGRESQL_PASSWORD: flowpass
 ---
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgresql-init
+data:
+  init.sql: |
+    CREATE SCHEMA IF NOT EXISTS data_index;
+    CREATE SCHEMA IF NOT EXISTS runtime;
+    CREATE SCHEMA IF NOT EXISTS quartz;
+---
+apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: postgresql-pvc
@@ -59,6 +69,9 @@ spec:
           volumeMounts:
             - name: postgresql-storage
               mountPath: /var/lib/postgresql/data
+            - name: postgresql-init
+              mountPath: /docker-entrypoint-initdb.d/init.sql
+              subPath: init.sql
           resources:
             requests:
               memory: "256Mi"
@@ -71,7 +84,7 @@ spec:
               command:
                 - /bin/sh
                 - -c
-                - pg_isready -U $POSTGRES_USER -d logicflow
+                - pg_isready -h 127.0.0.1 -U "$POSTGRES_USER" -d logicflow
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 3
@@ -79,6 +92,9 @@ spec:
         - name: postgresql-storage
           persistentVolumeClaim:
             claimName: postgresql-pvc
+        - name: postgresql-init
+          configMap:
+            name: postgresql-init
 ---
 apiVersion: v1
 kind: Service

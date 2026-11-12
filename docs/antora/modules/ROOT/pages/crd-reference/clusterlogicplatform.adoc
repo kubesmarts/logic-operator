@@ -1,0 +1,136 @@
+include::partial$versions.adoc[]
+
+= ClusterLogicPlatform CRD Reference
+:description: Configure the cluster-scoped Logic Platform and its managed services.
+
+`ClusterLogicPlatform` is the cluster-scoped singleton configuration for platform services. It
+selects a `targetNamespace` for managed components and can configure Data Index, Workflow Gateway,
+Vector, and runtime persistence defaults. The operator accepts one `ClusterLogicPlatform` per
+cluster. `LogicFlowRuntime` resources remain namespaced and may run in other namespaces.
+
+== API Version and Kind
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: ClusterLogicPlatform
+metadata:
+  name: default
+spec:
+  targetNamespace: logic-platform
+----
+
+== Spec
+
+=== `targetNamespace`
+
+Required namespace for platform-managed Deployments, Services, and other namespaced resources.
+Create this namespace before applying the resource unless another component (such as the stack
+Helm chart) creates it. This field is immutable after creation. To move the platform, delete the
+`ClusterLogicPlatform` and recreate it with the new namespace.
+
+[IMPORTANT]
+====
+Deleting the `ClusterLogicPlatform` removes its managed Data Index, Gateway, and Vector resources.
+Cleanup may take time; wait for the platform object to be fully deleted before recreating it. Do
+not delete the old target namespace first, because the Gateway finalizer needs it to clean up.
+
+Runtime resources and PostgreSQL databases are not moved or deleted with the platform. Before
+recreating it, ensure the new target namespace has the configured PostgreSQL Service and source
+credential Secrets. If the database itself is moving, back up and restore its Data Index, runtime,
+and Quartz schemas. Runtime credential copies are synced again during reconciliation after the
+platform is recreated, provided their referenced source Secrets are available. After recreation,
+wait for the platform and runtimes to become ready before removing old database resources.
+====
+
+=== `dataIndex`
+
+Presence of `dataIndex` enables Data Index. When enabled, PostgreSQL persistence is required. Set
+`dataIndex.persistence.postgresql` with a credentials Secret and Service reference, database name,
+and schema. Set `serviceRef.namespace` when PostgreSQL is in a different namespace from
+`targetNamespace`; omit it when both resources share a namespace. See the
+xref:samples/persistence.adoc[Persistence & Data Index sample].
+
+`dataIndex.application` configures the Deployment. `dataIndex.ingress` optionally exposes the
+GraphQL endpoint. When enabled, provide a host.
+
+=== `gateway`
+
+Presence of `gateway` enables the Workflow Gateway. The operator creates its Deployment, Service,
+ServiceAccount, ClusterRoleBinding, and optional Ingress or OpenShift Route. `gateway.application`
+configures the image and pod; `gateway.ingress` controls external exposure. See
+xref:components/workflow-gateway.adoc[Workflow Gateway].
+
+=== `vector`
+
+Presence of `vector` enables the Vector DaemonSet for structured workflow logs. Configure
+`vector.watchNamespaces` for the namespace whose runtime logs it should collect. Vector's current
+upstream configuration supports a single namespace; configure one exact namespace value.
+
+=== `runtime.persistence`
+
+Optional datastore defaults for runtimes that reference this platform with `spec.platformRef` and
+use `spec.persistenceMode: PlatformDB`. Configure `runtime` and `quartz` independently under
+`runtime.persistence`. Each datastore has its own PostgreSQL connection and schema settings. See
+xref:samples/persistence.adoc[the persistence sample] for the complete YAML.
+
+== Status
+
+Status reports readiness for configured components and includes an aggregate `phase` and
+conditions. Component status is exposed under `status.dataIndex`, `status.vector`, and
+`status.gateway`.
+
+[source,yaml]
+----
+status:
+  phase: Ready
+  dataIndex:
+    ready: true
+    service:
+      graphqlEndpoint: http://data-index.logic-platform.svc.cluster.local:80/graphql
+  gateway:
+    ready: true
+    serviceRef:
+      name: default-workflow-gateway
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Ready
+      message: All enabled platform components are ready
+----
+
+== Minimal gateway-only example
+
+Data Index and Vector remain disabled when omitted. This is the same simple platform used by the
+hello-world sample; no persistence database is required.
+
+[source,yaml]
+----
+apiVersion: logic.kubesmarts.org/v1
+kind: ClusterLogicPlatform
+metadata:
+  name: default
+spec:
+  targetNamespace: logic-platform
+  gateway: {}
+----
+
+== Troubleshooting
+
+Inspect the aggregate condition and the affected component status:
+
+[source,bash]
+----
+kubectl get clusterlogicplatform default -o yaml
+kubectl describe clusterlogicplatform default
+----
+
+For Data Index, verify its PostgreSQL Secret and Service references and inspect the generated
+Deployment. For Vector, verify the configured namespace matches the runtime namespace. For the
+gateway, inspect its Deployment, Service, and optional Ingress or Route.
+
+== Related documentation
+
+* xref:components/workflow-gateway.adoc[Workflow Gateway]
+* xref:crd-reference/logicflowruntime.adoc[LogicFlowRuntime]
+* xref:concepts/workflow-instance-history.adoc[Workflow Instance History]

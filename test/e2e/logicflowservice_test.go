@@ -425,17 +425,20 @@ func logicFlowServiceMultiVersionTests() {
 		})
 
 		AfterAll(func() {
+			cmd := exec.Command("kubectl", "delete", "pod", "curl-mv-v2",
+				"-n", namespace, "--ignore-not-found")
+			_, _ = utils.Run(cmd)
 			for _, name := range []string{svcName} {
-				cmd := exec.Command("kubectl", "delete", "logicflowservice",
+				cmd = exec.Command("kubectl", "delete", "logicflowservice",
 					name, "-n", namespace, "--ignore-not-found")
 				_, _ = utils.Run(cmd)
 			}
 			for _, name := range []string{mvDefV1Name, mvDefV2Name} {
-				cmd := exec.Command("kubectl", "delete", "logicflowdefinition",
+				cmd = exec.Command("kubectl", "delete", "logicflowdefinition",
 					name, "-n", namespace, "--ignore-not-found")
 				_, _ = utils.Run(cmd)
 			}
-			cmd := exec.Command("kubectl", "delete", "logicflowruntime",
+			cmd = exec.Command("kubectl", "delete", "logicflowruntime",
 				mvRuntimeName, "-n", namespace, "--ignore-not-found")
 			_, _ = utils.Run(cmd)
 		})
@@ -555,12 +558,51 @@ spec:
 			}, 5*time.Second, 1*time.Second).Should(Succeed())
 
 			By("verifying v2 endpoint is reachable and loaded")
-			// Check that the v2 ConfigMap exists in the runtime (proves v2 is mounted)
 			Eventually(func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "configmap", "lfd-"+mvDefV2Name, "-n", namespace)
 				_, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred(), "v2 ConfigMap should exist after v1 decommission")
 			}).Should(Succeed())
+			By("waiting for the runtime rollout to complete with v2 loaded")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "deployment", mvRuntimeName, "-n", namespace,
+					"-o", "jsonpath={.status.updatedReplicas} {.status.availableReplicas} {.spec.replicas}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(strings.Fields(output)).To(Equal([]string{"1", "1", "1"}),
+					"runtime Deployment should have its updated replica available")
+
+				cmd = exec.Command("kubectl", "get", "logicflowruntime", mvRuntimeName, "-n", namespace,
+					"-o", "jsonpath={.status.definitions[?(@.version=='1.1.0')].name}")
+				output, err = utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("payment"), "runtime should report v1.1.0 loaded")
+			}, 3*time.Minute, 5*time.Second).Should(Succeed())
+
+			By("executing v2 directly through the runtime Service")
+			curlPodName := "curl-mv-v2"
+			v2URL := fmt.Sprintf("http://%s.%s.svc:80/q/flow/exec/%s/payment/1.1.0?wait=true",
+				mvRuntimeName, namespace, namespace)
+			_, err = utils.RunCurlPod(curlPodName, namespace,
+				"curl -sS --fail-with-body --retry 20 --retry-delay 2 --retry-all-errors"+
+					" -X POST -H 'Content-Type: application/json' -d '{}' '"+v2URL+"'"+
+					" -w '\\nHTTP_STATUS:%{http_code}\\n'")
+			Expect(err).NotTo(HaveOccurred())
+			var curlPhase string
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "pod", curlPodName,
+					"-n", namespace, "-o", "jsonpath={.status.phase}")
+				phase, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				curlPhase = phase
+				g.Expect(phase).To(Or(Equal("Succeeded"), Equal("Failed")))
+			}, 90*time.Second, 5*time.Second).Should(Succeed())
+			cmd = exec.Command("kubectl", "logs", curlPodName, "-n", namespace)
+			out, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(curlPhase).To(Equal("Succeeded"), "curl pod failed; response/log output: %s", out)
+			Expect(out).To(ContainSubstring("HTTP_STATUS:200"), "v2 request response: %s", out)
+			Expect(out).To(ContainSubstring("COMPLETED"))
 
 			By("verifying runtime still has v2 definition loaded")
 			Eventually(func(g Gomega) {
