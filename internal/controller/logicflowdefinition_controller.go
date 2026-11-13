@@ -83,7 +83,7 @@ func (r *LogicFlowDefinitionReconciler) Reconcile(ctx context.Context, req ctrl.
 	if changed, err := r.updateFlowIDLabels(ctx, &def, wf); err != nil {
 		return ctrl.Result{}, err
 	} else if changed {
-		return ctrl.Result{}, r.updateStatus(ctx, &def, wf)
+		return ctrl.Result{RequeueAfter: time.Second * 3}, r.updateStatus(ctx, &def, wf)
 	}
 
 	conflict, err := r.checkRuntimeConsistency(ctx, &def, wf)
