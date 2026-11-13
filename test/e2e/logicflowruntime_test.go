@@ -159,6 +159,17 @@ func logicFlowRuntimeLifecycleTests() {
 					"Workflow should be registered in the runner")
 			}
 			Eventually(verifyDefinition, 3*time.Minute).Should(Succeed())
+
+			By("waiting for the LogicFlowDefinition Ready condition")
+			verifyDefinitionReady := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "logicflowdefinition",
+					testDefinitionName, "-n", namespace,
+					"-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("True"), "Definition Ready condition should be True")
+			}
+			Eventually(verifyDefinitionReady, 3*time.Minute, 5*time.Second).Should(Succeed())
 		})
 
 		It("should execute the hello-world workflow via the runner API", func() {
