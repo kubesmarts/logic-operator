@@ -38,13 +38,16 @@ const (
 	ConditionFlowParsed        = "FlowParsed"
 	ConditionConfigMapReady    = "ConfigMapReady"
 	ConditionRuntimeConsistent = "RuntimeConsistent"
+	ConditionRuntimeRegistered = "RuntimeRegistered"
 )
 
 const (
-	ReasonRuntimeNotFound = "RuntimeNotFound"
-	ReasonRuntimeConflict = "RuntimeConflict"
-	ReasonParseError      = "ParseError"
-	ReasonSSAApplyFailed  = "SSAApplyFailed"
+	ReasonRuntimeNotFound      = "RuntimeNotFound"
+	ReasonRuntimeConflict      = "RuntimeConflict"
+	ReasonParseError           = "ParseError"
+	ReasonSSAApplyFailed       = "SSAApplyFailed"
+	ReasonAwaitingRegistration = "AwaitingRegistration"
+	ReasonRuntimeProbeFailed   = "RuntimeProbeFailed"
 )
 
 const (

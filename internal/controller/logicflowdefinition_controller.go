@@ -19,6 +19,8 @@ package controller
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/url"
 	"time"
 
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
@@ -40,6 +42,13 @@ import (
 )
 
 const ConfigMapPrefix = "lfd-"
+
+const definitionRegistrationRequeueInterval = 10 * time.Second
+
+var definitionRuntimeHTTPClient = &http.Client{
+	Timeout:   3 * time.Second,
+	Transport: &http.Transport{Proxy: nil},
+}
 
 // LogicFlowDefinitionReconciler reconciles a LogicFlowDefinition object
 type LogicFlowDefinitionReconciler struct {
@@ -74,7 +83,7 @@ func (r *LogicFlowDefinitionReconciler) Reconcile(ctx context.Context, req ctrl.
 	if changed, err := r.updateFlowIDLabels(ctx, &def, wf); err != nil {
 		return ctrl.Result{}, err
 	} else if changed {
-		return ctrl.Result{RequeueAfter: time.Second * 3}, r.updateStatus(ctx, &def, wf)
+		return ctrl.Result{}, r.updateStatus(ctx, &def, wf)
 	}
 
 	conflict, err := r.checkRuntimeConsistency(ctx, &def, wf)
@@ -97,13 +106,48 @@ func (r *LogicFlowDefinitionReconciler) Reconcile(ctx context.Context, req ctrl.
 		if apierrors.IsNotFound(err) {
 			log.Info("referenced LogicFlowRuntime not found", "runtimeRef", def.Spec.RuntimeRef.Name)
 			logicv1.SetCondition(&def.Status.Conditions, logicv1.ConditionRuntimeRefValid, metav1.ConditionFalse, def.Generation, logicv1.ReasonRuntimeNotFound, fmt.Sprintf("LogicFlowRuntime %q not found", def.Spec.RuntimeRef.Name))
+			logicv1.SetCondition(&def.Status.Conditions, logicv1.ConditionRuntimeRegistered, metav1.ConditionFalse, def.Generation, logicv1.ReasonAwaitingRegistration, "Waiting for the referenced runtime")
 			return ctrl.Result{RequeueAfter: time.Second * 30}, r.updateStatus(ctx, &def, wf)
 		}
 		return ctrl.Result{}, err
 	}
 	logicv1.SetCondition(&def.Status.Conditions, logicv1.ConditionRuntimeRefValid, metav1.ConditionTrue, def.Generation, logicv1.ReasonReady, "")
 
-	return ctrl.Result{}, r.updateStatus(ctx, &def, wf)
+	registered, reason, message := r.checkRuntimeRegistration(ctx, &rt, wf)
+	if registered {
+		logicv1.SetCondition(&def.Status.Conditions, logicv1.ConditionRuntimeRegistered, metav1.ConditionTrue, def.Generation, logicv1.ReasonReady,
+			fmt.Sprintf("Runtime %q reports workflow %s/%s version %s", rt.Name, def.Namespace, wf.Document.Name, wf.Document.Version))
+	} else {
+		logicv1.SetCondition(&def.Status.Conditions, logicv1.ConditionRuntimeRegistered, metav1.ConditionFalse, def.Generation, reason, message)
+	}
+	result := ctrl.Result{}
+	if !registered {
+		result.RequeueAfter = definitionRegistrationRequeueInterval
+	}
+
+	return result, r.updateStatus(ctx, &def, wf)
+}
+
+func (r *LogicFlowDefinitionReconciler) checkRuntimeRegistration(ctx context.Context, rt *logicv1.LogicFlowRuntime, wf *model.Workflow) (bool, string, string) {
+	path := fmt.Sprintf("/q/flow/%s/%s/%s/instances",
+		url.PathEscape(wf.Document.Namespace),
+		url.PathEscape(wf.Document.Name),
+		url.PathEscape(wf.Document.Version))
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		fmt.Sprintf("http://%s.%s.svc:%d%s", rt.Name, rt.Namespace, defaultPort, path), nil)
+	if err != nil {
+		return false, logicv1.ReasonRuntimeProbeFailed, fmt.Sprintf("build runtime instance request: %v", err)
+	}
+	response, err := definitionRuntimeHTTPClient.Do(request)
+	if err != nil {
+		return false, logicv1.ReasonRuntimeProbeFailed, fmt.Sprintf("query runtime %q workflow instances: %v", rt.Name, err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		return false, logicv1.ReasonAwaitingRegistration,
+			fmt.Sprintf("runtime %q has not registered workflow %s/%s version %s (HTTP %d)", rt.Name, wf.Document.Namespace, wf.Document.Name, wf.Document.Version, response.StatusCode)
+	}
+	return true, logicv1.ReasonReady, ""
 }
 
 func configMapName(def *logicv1.LogicFlowDefinition) string {
@@ -150,6 +194,7 @@ func (r *LogicFlowDefinitionReconciler) updateStatus(ctx context.Context, def *l
 }
 
 func (r *LogicFlowDefinitionReconciler) updateStatusWithConflictRetry(ctx context.Context, def *logicv1.LogicFlowDefinition) error {
+	setDefinitionReadyCondition(def)
 	savedStatus := def.Status.DeepCopy()
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		if err := r.Get(ctx, client.ObjectKeyFromObject(def), def); err != nil {
@@ -162,6 +207,55 @@ func (r *LogicFlowDefinitionReconciler) updateStatusWithConflictRetry(ctx contex
 		def.Status = *savedStatus
 		return r.Status().Update(ctx, def)
 	})
+}
+
+func setDefinitionReadyCondition(def *logicv1.LogicFlowDefinition) {
+	if definitionReady(def) {
+		logicv1.SetCondition(&def.Status.Conditions, logicv1.ConditionReady, metav1.ConditionTrue,
+			def.Generation, logicv1.ReasonReady, "Definition is registered in the referenced runtime")
+		return
+	}
+	requiredConditions := []string{
+		logicv1.ConditionFlowParsed,
+		logicv1.ConditionRuntimeConsistent,
+		logicv1.ConditionConfigMapReady,
+		logicv1.ConditionRuntimeRefValid,
+		logicv1.ConditionRuntimeRegistered,
+	}
+	for _, conditionType := range requiredConditions {
+		condition := logicv1.FindCondition(def.Status.Conditions, conditionType)
+		if condition == nil {
+			logicv1.SetCondition(&def.Status.Conditions, logicv1.ConditionReady, metav1.ConditionFalse,
+				def.Generation, "Reconciling", fmt.Sprintf("Waiting for %s condition", conditionType))
+			return
+		}
+		if condition.Status != metav1.ConditionTrue {
+			message := condition.Message
+			if message == "" {
+				message = fmt.Sprintf("%s condition is %s", conditionType, condition.Status)
+			}
+			logicv1.SetCondition(&def.Status.Conditions, logicv1.ConditionReady, metav1.ConditionFalse,
+				def.Generation, condition.Reason, message)
+			return
+		}
+	}
+}
+
+func definitionReady(def *logicv1.LogicFlowDefinition) bool {
+	requiredConditions := []string{
+		logicv1.ConditionFlowParsed,
+		logicv1.ConditionRuntimeConsistent,
+		logicv1.ConditionConfigMapReady,
+		logicv1.ConditionRuntimeRefValid,
+		logicv1.ConditionRuntimeRegistered,
+	}
+	for _, conditionType := range requiredConditions {
+		condition := logicv1.FindCondition(def.Status.Conditions, conditionType)
+		if condition == nil || condition.Status != metav1.ConditionTrue {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *LogicFlowDefinitionReconciler) updateFlowIDLabels(ctx context.Context, def *logicv1.LogicFlowDefinition, wf *model.Workflow) (bool, error) {
