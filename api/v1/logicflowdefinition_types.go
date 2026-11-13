@@ -85,6 +85,10 @@ type LogicFlowDefinitionStatus struct {
 	// +optional
 	ConfigMapRef *corev1.LocalObjectReference `json:"configMapRef,omitempty"`
 
+	// FlowServiceRef references the LogicFlowService that exposes this flow document.
+	// +optional
+	FlowServiceRef *corev1.LocalObjectReference `json:"flowServiceRef,omitempty"`
+
 	// Conditions represent detailed definition state.
 	// +optional
 	// +listType=map

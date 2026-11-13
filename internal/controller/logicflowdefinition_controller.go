@@ -24,6 +24,7 @@ import (
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
 	"github.com/open-workflow-specification/sdk-go/v4/model"
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -48,6 +49,7 @@ type LogicFlowDefinitionReconciler struct {
 
 // +kubebuilder:rbac:groups=logic.kubesmarts.org,resources=logicflowdefinitions,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=logic.kubesmarts.org,resources=logicflowdefinitions/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=logic.kubesmarts.org,resources=logicflowservices,verbs=list;watch
 // +kubebuilder:rbac:groups=logic.kubesmarts.org,resources=logicflowdefinitions/finalizers,verbs=update
 // +kubebuilder:rbac:groups=logic.kubesmarts.org,resources=logicflowruntimes,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
@@ -133,12 +135,16 @@ func (r *LogicFlowDefinitionReconciler) applyConfigMap(ctx context.Context, def 
 	return r.Apply(ctx, cm, client.FieldOwner(FieldOwnerLogicOperator), client.ForceOwnership)
 }
 
-func (r *LogicFlowDefinitionReconciler) updateStatus(ctx context.Context, def *logicv1.LogicFlowDefinition, wf *model.Workflow) error {
+func (r *LogicFlowDefinitionReconciler) updateStatus(ctx context.Context, def *logicv1.LogicFlowDefinition, wf *model.Workflow) (err error) {
 	def.Status.ObservedGeneration = def.Generation
 	def.Status.WorkflowName = wf.Document.Name
 	def.Status.WorkflowVersion = wf.Document.Version
 	def.Status.WorkflowNamespace = def.Namespace
 	def.Status.ConfigMapRef = &corev1.LocalObjectReference{Name: configMapName(def)}
+	def.Status.FlowServiceRef, err = r.checkServiceRelationship(ctx, def)
+	if err != nil {
+		return err
+	}
 
 	return r.updateStatusWithConflictRetry(ctx, def)
 }
@@ -148,6 +154,9 @@ func (r *LogicFlowDefinitionReconciler) updateStatusWithConflictRetry(ctx contex
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		if err := r.Get(ctx, client.ObjectKeyFromObject(def), def); err != nil {
 			return err
+		}
+		if apiequality.Semantic.DeepEqual(def.Status, *savedStatus) {
+			return nil
 		}
 		// Restore accumulated changes onto freshly fetched object
 		def.Status = *savedStatus
@@ -220,12 +229,67 @@ func (r *LogicFlowDefinitionReconciler) mapRuntimeToDefinitions(ctx context.Cont
 	return requests
 }
 
+func (r *LogicFlowDefinitionReconciler) mapServiceToDefinitions(ctx context.Context, obj client.Object) []reconcile.Request {
+	svc, ok := obj.(*logicv1.LogicFlowService)
+	if !ok {
+		return nil
+	}
+	refs := make(map[string]struct{})
+	if svc.Spec.DefaultDefinition != nil {
+		refs[svc.Spec.DefaultDefinition.Name] = struct{}{}
+	}
+	for _, traffic := range svc.Spec.Traffic {
+		refs[traffic.DefinitionRef.Name] = struct{}{}
+	}
+
+	var defs logicv1.LogicFlowDefinitionList
+	if err := r.List(ctx, &defs, client.InNamespace(obj.GetNamespace())); err != nil {
+		return nil
+	}
+	requests := make([]reconcile.Request, 0, len(refs))
+	for i := range defs.Items {
+		def := &defs.Items[i]
+		_, referenced := refs[def.Name]
+		previouslyLinked := def.Status.FlowServiceRef != nil && def.Status.FlowServiceRef.Name == svc.Name
+		if !referenced && !previouslyLinked {
+			continue
+		}
+		requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{
+			Name: defs.Items[i].Name, Namespace: defs.Items[i].Namespace,
+		}})
+	}
+	return requests
+}
+
+func (r *LogicFlowDefinitionReconciler) checkServiceRelationship(ctx context.Context, def *logicv1.LogicFlowDefinition) (*corev1.LocalObjectReference, error) {
+	var services logicv1.LogicFlowServiceList
+	if err := r.List(ctx, &services, client.InNamespace(def.Namespace)); err != nil {
+		return nil, fmt.Errorf("list LogicFlowServices in namespace %q: %w", def.Namespace, err)
+	}
+
+	for i := range services.Items {
+		svc := &services.Items[i]
+		if svc.Spec.DefaultDefinition != nil && svc.Spec.DefaultDefinition.Name == def.Name {
+			return &corev1.LocalObjectReference{Name: svc.Name}, nil
+		}
+		for _, traffic := range svc.Spec.Traffic {
+			if traffic.DefinitionRef.Name == def.Name {
+				return &corev1.LocalObjectReference{Name: svc.Name}, nil
+			}
+		}
+	}
+	return nil, nil
+}
+
 func (r *LogicFlowDefinitionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&logicv1.LogicFlowDefinition{}).
 		Owns(&corev1.ConfigMap{}).
 		Watches(&logicv1.LogicFlowRuntime{},
 			handler.EnqueueRequestsFromMapFunc(r.mapRuntimeToDefinitions),
+		).
+		Watches(&logicv1.LogicFlowService{},
+			handler.EnqueueRequestsFromMapFunc(r.mapServiceToDefinitions),
 		).
 		Named("logicflowdefinition").
 		Complete(r)

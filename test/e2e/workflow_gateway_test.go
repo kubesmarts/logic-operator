@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -204,6 +205,33 @@ spec:
 			Expect(err).NotTo(HaveOccurred())
 			DeferCleanup(stopPortForward)
 
+			By("waiting for the runner to register the workflow")
+			verifyRunnerWorkflow := func(g Gomega) {
+				resp, err := http.Get(runnerURL + "/q/flow/definitions?namespace=" + url.QueryEscape(testNamespace))
+				if err != nil {
+					g.Expect(err).NotTo(HaveOccurred())
+					return
+				}
+				defer func() { _ = resp.Body.Close() }()
+				g.Expect(resp.StatusCode).To(Equal(http.StatusOK), "runner definitions endpoint should be ready")
+
+				var definitions []struct {
+					Namespace string `json:"namespace"`
+					Name      string `json:"name"`
+					Version   string `json:"version"`
+				}
+				g.Expect(json.NewDecoder(resp.Body).Decode(&definitions)).To(Succeed())
+				found := false
+				for _, definition := range definitions {
+					if definition.Namespace == testNamespace && definition.Name == "sleepy-workflow" && definition.Version == "1.0.0" {
+						found = true
+						break
+					}
+				}
+				g.Expect(found).To(BeTrue(), "workflow is not registered in the runner yet: %#v", definitions)
+			}
+			Eventually(verifyRunnerWorkflow, 2*time.Minute, time.Second).Should(Succeed())
+
 			readCompletedCount := func() (float64, error) {
 				resp, err := http.Get(runnerURL + "/q/metrics")
 				if err != nil {
@@ -246,10 +274,12 @@ spec:
 			resp, err := http.Post(execURL, "application/json", bytes.NewReader(execBody))
 			Expect(err).NotTo(HaveOccurred(), "Failed to post workflow execution")
 			defer func() { _ = resp.Body.Close() }()
-			Expect(resp.StatusCode).To(Equal(http.StatusAccepted), "Execution should be accepted")
+			respBytes, err := io.ReadAll(resp.Body)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.StatusCode).To(Equal(http.StatusAccepted), "Execution should be accepted; response: %s", string(respBytes))
 
 			var execResp map[string]interface{}
-			err = json.NewDecoder(resp.Body).Decode(&execResp)
+			err = json.Unmarshal(respBytes, &execResp)
 			Expect(err).NotTo(HaveOccurred())
 			instanceID, ok := execResp["instanceId"].(string)
 			Expect(ok).To(BeTrue(), "Response should include instanceId")

@@ -104,7 +104,9 @@ func (v *LogicFlowServiceValidator) validateDefinitions(ctx context.Context, obj
 		if err := v.Reader.Get(ctx, client.ObjectKey{Name: ref, Namespace: obj.Namespace}, &def); err != nil {
 			return fmt.Errorf("definition %q not found", ref)
 		}
-
+		if def.Status.FlowServiceRef != nil && def.Status.FlowServiceRef.Name != obj.Name {
+			return fmt.Errorf("definition %q is already exposed by the LogicFlowService %q", ref, def.Status.FlowServiceRef.Name)
+		}
 		if i == 0 {
 			runtimeName = def.Spec.RuntimeRef.Name
 		} else if def.Spec.RuntimeRef.Name != runtimeName {
