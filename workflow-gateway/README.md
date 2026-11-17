@@ -16,9 +16,12 @@ service's ingress or traffic policy. Otherwise, the gateway uses the workflow's
 (runner container port 8080). A `LogicFlowService` is optional.
 
 Async execution stores an in-memory instance-to-lease identity mapping. Suspend, resume, and cancel
-resolve the current lease holder and call the runner pod on port 8080; if that lookup is not
-available, the gateway falls back to the runtime Service. Keep the gateway at one replica until
-this state is shared across replicas. An HPA may be used with `maxReplicas: 1`.
+use the cached mapping when available. On a cache miss, the gateway queries the runner's workflow
+`/discovery` endpoint through the runtime Kubernetes Service, caches the returned application ID,
+then resolves the current lease holder and calls that runner pod on port 8080. A discovery 404 falls
+back to the runtime Service for compatibility with older runners and missing instances. Keep the
+gateway at one replica until this state is shared across replicas. An HPA may be used with
+`maxReplicas: 1`.
 
 ## Build and run
 

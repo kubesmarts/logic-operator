@@ -86,7 +86,7 @@ func TestResolveInstance_CachedAndPodFound(t *testing.T) {
 	// Cache the instance
 	resolver.CacheInstance("instance-1", "default/my-lease")
 
-	dest, err := resolver.ResolveInstance(context.Background(), "default", "hello", "instance-1")
+	dest, err := resolver.ResolveInstance(context.Background(), "default", "hello", "", "instance-1")
 	require.NoError(t, err)
 	assert.Equal(t, URL("http://pod-abc123:8080"), dest.URL)
 	assert.Equal(t, DestinationPod, dest.Kind)
@@ -101,7 +101,7 @@ func TestResolveInstance_NotCached_FallsBackToService(t *testing.T) {
 	key := WorkflowKey{Namespace: "default", Name: "hello", Version: "1.0"}
 	endpoints.Replace(map[WorkflowKey]URL{key: "https://hello.example.com"})
 
-	dest, err := resolver.ResolveInstance(context.Background(), "default", "hello", "unknown-instance")
+	dest, err := resolver.ResolveInstance(context.Background(), "default", "hello", "", "unknown-instance")
 	require.NoError(t, err)
 	assert.Equal(t, URL("https://hello.example.com"), dest.URL)
 	assert.Equal(t, DestinationService, dest.Kind)
@@ -119,10 +119,29 @@ func TestResolveInstance_PodLookupReturnsNotFound_FallsBackToService(t *testing.
 	// Cache the instance with a lease, but the pod won't be found
 	resolver.CacheInstance("instance-1", "default/my-lease")
 
-	dest, err := resolver.ResolveInstance(context.Background(), "default", "hello", "instance-1")
+	dest, err := resolver.ResolveInstance(context.Background(), "default", "hello", "", "instance-1")
 	require.NoError(t, err)
 	assert.Equal(t, URL("https://hello.example.com"), dest.URL)
 	assert.Equal(t, DestinationService, dest.Kind)
+	assert.False(t, resolver.HasCachedInstance("instance-1"), "stale lease cache entry should be evicted")
+}
+
+func TestDiscoveryCandidates_SelectVersionOrReturnAllVersions(t *testing.T) {
+	resolver := NewResolver(NewExecutionEndpointStore(), NewInstanceStore(), nil)
+	resolver.UpdateRuntimeEndpoints(map[WorkflowKey]URL{
+		{Namespace: "default", Name: "hello", Version: "1.0.0"}: "http://runner-v1.default",
+		{Namespace: "default", Name: "hello", Version: "2.0.0"}: "http://runner-v2.default",
+		{Namespace: "other", Name: "hello", Version: "3.0.0"}:   "http://other.default",
+	})
+
+	versioned := resolver.DiscoveryCandidates("default", "hello", "1.0.0")
+	require.Len(t, versioned, 1)
+	assert.Equal(t, "1.0.0", versioned[0].Version)
+
+	unversioned := resolver.DiscoveryCandidates("default", "hello", "")
+	require.Len(t, unversioned, 2)
+	assert.Equal(t, "2.0.0", unversioned[0].Version)
+	assert.Equal(t, "1.0.0", unversioned[1].Version)
 }
 
 func TestResolveInstance_NoServiceEndpoint_ReturnsError(t *testing.T) {
@@ -131,7 +150,7 @@ func TestResolveInstance_NoServiceEndpoint_ReturnsError(t *testing.T) {
 	pods := newFakePodResolver(nil)
 	resolver := NewResolver(endpoints, instances, pods)
 
-	dest, err := resolver.ResolveInstance(context.Background(), "default", "missing", "unknown-instance")
+	dest, err := resolver.ResolveInstance(context.Background(), "default", "missing", "", "unknown-instance")
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrWorkflowNotFound))
 	assert.Empty(t, dest.URL)
