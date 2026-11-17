@@ -581,11 +581,13 @@ spec:
 
 			By("executing v2 directly through the runtime Service")
 			curlPodName := "curl-mv-v2"
+			definitionURL := fmt.Sprintf("http://%s.%s.svc:80/q/flow/definitions/%s/payment/1.1.0",
+				mvRuntimeName, namespace, namespace)
 			v2URL := fmt.Sprintf("http://%s.%s.svc:80/q/flow/exec/%s/payment/1.1.0?wait=true",
 				mvRuntimeName, namespace, namespace)
 			_, err = utils.RunCurlPod(curlPodName, namespace,
-				"curl -sS --fail-with-body --retry 20 --retry-delay 2 --retry-all-errors"+
-					" -X POST -H 'Content-Type: application/json' -d '{}' '"+v2URL+"'"+
+				"curl -sS --fail --retry 5 --retry-delay 2 --retry-all-errors --max-time 5 '"+definitionURL+"' -o /dev/null && "+
+					"curl -sS --fail-with-body --connect-timeout 5 --max-time 30 -X POST -H 'Content-Type: application/json' -d '{}' '"+v2URL+"'"+
 					" -w '\\nHTTP_STATUS:%{http_code}\\n'")
 			Expect(err).NotTo(HaveOccurred())
 			var curlPhase string
