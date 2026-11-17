@@ -640,9 +640,9 @@ catalog-push: ## Push a catalog image.
 
 # Vector Config Recipes
 .PHONY: sync-configs
-sync-configs: ## Update logic-apps dependency to latest main and sync Vector configs.
-	@echo "Updating logic-apps dependency to latest main..."
-	go get -u github.com/kubesmarts/logic-apps/data-index/collectors@main
+sync-configs: ## Sync Vector configs from the pinned logic-apps commit.
+	@echo "Updating logic-apps dependency to commit aa71c7d..."
+	go get github.com/kubesmarts/logic-apps/data-index/collectors@aa71c7ddc5b13bfe81e2df310f4c924d78c6f77c
 	@echo "Syncing data-index configs from Go module..."
 	@mkdir -p internal/controller/configs
 	@MODPATH=$$(go list -m -f '{{.Dir}}' github.com/kubesmarts/logic-apps/data-index/collectors 2>/dev/null); \
