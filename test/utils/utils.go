@@ -324,7 +324,22 @@ func RunCurlPod(podName, namespace, curlArgs string) (string, error) {
 		"--namespace", namespace,
 		"--image="+image,
 		"--overrides", overrides)
-	return Run(cmd)
+	output, err := Run(cmd)
+	if err != nil {
+		return output, err
+	}
+	DeferCleanup(func() {
+		if !CurrentSpecReport().Failed() {
+			return
+		}
+		logs, err := Run(exec.Command("kubectl", "logs", podName, "-n", namespace))
+		if err != nil {
+			_, _ = fmt.Fprintf(GinkgoWriter, "unable to collect curl pod %q logs: %v\n", podName, err)
+			return
+		}
+		_, _ = fmt.Fprintf(GinkgoWriter, "Curl pod %q logs:\n%s\n", podName, logs)
+	})
+	return output, nil
 }
 
 // CurlImage returns the curl image configured by the Makefile for E2E pods.
