@@ -129,7 +129,7 @@ func (r *LogicFlowDefinitionReconciler) Reconcile(ctx context.Context, req ctrl.
 }
 
 func (r *LogicFlowDefinitionReconciler) checkRuntimeRegistration(ctx context.Context, rt *logicv1.LogicFlowRuntime, wf *model.Workflow) (bool, string, string) {
-	path := fmt.Sprintf("/q/flow/%s/%s/%s/instances",
+	path := fmt.Sprintf("/q/flow/definitions/%s/%s/%s",
 		url.PathEscape(wf.Document.Namespace),
 		url.PathEscape(wf.Document.Name),
 		url.PathEscape(wf.Document.Version))
@@ -140,12 +140,16 @@ func (r *LogicFlowDefinitionReconciler) checkRuntimeRegistration(ctx context.Con
 	}
 	response, err := definitionRuntimeHTTPClient.Do(request)
 	if err != nil {
-		return false, logicv1.ReasonRuntimeProbeFailed, fmt.Sprintf("query runtime %q workflow instances: %v", rt.Name, err)
+		return false, logicv1.ReasonRuntimeProbeFailed, fmt.Sprintf("query runtime %q definition: %v", rt.Name, err)
 	}
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {
-		return false, logicv1.ReasonAwaitingRegistration,
-			fmt.Sprintf("runtime %q has not registered workflow %s/%s version %s (HTTP %d)", rt.Name, wf.Document.Namespace, wf.Document.Name, wf.Document.Version, response.StatusCode)
+		reason := logicv1.ReasonRuntimeProbeFailed
+		if response.StatusCode == http.StatusNotFound {
+			reason = logicv1.ReasonAwaitingRegistration
+		}
+		return false, reason,
+			fmt.Sprintf("runtime %q definition endpoint for workflow %s/%s version %s returned HTTP %d", rt.Name, wf.Document.Namespace, wf.Document.Name, wf.Document.Version, response.StatusCode)
 	}
 	return true, logicv1.ReasonReady, ""
 }
