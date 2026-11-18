@@ -124,10 +124,15 @@ func (w *Watcher) doRecompute(ctx context.Context) {
 		return
 	}
 
-	// Start with direct runtime-Service routes so gateway-only workflows work
-	// without a LogicFlowService. Overlay configured LogicFlowService URLs for
-	// workflows that have one, preserving ingress and traffic-policy behavior.
-	endpoints, errs := BuildRuntimeServiceEndpoints(definitions.Items)
+	// Keep direct runtime-Service routes for discovery calls. Use them as the
+	// execution fallback for gateway-only workflows. Overlay configured
+	// LogicFlowService URLs to preserve ingress and traffic-policy behavior.
+	runtimeEndpoints, errs := BuildRuntimeServiceEndpoints(definitions.Items)
+	w.resolver.UpdateRuntimeEndpoints(runtimeEndpoints)
+	endpoints := make(map[routing.WorkflowKey]routing.URL, len(runtimeEndpoints))
+	for key, endpoint := range runtimeEndpoints {
+		endpoints[key] = endpoint
+	}
 	definitionsByName := make(map[string]*logicv1.LogicFlowDefinition, len(definitions.Items))
 	for i := range definitions.Items {
 		def := &definitions.Items[i]

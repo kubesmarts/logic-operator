@@ -45,14 +45,14 @@ Workflow runtimes (quarkus-flow) hold workflow-instance state in memory, partiti
 1. **Gateway as an entry point:** The workflow-gateway can be the entry point for workflow operations. Execution uses a configured LogicFlowService URL when one matches the workflow, with the runtime Kubernetes Service as fallback; instance-addressed follow-up operations route **directly to the owning pod** over the cluster network, bypassing the ingress.
 
 2. **Routing model:** `instanceId → leaseId → pod`, where `leaseId == workflowApplicationId == shard`.
-   - `instanceId → leaseId`: returned in the async `/exec` response as the `workflowApplicationId` field; the authoritative copy lives in the runtime's PostgreSQL (`instanceId → workflowApplicationId`)
+   - `instanceId → leaseId`: returned in the async `/exec` response as the `workflowApplicationId` field. On a gateway cache miss, the gateway calls the runner's workflow-scoped `/discovery` endpoint through the runtime Kubernetes Service; the runner resolves the owner from its configured persistence backend.
    - `leaseId → pod`: resolved **live** from the Kubernetes Lease object's `HolderIdentity` (the holding pod's name) and then the pod's IP. It is never cached, so pod failover requires no routing-table update — the next lookup is already current.
 
 3. **Pod resolution mechanism:** Pod resolution is done with two targeted Kubernetes GETs per follow-up call: get the Lease by its deterministic name, get the Pod by HolderIdentity name to read `status.podIP`. No Pod/Lease informer cache is required initially because follow-up operations are low-frequency relative to start. If volume later warrants, upgrade to label-scoped informers: pods carry `app.kubernetes.io/part-of=logic-platform`; member leases carry `app.kubernetes.io/managed-by=quarkus-flow`.
 
-4. **Instance-to-leaseId cache:** The gateway caches `instanceId → leaseId` in a per-replica in-memory LRU bounded by SIZE (configurable at gateway startup, e.g. ~20MB), not by a time-based TTL (a TTL may exist only as a secondary backstop). The cache is a pure latency optimization: PostgreSQL is the source of truth, so cache loss and gateway scale-out are harmless. An entry is evicted when a CANCEL returns OK (the instance is terminal).
+4. **Instance-to-leaseId cache:** The gateway caches `instanceId → leaseId` in a per-replica in-memory LRU bounded by SIZE (configurable at gateway startup, e.g. ~20MB), not by a time-based TTL (a TTL may exist only as a secondary backstop). The cache is a pure latency optimization: the runner's discovery endpoint is the source of truth, so cache loss and gateway scale-out are harmless. An entry is evicted when a CANCEL returns OK (the instance is terminal), when the runner returns 404, or when the direct pod call fails.
 
-5. **Cross-replica state:** Go processes do not share memory across replicas. In persistence mode, PostgreSQL IS the shared store — any replica resolves `instanceId → leaseId` from the DB on a cache miss, and clients stay dumb (they send only workflow identity + instanceId). In NON-persistence mode there is no shared store, so the client must pass the `workflowApplicationId` back on follow-up calls, or the gateway must run as a single replica. **No distributed-cache dependency** (Redis/Infinispan) is introduced.
+5. **Cross-replica state:** Go processes do not share memory across replicas. In persistence mode, any gateway replica can resolve `instanceId → leaseId` through the runner's `/discovery` endpoint on a cache miss, and clients stay dumb (they send only workflow identity + instanceId). In non-persistence mode the runner can only inspect its local active registry, so the gateway should run as a single replica. **No gateway database connection or distributed-cache dependency** (Redis/Infinispan) is introduced.
 
 6. **Historical start-path decision:** `/exec` also goes through the gateway direct-to-pod. This decision was superseded by the 2026-10-27 execution-path note above: configured LogicFlowService URLs are preferred, with the runtime Kubernetes Service as fallback when no LogicFlowService exists.
 
@@ -77,7 +77,7 @@ Workflow runtimes (quarkus-flow) hold workflow-instance state in memory, partiti
 
 - **RBAC:** The gateway needs `watch`/`get` on `coordination.k8s.io` Leases and `core` Pods across the relevant namespaces (aligns with the existing workflow-gateway discovery ClusterRole, issue #62).
 - **Network:** Pod-to-pod traffic across namespaces must be reachable (a NetworkPolicy allowance is required if policies restrict it).
-- **Runtime contract:** The async `/exec` response must include `workflowApplicationId` (the leaseId), and PostgreSQL must hold `instanceId → workflowApplicationId`.
+- **Runtime contract:** Quarkus Flow 1.4.0 or newer must expose the workflow-scoped `/discovery` endpoint and return `applicationId`; the async `/exec` response must include `workflowApplicationId` (the leaseId).
 
 ## Open & Deferred Items
 

@@ -566,11 +566,16 @@ spec:
 			By("waiting for the runtime rollout to complete with v2 loaded")
 			Eventually(func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "deployment", mvRuntimeName, "-n", namespace,
-					"-o", "jsonpath={.status.updatedReplicas} {.status.availableReplicas} {.spec.replicas}")
+					"-o", "jsonpath={.metadata.generation} {.status.observedGeneration} {.status.updatedReplicas} {.status.replicas} {.status.readyReplicas} {.status.availableReplicas} {.spec.replicas}")
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(strings.Fields(output)).To(Equal([]string{"1", "1", "1"}),
-					"runtime Deployment should have its updated replica available")
+				rollout := strings.Fields(output)
+				g.Expect(rollout).To(HaveLen(7))
+				if len(rollout) == 7 {
+					g.Expect(rollout[1]).To(Equal(rollout[0]), "runtime Deployment should have observed its latest generation")
+					g.Expect(rollout[2:]).To(Equal([]string{"1", "1", "1", "1", "1"}),
+						"runtime Deployment should have only its updated replica ready and available")
+				}
 
 				cmd = exec.Command("kubectl", "get", "logicflowruntime", mvRuntimeName, "-n", namespace,
 					"-o", "jsonpath={.status.definitions[?(@.version=='1.1.0')].name}")
@@ -586,7 +591,7 @@ spec:
 			v2URL := fmt.Sprintf("http://%s.%s.svc:80/q/flow/exec/%s/payment/1.1.0?wait=true",
 				mvRuntimeName, namespace, namespace)
 			_, err = utils.RunCurlPod(curlPodName, namespace,
-				"curl -sS --fail --retry 5 --retry-delay 2 --retry-all-errors --max-time 5 '"+definitionURL+"' -o /dev/null && "+
+				"curl -sS --fail --retry 30 --retry-delay 2 --retry-all-errors --max-time 5 '"+definitionURL+"' -o /dev/null && "+
 					"curl -sS --fail-with-body --connect-timeout 5 --max-time 30 -X POST -H 'Content-Type: application/json' -d '{}' '"+v2URL+"'"+
 					" -w '\\nHTTP_STATUS:%{http_code}\\n'")
 			Expect(err).NotTo(HaveOccurred())

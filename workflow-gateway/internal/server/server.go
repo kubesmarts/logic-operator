@@ -46,6 +46,7 @@ type Server struct {
 	router      *chi.Mux
 	ready       atomic.Bool
 	server      *http.Server
+	discovery   *http.Client
 	resolver    *routing.Resolver
 	definitions *definitions.Reader
 	diClient    *dataindex.Client
@@ -56,6 +57,7 @@ func New(config Config, resolver *routing.Resolver, defReader *definitions.Reade
 	s := &Server{
 		config:      config,
 		router:      router,
+		discovery:   &http.Client{Timeout: 5 * time.Second},
 		resolver:    resolver,
 		definitions: defReader,
 		diClient:    diClient,
@@ -226,14 +228,90 @@ func (s *Server) resolveWorkflow(w http.ResponseWriter, r *http.Request) (routin
 // resolveInstance resolves the destination for an instance operation, trying
 // lease->pod routing with a fallback to service routing.
 func (s *Server) resolveInstance(w http.ResponseWriter, r *http.Request) (routing.Destination, bool) {
-	ns, name, _ := workflowParams(r)
+	ns, name, version := workflowParams(r)
 	id := instanceID(r)
-	dest, err := s.resolver.ResolveInstance(r.Context(), ns, name, id)
+	if !s.resolver.HasCachedInstance(id) {
+		status := s.discoverInstance(r.Context(), ns, name, version, id)
+		if status != 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(status)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": http.StatusText(status)})
+			return routing.Destination{}, false
+		}
+	}
+	dest, err := s.resolver.ResolveInstance(r.Context(), ns, name, version, id)
 	if err != nil {
 		workflowNotFound(w)
 		return routing.Destination{}, false
 	}
 	return dest, true
+}
+
+type discoveredInstance struct {
+	ApplicationID string `json:"applicationId"`
+}
+
+// discoverInstance looks for an instance on the runner's direct Kubernetes
+// Service before falling back to the existing service route. A 404 is treated
+// as a cache miss so gateways can still work with runner versions that predate
+// the discovery endpoint.
+func (s *Server) discoverInstance(ctx context.Context, namespace, name, version, id string) int {
+	for _, candidate := range s.resolver.DiscoveryCandidates(namespace, name, version) {
+		endpoint, err := discoveryURL(string(candidate.URL), namespace, name, candidate.Version, id)
+		if err != nil {
+			return http.StatusBadGateway
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+		if err != nil {
+			return http.StatusBadGateway
+		}
+		resp, err := s.discovery.Do(req)
+		if err != nil {
+			return http.StatusBadGateway
+		}
+		if resp.StatusCode == http.StatusNotFound {
+			_ = resp.Body.Close()
+			continue
+		}
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			_ = resp.Body.Close()
+			return resp.StatusCode
+		}
+		if resp.StatusCode != http.StatusOK {
+			_ = resp.Body.Close()
+			return http.StatusBadGateway
+		}
+		var location discoveredInstance
+		decodeErr := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&location)
+		_ = resp.Body.Close()
+		if decodeErr != nil || location.ApplicationID == "" {
+			return http.StatusBadGateway
+		}
+		s.resolver.CacheInstance(id, location.ApplicationID)
+		return 0
+	}
+	return 0
+}
+
+func discoveryURL(baseURL, namespace, name, version, id string) (string, error) {
+	target, err := url.Parse(baseURL)
+	if err != nil {
+		return "", err
+	}
+	segments := []string{"q", "flow", namespace, name, version, "discovery", id}
+	escapedSegments := make([]string, len(segments))
+	for i, segment := range segments {
+		escapedSegments[i] = url.PathEscape(segment)
+	}
+	basePath := strings.TrimRight(target.EscapedPath(), "/")
+	rawPath := basePath + "/" + strings.Join(escapedSegments, "/")
+	decodedPath, err := url.PathUnescape(rawPath)
+	if err != nil {
+		return "", err
+	}
+	target.Path = decodedPath
+	target.RawPath = rawPath
+	return target.String(), nil
 }
 
 // proxyInstanceOperation proxies an instance operation (suspend/resume/cancel) to its resolved destination.
@@ -254,6 +332,18 @@ func (s *Server) proxyInstanceOperation(w http.ResponseWriter, r *http.Request, 
 
 	runnerPath := constructRunnerPath(ns, name, version, id, operation)
 	proxy := newReverseProxy(target, runnerPath)
+	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, _ error) {
+		s.resolver.RemoveInstance(id)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "workflow runner is unavailable"})
+	}
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		if resp.StatusCode == http.StatusNotFound || (operation == "cancel" && resp.StatusCode >= 200 && resp.StatusCode < 300) {
+			s.resolver.RemoveInstance(id)
+		}
+		return nil
+	}
 	proxy.ServeHTTP(w, r)
 }
 
