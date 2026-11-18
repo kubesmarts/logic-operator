@@ -4,9 +4,11 @@ import (
 	"context"
 	"testing"
 
+	"github.com/kubesmarts/logic-operator/utils"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/discovery"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -88,6 +90,30 @@ func traffic(defName string, weight int32) TrafficSpec {
 	}
 }
 
+type mockDiscovery struct {
+	discovery.DiscoveryInterface
+	groups []metav1.APIGroup
+}
+
+func (m *mockDiscovery) ServerGroups() (*metav1.APIGroupList, error) {
+	return &metav1.APIGroupList{
+		Groups: m.groups,
+	}, nil
+}
+
+func mockDiscoveryClient(apiGroups []string) discovery.DiscoveryInterface {
+	groups := make([]metav1.APIGroup, 0, len(apiGroups))
+	for _, name := range apiGroups {
+		groups = append(groups, metav1.APIGroup{
+			Name: name,
+			Versions: []metav1.GroupVersionForDiscovery{
+				{GroupVersion: name + "/v1", Version: "v1"},
+			},
+		})
+	}
+	return &mockDiscovery{groups: groups}
+}
+
 func TestLogicFlowServiceValidator_ValidateCreate(t *testing.T) {
 	def1 := testDefinition("def-v1", testRuntimeName, "payment")
 	def2 := testDefinition("def-v2", testRuntimeName, "payment")
@@ -98,6 +124,8 @@ func TestLogicFlowServiceValidator_ValidateCreate(t *testing.T) {
 		name    string
 		objs    []runtime.Object
 		svc     *LogicFlowService
+		setup   func()
+		cleanup func()
 		wantErr bool
 		errMsg  string
 	}{
@@ -131,33 +159,95 @@ func TestLogicFlowServiceValidator_ValidateCreate(t *testing.T) {
 			name:    "neither traffic nor defaultDefinition",
 			svc:     testService(),
 			wantErr: true,
-			errMsg:  "one of spec.traffic or spec.defaultDefinition is required",
+			errMsg:  "one of traffic or defaultDefinition must be specified",
 		},
 		{
 			name:    "both traffic and defaultDefinition",
 			objs:    []runtime.Object{def1},
 			svc:     testService(withDefaultDefinition("def-v1"), withTraffic(traffic("def-v1", 100))),
 			wantErr: true,
-			errMsg:  "mutually exclusive",
+			errMsg:  "may not be specified together with spec.traffic",
 		},
 		{
 			name:    "traffic weights not 100",
 			objs:    []runtime.Object{def1, def2},
 			svc:     testService(withTraffic(traffic("def-v1", 80), traffic("def-v2", 10))),
 			wantErr: true,
-			errMsg:  "must sum to 100, got 90",
+			errMsg:  "weights must sum to 100, got 90",
 		},
 		{
 			name:    "missing host in nginx mode",
 			objs:    []runtime.Object{def1},
 			svc:     testService(withDefaultDefinition("def-v1"), withHost("")),
 			wantErr: true,
-			errMsg:  "spec.ingress.host is required for nginx Ingress mode",
+			errMsg:  "must be specified for nginx ingress mode",
 		},
 		{
 			name: "no host required when gatewayRef is set",
 			objs: []runtime.Object{def1},
 			svc:  testService(withDefaultDefinition("def-v1"), withHost(""), withGatewayRef("my-gateway")),
+			setup: func() {
+				utils.SetNoStandardsAPIsAvailabilityFromDiscovery(mockDiscoveryClient([]string{"gateway.networking.k8s.io"}))
+			},
+			cleanup: func() {
+				utils.SetNoStandardsAPIsAvailabilityFromDiscovery(mockDiscoveryClient([]string{}))
+			},
+		},
+		{
+			name: "gatewayRef set but GatewayAPI is unavailable",
+			objs: []runtime.Object{def1},
+			svc:  testService(withDefaultDefinition("def-v1"), withHost(""), withGatewayRef("my-gateway")),
+			setup: func() {
+				utils.SetNoStandardsAPIsAvailabilityFromDiscovery(mockDiscoveryClient([]string{}))
+			},
+			cleanup: func() {
+				utils.SetNoStandardsAPIsAvailabilityFromDiscovery(mockDiscoveryClient([]string{}))
+			},
+			wantErr: true,
+			errMsg:  "GatewayAPI is not available in the cluster",
+		},
+		{
+			name:    "invalid default definition name format",
+			objs:    []runtime.Object{def1},
+			svc:     testService(withDefaultDefinition("invalid_name-1")),
+			wantErr: true,
+			errMsg:  "does not conform to a valid logicflowdefinition name",
+		},
+		{
+			name:    "invalid traffic definition ref name format",
+			objs:    []runtime.Object{def1},
+			svc:     testService(withTraffic(traffic("invalid_ref-2", 100))),
+			wantErr: true,
+			errMsg:  "does not conform to a valid logicflowdefinition name",
+		},
+		{
+			name: "nginx traffic splitting with more than 2 entries is forbidden",
+			objs: []runtime.Object{def1, def2, testDefinition("def-v3", testRuntimeName, "payment")},
+			svc: testService(withTraffic(traffic("def-v1", 40), traffic("def-v2", 30), traffic("def-v3", 30)), func(s *LogicFlowService) {
+				className := "nginx"
+				s.Spec.Ingress.IngressClassName = &className
+			}),
+			setup: func() {
+				utils.SetNoStandardsAPIsAvailabilityFromDiscovery(mockDiscoveryClient([]string{}))
+			},
+			cleanup: func() {
+				utils.SetNoStandardsAPIsAvailabilityFromDiscovery(mockDiscoveryClient([]string{}))
+			},
+			wantErr: true,
+			errMsg:  "nginx traffic splitting only supports two paths",
+		},
+		{
+			name: "openshift traffic splitting without gatewayRef is forbidden",
+			objs: []runtime.Object{def1, def2},
+			svc:  testService(withTraffic(traffic("def-v1", 50), traffic("def-v2", 50))),
+			setup: func() {
+				utils.SetNoStandardsAPIsAvailabilityFromDiscovery(mockDiscoveryClient([]string{"route.openshift.io"}))
+			},
+			cleanup: func() {
+				utils.SetNoStandardsAPIsAvailabilityFromDiscovery(mockDiscoveryClient([]string{}))
+			},
+			wantErr: true,
+			errMsg:  "OpenShift clusters only support traffic splitting",
 		},
 		{
 			name: "ingressClassName nginx is valid",
@@ -226,7 +316,7 @@ func TestLogicFlowServiceValidator_ValidateCreate(t *testing.T) {
 				},
 			})),
 			wantErr: true,
-			errMsg:  "mutually exclusive",
+			errMsg:  "may not be specified together with spec.ingress.tls.certManager",
 		},
 		{
 			name: "TLS certManager missing issuer name",
@@ -236,7 +326,7 @@ func TestLogicFlowServiceValidator_ValidateCreate(t *testing.T) {
 				CertManager: &CertManagerSpec{},
 			})),
 			wantErr: true,
-			errMsg:  "issuerRef.name is required",
+			errMsg:  "does not conform to a valid kubernetes resource name",
 		},
 		{
 			name: "TLS disabled skips validation",
@@ -253,6 +343,12 @@ func TestLogicFlowServiceValidator_ValidateCreate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.setup != nil {
+				tt.setup()
+			}
+			if tt.cleanup != nil {
+				defer tt.cleanup()
+			}
 			v := testServiceValidator(tt.objs...)
 			_, err := v.ValidateCreate(context.Background(), tt.svc)
 			if (err != nil) != tt.wantErr {
@@ -329,6 +425,56 @@ func TestLogicFlowServiceValidator_ValidateDelete(t *testing.T) {
 	if err != nil {
 		t.Errorf("ValidateDelete() unexpected error: %v", err)
 	}
+}
+
+func TestLogicFlowServiceDefaulter_Default(t *testing.T) {
+	defaulter := &LogicFlowServiceDefaulter{}
+
+	t.Run("defaults empty ingress class name to nginx when gatewayRef is nil", func(t *testing.T) {
+		svc := &LogicFlowService{}
+		err := defaulter.Default(context.Background(), svc)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if svc.Spec.Ingress.IngressClassName == nil || *svc.Spec.Ingress.IngressClassName != "nginx" {
+			t.Errorf("expected IngressClassName to default to 'nginx', got %v", svc.Spec.Ingress.IngressClassName)
+		}
+	})
+
+	t.Run("does not default ingress class name when gatewayRef is set", func(t *testing.T) {
+		svc := &LogicFlowService{
+			Spec: LogicFlowServiceSpec{
+				Ingress: IngressSpec{
+					GatewayRef: &GatewayRef{Name: "my-gateway"},
+				},
+			},
+		}
+		err := defaulter.Default(context.Background(), svc)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if svc.Spec.Ingress.IngressClassName != nil {
+			t.Errorf("expected IngressClassName to remain nil when gatewayRef is set, got %v", *svc.Spec.Ingress.IngressClassName)
+		}
+	})
+
+	t.Run("preserves existing ingress class name when preset", func(t *testing.T) {
+		customClass := "custom-ingress"
+		svc := &LogicFlowService{
+			Spec: LogicFlowServiceSpec{
+				Ingress: IngressSpec{
+					IngressClassName: &customClass,
+				},
+			},
+		}
+		err := defaulter.Default(context.Background(), svc)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if svc.Spec.Ingress.IngressClassName == nil || *svc.Spec.Ingress.IngressClassName != "custom-ingress" {
+			t.Errorf("expected IngressClassName to preserve 'custom-ingress', got %v", svc.Spec.Ingress.IngressClassName)
+		}
+	})
 }
 
 func contains(s, substr string) bool {

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/util/validation"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
@@ -21,8 +23,7 @@ var _ admission.Defaulter[*LogicFlowRuntime] = &LogicFlowRuntimeDefaulter{}
 // management, so this default is conditional on the resource kind.
 func ApplyLogicFlowRuntimeDefaults(obj *LogicFlowRuntime) {
 	if obj.Spec.Replicas == nil {
-		one := int32(1)
-		obj.Spec.Replicas = &one
+		obj.Spec.Replicas = new(int32(1))
 	}
 	if obj.Spec.PersistenceMode == nil {
 		// Default to Ephemeral, but override for known runner images with specific variants
@@ -63,34 +64,91 @@ func (v *LogicFlowRuntimeValidator) ValidateDelete(_ context.Context, _ *LogicFl
 }
 
 func (v *LogicFlowRuntimeValidator) validate(obj *LogicFlowRuntime) (admission.Warnings, error) {
-	if err := ValidateSecuritySpec(obj.Spec.Security); err != nil {
-		return nil, err
-	}
-	if obj.Spec.Image != "" {
-		var effP *DatastoreSpec
-		if !IsEphemeral(obj) {
-			effP = &DatastoreSpec{PostgreSQL: &PersistencePostgreSQL{}}
-		}
-		if err := ValidateRunnerImage(obj.Spec.Image, effP); err != nil {
-			return nil, err
-		}
-	}
-	if err := v.validatePlatformRef(obj.Spec.PlatformRef); err != nil {
-		return nil, err
-	}
-	return nil, nil
+	allErrs := field.ErrorList{}
+	allErrs = append(allErrs, validateRunnerImage(obj)...)
+	allErrs = append(allErrs, validateSecuritySpec(obj)...)
+	allErrs = append(allErrs, validatePlatformRef(obj)...)
+	return nil, allErrs.ToAggregate()
 }
 
-func (v *LogicFlowRuntimeValidator) validatePlatformRef(platformRef *PlatformReference) error {
+func HasPersistence(p *DatastoreSpec) bool {
+	return p != nil && p.PostgreSQL != nil
+}
+
+func isKnownRunnerImage(image string) bool {
+	return strings.HasPrefix(image, FlowRunnerRegistry+"/"+FlowRunnerImage+":")
+}
+
+func validateRunnerImage(obj *LogicFlowRuntime) field.ErrorList {
+	allErrs := field.ErrorList{}
+	if obj.Spec.Image != "" {
+		if !isKnownRunnerImage(obj.Spec.Image) {
+			return allErrs
+		}
+		fieldPath := field.NewPath("spec", "image")
+		if strings.HasSuffix(obj.Spec.Image, "-"+ImageVariantMinimal) && !IsEphemeral(obj) {
+			return field.ErrorList{field.Invalid(fieldPath, obj.Spec.Image, fmt.Sprintf("configured image is the minimal variant and does not support persistence; set spec.persistenceMode=Ephemeral or use the standard image"))}
+		}
+		if strings.HasSuffix(obj.Spec.Image, "-"+ImageVariantStandard) && IsEphemeral(obj) {
+			return field.ErrorList{field.Invalid(fieldPath, obj.Spec.Image, fmt.Sprintf("configured image is the standard variant and requires persistence; set spec.persistenceMode=PlatformDB or use the minimal image"))}
+		}
+	}
+	return allErrs
+}
+
+func validateSecuritySpec(flow *LogicFlowRuntime) field.ErrorList {
+	allErrs := field.ErrorList{}
+	sec := flow.Spec.Security
+	fieldPath := field.NewPath("spec", "security")
+	if sec.Type != RuntimeSecurityAPIKey && sec.APIKey != nil {
+		allErrs = append(allErrs, field.Forbidden(fieldPath.Child("apiKey"), fmt.Sprintf("must not be set when security type is %s", securityTypeOrNone(sec.Type))))
+	}
+	if sec.Type != RuntimeSecurityOIDC && sec.OIDC != nil {
+		allErrs = append(allErrs, field.Forbidden(fieldPath.Child("oidc"), fmt.Sprintf("must not be set when security type is %s", securityTypeOrNone(sec.Type))))
+	}
+	switch sec.Type {
+	case RuntimeSecurityAPIKey:
+		if sec.APIKey == nil || len(sec.APIKey.Keys) == 0 {
+			allErrs = append(allErrs, field.Required(fieldPath.Child("apiKey", "keys"), "must be specified when security type is API_KEY"))
+		}
+	case RuntimeSecurityOIDC:
+		if sec.OIDC == nil {
+			allErrs = append(allErrs, field.Required(fieldPath.Child("oidc"), "must be specified when security type is OIDC"))
+		} else {
+			if sec.OIDC.AuthServerURL == "" {
+				allErrs = append(allErrs, field.Required(fieldPath.Child("oidc", "authServerUrl"), "must be specified when security type is OIDC"))
+			}
+			if sec.OIDC.ClientID == "" {
+				allErrs = append(allErrs, field.Required(fieldPath.Child("oidc", "clientId"), "must be specified when security type is OIDC"))
+			}
+			if sec.OIDC.ClientSecret.Name == "" {
+				allErrs = append(allErrs, field.Required(fieldPath.Child("oidc", "clientSecret", "name"), "must be specified when security type is OIDC"))
+			} else if len(validation.IsDNS1123Subdomain(sec.OIDC.ClientSecret.Name)) > 0 {
+				allErrs = append(allErrs, field.Invalid(fieldPath.Child("oidc", "clientSecret", "name"), sec.OIDC.ClientSecret.Name, "does not conform to a valid secret name"))
+			}
+		}
+	}
+	return allErrs
+}
+
+func securityTypeOrNone(t RuntimeSecurityType) RuntimeSecurityType {
+	if t == "" {
+		return RuntimeSecurityNone
+	}
+	return t
+}
+
+func validatePlatformRef(obj *LogicFlowRuntime) field.ErrorList {
+	allErrs := field.ErrorList{}
 	// If platformRef is omitted, auto-discovery is used (allowed)
-	if platformRef == nil {
-		return nil
+	if obj.Spec.PlatformRef == nil {
+		return allErrs
 	}
 
 	// Name must be non-empty when platformRef is present
-	if platformRef.Name == "" {
-		return fmt.Errorf("spec.platformRef.name is required when platformRef is set")
+	if obj.Spec.PlatformRef.Name == "" {
+		return append(allErrs, field.Required(field.NewPath("spec", "platformRef", "name"), "is required when platformRef is set"))
 	}
 
-	return nil
+	return allErrs
 }

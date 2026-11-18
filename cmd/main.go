@@ -256,6 +256,7 @@ func main() {
 		os.Exit(1)
 	}
 	if err := builder.WebhookManagedBy(mgr, &logicv1.LogicFlowService{}).
+		WithDefaulter(&logicv1.LogicFlowServiceDefaulter{}).
 		WithValidator(&logicv1.LogicFlowServiceValidator{Reader: mgr.GetClient()}).
 		Complete(); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "LogicFlowService")

@@ -3,56 +3,12 @@ package v1
 import (
 	"fmt"
 	"regexp"
-	"strings"
 )
 
 const (
 	DefaultPgsqlSecretUserKey     = "POSTGRESQL_USER"
 	DefaultPgsqlSecretPasswordKey = "POSTGRESQL_PASSWORD"
 )
-
-func isKnownRunnerImage(image string) bool {
-	return strings.HasPrefix(image, FlowRunnerRegistry+"/"+FlowRunnerImage+":")
-}
-
-func HasPersistence(p *DatastoreSpec) bool {
-	return p != nil && p.PostgreSQL != nil
-}
-
-func ValidateRunnerImage(image string, persistence *DatastoreSpec) error {
-	if !isKnownRunnerImage(image) {
-		return nil
-	}
-
-	if strings.HasSuffix(image, "-"+ImageVariantMinimal) && HasPersistence(persistence) {
-		return fmt.Errorf("image %q is the minimal variant and does not support persistence; set spec.persistenceMode=Ephemeral or use the standard image", image)
-	}
-	if strings.HasSuffix(image, "-"+ImageVariantStandard) && !HasPersistence(persistence) {
-		return fmt.Errorf("image %q is the standard variant and requires persistence; set spec.persistenceMode=PlatformDB or use the minimal image", image)
-	}
-
-	return nil
-}
-
-func ValidateSecuritySpec(sec RuntimeSecuritySpec) error {
-	switch sec.Type {
-	case RuntimeSecurityAPIKey:
-		if sec.APIKey == nil || len(sec.APIKey.Keys) == 0 {
-			return fmt.Errorf("spec.security.apiKey.keys is required when security type is API_KEY")
-		}
-	case RuntimeSecurityOIDC:
-		if sec.OIDC == nil {
-			return fmt.Errorf("spec.security.oidc is required when security type is OIDC")
-		}
-		if sec.OIDC.AuthServerURL == "" {
-			return fmt.Errorf("spec.security.oidc.authServerUrl is required when security type is OIDC")
-		}
-		if sec.OIDC.ClientID == "" {
-			return fmt.Errorf("spec.security.oidc.clientId is required when security type is OIDC")
-		}
-	}
-	return nil
-}
 
 var imageFormatRegex = regexp.MustCompile(`^[a-z0-9.-]+(/[a-z0-9._-]+)*:[a-zA-Z0-9._-]+$`)
 
