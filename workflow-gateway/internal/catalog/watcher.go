@@ -7,6 +7,8 @@ import (
 	"time"
 
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal"
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/definitions"
 	toolscache "k8s.io/client-go/tools/cache"
 	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -22,8 +24,9 @@ const debounceInterval = 500 * time.Millisecond
 // LogicFlowService URL takes precedence; the referenced runtime Service is the
 // fallback when no matching LogicFlowService route exists.
 type Watcher struct {
-	cache    crcache.Cache
-	resolver *routing.Resolver
+	cache       crcache.Cache
+	resolver    *routing.Resolver
+	definitions *definitions.DefinitionStore
 
 	ctx           context.Context
 	debounceTimer *time.Timer
@@ -34,8 +37,8 @@ type Watcher struct {
 	initialSync chan struct{}
 }
 
-func NewWatcher(c crcache.Cache, resolver *routing.Resolver) *Watcher {
-	return &Watcher{cache: c, resolver: resolver, initialSync: make(chan struct{})}
+func NewWatcher(c crcache.Cache, resolver *routing.Resolver, definitionStore *definitions.DefinitionStore) *Watcher {
+	return &Watcher{cache: c, resolver: resolver, definitions: definitionStore, initialSync: make(chan struct{})}
 }
 
 // StripDefinitionSpec removes the heavy flow document before the object enters
@@ -113,8 +116,8 @@ func (w *Watcher) doRecompute(ctx context.Context) {
 	}
 	logger := log.FromContext(ctx).WithName("catalog")
 
-	definitions := &logicv1.LogicFlowDefinitionList{}
-	if err := w.cache.List(ctx, definitions); err != nil {
+	defs := &logicv1.LogicFlowDefinitionList{}
+	if err := w.cache.List(ctx, defs); err != nil {
 		logger.Error(err, "failed to list LogicFlowDefinitions")
 		return
 	}
@@ -124,28 +127,34 @@ func (w *Watcher) doRecompute(ctx context.Context) {
 		return
 	}
 
-	// Start with direct runtime-Service routes so gateway-only workflows work
+	// Start with direct runtime-service routes so gateway-only workflows work
 	// without a LogicFlowService. Overlay configured LogicFlowService URLs for
 	// workflows that have one, preserving ingress and traffic-policy behavior.
-	endpoints, errs := BuildRuntimeServiceEndpoints(definitions.Items)
-	definitionsByName := make(map[string]*logicv1.LogicFlowDefinition, len(definitions.Items))
-	for i := range definitions.Items {
-		def := &definitions.Items[i]
+	endpoints, errs := buildKubernetesServiceEndpoints(defs.Items)
+	definitionsByName := make(map[string]*logicv1.LogicFlowDefinition, len(defs.Items))
+	for i := range defs.Items {
+		def := &defs.Items[i]
 		definitionsByName[def.Namespace+"/"+def.Name] = def
 	}
-	serviceEndpoints, serviceErrs := BuildExecutionEndpoints(services.Items, func(namespace, name string) (*logicv1.LogicFlowDefinition, error) {
+	flowServiceEndpoints, serviceErrs := buildLogicFlowServiceEndpoints(services.Items, func(namespace, name string) (*logicv1.LogicFlowDefinition, error) {
 		if def, ok := definitionsByName[namespace+"/"+name]; ok {
 			return def, nil
 		}
 		return nil, fmt.Errorf("definition %s/%s not found in gateway cache", namespace, name)
 	})
+	// Replace kubernetes service endpoints with LogicFlowService endpoints to keep the traffic split policy
 	errs = append(errs, serviceErrs...)
-	for key, endpoint := range serviceEndpoints {
+	for key, endpoint := range flowServiceEndpoints {
 		endpoints[key] = endpoint
 	}
 	for _, err := range errs {
 		logger.Error(err, "error building endpoints")
 	}
 	w.resolver.UpdateExecutionEndpoints(endpoints)
+	definitionKeys := make([]internal.WorkflowKey, 0, len(endpoints))
+	for key := range endpoints {
+		definitionKeys = append(definitionKeys, key)
+	}
+	w.definitions.Replace(definitionKeys)
 	logger.V(1).Info("workflow endpoint table updated", "numEndpoints", len(endpoints), "numErrors", len(errs))
 }

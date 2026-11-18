@@ -80,10 +80,10 @@ func (r *LogicFlowDefinitionReconciler) Reconcile(ctx context.Context, req ctrl.
 	}
 	logicv1.SetCondition(&def.Status.Conditions, logicv1.ConditionFlowParsed, metav1.ConditionTrue, def.Generation, logicv1.ReasonReady, "")
 
-	if changed, err := r.updateFlowIDLabels(ctx, &def, wf); err != nil {
+	if changed, err := r.normalizeFlowDefinition(ctx, &def, wf); err != nil {
 		return ctrl.Result{}, err
 	} else if changed {
-		return ctrl.Result{RequeueAfter: time.Second * 3}, r.updateStatus(ctx, &def, wf)
+		return ctrl.Result{RequeueAfter: time.Second * 3}, nil
 	}
 
 	conflict, err := r.checkRuntimeConsistency(ctx, &def, wf)
@@ -167,7 +167,6 @@ func (r *LogicFlowDefinitionReconciler) applyConfigMap(ctx context.Context, def 
 	childLabels[logicv1.LabelWorkflowVersion] = wf.Document.Version
 	childLabels[logicv1.LabelWorkflowNamespace] = def.Namespace
 
-	wf.Document.Namespace = def.Namespace
 	flowYAML, err := sigsyaml.Marshal(wf)
 	if err != nil {
 		return fmt.Errorf("failed to serialize flow document: %w", err)
@@ -262,22 +261,27 @@ func definitionReady(def *logicv1.LogicFlowDefinition) bool {
 	return true
 }
 
-func (r *LogicFlowDefinitionReconciler) updateFlowIDLabels(ctx context.Context, def *logicv1.LogicFlowDefinition, wf *model.Workflow) (bool, error) {
+func (r *LogicFlowDefinitionReconciler) normalizeFlowDefinition(ctx context.Context, def *logicv1.LogicFlowDefinition, wf *model.Workflow) (bool, error) {
+	base := def.DeepCopy()
+	flowChanged, err := logicv1.NormalizeLogicFlowDefinitionNamespace(def, wf)
+	if err != nil {
+		return false, err
+	}
 	if def.Labels == nil {
 		def.Labels = make(map[string]string)
 	}
-	if def.Labels[logicv1.LabelWorkflowName] == wf.Document.Name &&
-		def.Labels[logicv1.LabelWorkflowVersion] == wf.Document.Version &&
-		def.Labels[logicv1.LabelWorkflowNamespace] == def.Namespace &&
-		def.Labels[logicv1.LabelRuntimeRef] == def.Spec.RuntimeRef.Name {
+	labelsChanged := def.Labels[logicv1.LabelWorkflowName] != wf.Document.Name ||
+		def.Labels[logicv1.LabelWorkflowVersion] != wf.Document.Version ||
+		def.Labels[logicv1.LabelWorkflowNamespace] != def.Namespace ||
+		def.Labels[logicv1.LabelRuntimeRef] != def.Spec.RuntimeRef.Name
+	if !flowChanged && !labelsChanged {
 		return false, nil
 	}
-	patch := client.MergeFrom(def.DeepCopy())
 	def.Labels[logicv1.LabelWorkflowName] = wf.Document.Name
 	def.Labels[logicv1.LabelWorkflowVersion] = wf.Document.Version
 	def.Labels[logicv1.LabelWorkflowNamespace] = def.Namespace
 	def.Labels[logicv1.LabelRuntimeRef] = def.Spec.RuntimeRef.Name
-	if err := r.Patch(ctx, def, patch); err != nil {
+	if err := r.Patch(ctx, def, client.MergeFrom(base)); err != nil {
 		return false, err
 	}
 	return true, nil

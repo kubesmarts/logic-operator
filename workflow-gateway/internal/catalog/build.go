@@ -4,21 +4,22 @@ import (
 	"fmt"
 
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/routing"
 )
 
 // definitionResolver fetches a LogicFlowDefinition by name within a namespace.
 type definitionResolver func(namespace, name string) (*logicv1.LogicFlowDefinition, error)
 
-// BuildExecutionEndpoints constructs the execution endpoint map by following each
-// Service's references to the Definitions it exposes. The routing key comes from
-// the Definition's labels; the URL from the Service status. Returns the map and
+// buildLogicFlowServiceEndpoints constructs the execution endpoint map by following each
+// LogicFlowService's references to the Definitions it exposes. The routing key comes from
+// the Definition's labels; the URL from the LogicFlowService status. Returns the map and
 // a slice of non-fatal errors.
-func BuildExecutionEndpoints(
+func buildLogicFlowServiceEndpoints(
 	services []logicv1.LogicFlowService,
 	resolve definitionResolver,
-) (map[routing.WorkflowKey]routing.URL, []error) {
-	endpoints := make(map[routing.WorkflowKey]routing.URL)
+) (map[internal.WorkflowKey]routing.URL, []error) {
+	endpoints := make(map[internal.WorkflowKey]routing.URL)
 	var errs []error
 
 	for i := range services {
@@ -51,14 +52,14 @@ func BuildExecutionEndpoints(
 	return endpoints, errs
 }
 
-// BuildRuntimeServiceEndpoints maps each LogicFlowDefinition directly to the
+// buildKubernetesServiceEndpoints maps each LogicFlowDefinition directly to the
 // Kubernetes Service created for its referenced LogicFlowRuntime. These routes
 // let the gateway serve workflows that do not have a LogicFlowService; a
 // configured LogicFlowService URL can override them in the watcher.
-func BuildRuntimeServiceEndpoints(
+func buildKubernetesServiceEndpoints(
 	definitions []logicv1.LogicFlowDefinition,
-) (map[routing.WorkflowKey]routing.URL, []error) {
-	endpoints := make(map[routing.WorkflowKey]routing.URL, len(definitions))
+) (map[internal.WorkflowKey]routing.URL, []error) {
+	endpoints := make(map[internal.WorkflowKey]routing.URL, len(definitions))
 	var errs []error
 
 	for i := range definitions {
@@ -102,12 +103,12 @@ func referencedDefinitions(svc *logicv1.LogicFlowService) []string {
 	return names
 }
 
-func workflowKeyFromLabels(def *logicv1.LogicFlowDefinition) (routing.WorkflowKey, error) {
+func workflowKeyFromLabels(def *logicv1.LogicFlowDefinition) (internal.WorkflowKey, error) {
 	ns := def.Labels[logicv1.LabelWorkflowNamespace]
 	name := def.Labels[logicv1.LabelWorkflowName]
 	version := def.Labels[logicv1.LabelWorkflowVersion]
 	if ns == "" || name == "" || version == "" {
-		return routing.WorkflowKey{}, fmt.Errorf("definition %s/%s missing workflow labels (namespace=%q, name=%q, version=%q)", def.Namespace, def.Name, ns, name, version)
+		return internal.WorkflowKey{}, fmt.Errorf("definition %s/%s missing workflow labels (namespace=%q, name=%q, version=%q)", def.Namespace, def.Name, ns, name, version)
 	}
-	return routing.WorkflowKey{Namespace: ns, Name: name, Version: version}, nil
+	return internal.WorkflowKey{Namespace: ns, Name: name, Version: version}, nil
 }

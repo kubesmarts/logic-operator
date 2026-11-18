@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -19,12 +20,19 @@ var ErrDefinitionNotFound = errors.New("workflow definition not found")
 type Reader struct {
 	cache     cache.Cache
 	apiReader client.Reader
+	store     *DefinitionStore
 }
 
 // NewReader returns a new Reader that uses the provided cache and API reader.
-func NewReader(c cache.Cache, apiReader client.Reader) *Reader {
-	return &Reader{cache: c, apiReader: apiReader}
+func NewReader(c cache.Cache, apiReader client.Reader, store *DefinitionStore) *Reader {
+	return &Reader{cache: c, apiReader: apiReader, store: store}
 }
+
+// Snapshot returns the watched workflow identities known to the gateway.
+func (r *Reader) Snapshot() []internal.WorkflowKey { return r.store.Snapshot() }
+
+// Store returns the catalog store updated by the Kubernetes watcher.
+func (r *Reader) Store() *DefinitionStore { return r.store }
 
 // FetchDefinition finds the definition in namespace ns whose labels match the
 // workflow name and version, then returns the full object from the API server.

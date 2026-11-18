@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal"
 )
 
 // ErrWorkflowNotFound is returned when no endpoint matches the workflow identity.
@@ -63,7 +64,7 @@ func NewResolver(endpoints *ExecutionEndpointStore, instances *InstanceStore, po
 }
 
 // UpdateExecutionEndpoints atomically replaces the execution endpoint table.
-func (r *Resolver) UpdateExecutionEndpoints(endpoints map[WorkflowKey]URL) {
+func (r *Resolver) UpdateExecutionEndpoints(endpoints map[internal.WorkflowKey]URL) {
 	r.endpoints.Replace(endpoints)
 }
 
@@ -72,11 +73,11 @@ func (r *Resolver) ExecutionEndpointsSnapshot() []ExecutionEndpoint {
 	return r.endpoints.Snapshot()
 }
 
-// ResolveExecution returns the execution endpoint URL for a workflow.
+// ResolveExecutionEndpoint returns the execution endpoint URL for a workflow.
 // version may be empty to resolve the latest.
-func (r *Resolver) ResolveExecution(namespace, name, version string) (URL, error) {
+func (r *Resolver) ResolveExecutionEndpoint(namespace, name, version string) (URL, error) {
 	if version != "" {
-		url, ok := r.endpoints.Lookup(WorkflowKey{Namespace: namespace, Name: name, Version: version})
+		url, ok := r.endpoints.Lookup(internal.WorkflowKey{Namespace: namespace, Name: name, Version: version})
 		if !ok {
 			return "", ErrWorkflowNotFound
 		}
@@ -98,7 +99,7 @@ func (r *Resolver) ResolveInstance(ctx context.Context, namespace, name, instanc
 			return Destination{URL: podURL, Kind: DestinationPod}, nil
 		}
 	}
-	url, err := r.ResolveExecution(namespace, name, "")
+	url, err := r.ResolveExecutionEndpoint(namespace, name, "")
 	if err != nil {
 		return Destination{}, err
 	}

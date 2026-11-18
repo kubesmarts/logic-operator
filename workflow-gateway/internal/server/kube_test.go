@@ -20,6 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/catalog"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/dataindex"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/definitions"
@@ -54,12 +55,13 @@ func startGateway(ctx context.Context, t *testing.T) (*routing.Resolver, *defini
 	})
 	require.NoError(t, err)
 	resolver := routing.NewResolver(routing.NewExecutionEndpointStore(), routing.NewInstanceStore(), nil)
+	definitionStore := definitions.NewDefinitionStore()
 	store := platform.NewPlatformStore()
-	require.NoError(t, mgr.Add(catalog.NewWatcher(mgr.GetCache(), resolver)))
+	require.NoError(t, mgr.Add(catalog.NewWatcher(mgr.GetCache(), resolver, definitionStore)))
 	require.NoError(t, mgr.Add(platform.NewPlatformWatcher(mgr.GetCache(), store, "default")))
 	go func() { _ = mgr.Start(ctx) }()
 	require.True(t, mgr.WaitForCacheSync(ctx), "shared cache must sync")
-	reader := definitions.NewReader(mgr.GetCache(), mgr.GetAPIReader())
+	reader := definitions.NewReader(mgr.GetCache(), mgr.GetAPIReader(), definitionStore)
 	return resolver, reader, store
 }
 
@@ -148,8 +150,11 @@ func TestE2EListDefinitions(t *testing.T) {
 	c := testutil.NewTestClient(t, testCfg, testScheme)
 	require.NoError(t, c.Create(ctx, testutil.NewDefinition(
 		"default", "def-hello",
-		"acme", "hello", "v1",
+		"default", "hello", "v1",
 	)))
+	unroutedDefinition := testutil.NewDefinition("default", "def-unrouted", "default", "unrouted", "v1")
+	unroutedDefinition.Spec.RuntimeRef.Name = ""
+	require.NoError(t, c.Create(ctx, unroutedDefinition))
 	testutil.CreateServiceWithURL(ctx, t, c,
 		"default", "svc-hello", "def-hello",
 		"https://hello.example.com",
@@ -158,7 +163,7 @@ func TestE2EListDefinitions(t *testing.T) {
 	resolver, reader, _ := startGateway(ctx, t)
 
 	require.Eventually(t, func() bool {
-		_, err := resolver.ResolveExecution("acme", "hello", "v1")
+		_, err := resolver.ResolveExecutionEndpoint("default", "hello", "v1")
 		return err == nil
 	}, 10*time.Second, 100*time.Millisecond, "route must appear in store before querying server")
 
@@ -178,12 +183,21 @@ func TestE2EListDefinitions(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "application/json", resp.Header.Get("Content-Type"))
 
-	var keys []routing.WorkflowKey
-	require.NoError(t, json.Unmarshal(body, &keys))
-	require.Len(t, keys, 1)
-	assert.Equal(t, "acme", keys[0].Namespace)
-	assert.Equal(t, "hello", keys[0].Name)
-	assert.Equal(t, "v1", keys[0].Version)
+	var definitions []struct {
+		internal.WorkflowKey
+		Links map[string]struct {
+			Href string `json:"href"`
+		} `json:"_links"`
+	}
+	require.NoError(t, json.Unmarshal(body, &definitions))
+	require.Len(t, definitions, 1)
+	assert.Equal(t, internal.WorkflowKey{Namespace: "default", Name: "hello", Version: "v1"}, definitions[0].WorkflowKey)
+	selfLink := definitions[0].Links["self"].Href
+	assert.Equal(t, "/v1/definitions/default/hello/v1", selfLink)
+	definitionResp, err := http.Get(ts.URL + selfLink)
+	require.NoError(t, err)
+	defer func() { _ = definitionResp.Body.Close() }()
+	assert.Equal(t, http.StatusOK, definitionResp.StatusCode, "the advertised self link should resolve")
 
 	// Upstream URL must never be exposed to API clients.
 	assert.NotContains(t, string(body), "hello.example.com")
@@ -293,7 +307,7 @@ func TestE2EGetDefinition(t *testing.T) {
 
 	// Wait for route to appear
 	require.Eventually(t, func() bool {
-		_, err := resolver.ResolveExecution("default", "hello", "v1")
+		_, err := resolver.ResolveExecutionEndpoint("default", "hello", "v1")
 		return err == nil
 	}, 10*time.Second, 100*time.Millisecond, "route must appear in store")
 
@@ -328,13 +342,13 @@ func TestE2EAsyncExecuteAndInstanceCaching(t *testing.T) {
 	c := testutil.NewTestClient(t, testCfg, testScheme)
 	require.NoError(t, c.Create(ctx, testutil.NewDefinition(
 		"default", "def-async",
-		"demo", "workflow", "v1",
+		"default", "workflow", "v1",
 	)))
 
 	// Mock runner server
 	runnerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if r.URL.Path == "/q/flow/exec/demo/workflow" && r.URL.Query().Get("wait") == "false" {
+		if r.URL.Path == "/q/flow/exec/default/workflow" && r.URL.Query().Get("wait") == "false" {
 			// Async execute: return 202 with instanceId and pod name
 			w.WriteHeader(http.StatusAccepted)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -359,7 +373,7 @@ func TestE2EAsyncExecuteAndInstanceCaching(t *testing.T) {
 
 	// Wait for endpoint
 	require.Eventually(t, func() bool {
-		_, err := resolver.ResolveExecution("demo", "workflow", "v1")
+		_, err := resolver.ResolveExecutionEndpoint("default", "workflow", "v1")
 		return err == nil
 	}, 10*time.Second, 100*time.Millisecond, "route must appear")
 
@@ -368,7 +382,7 @@ func TestE2EAsyncExecuteAndInstanceCaching(t *testing.T) {
 	defer ts.Close()
 
 	// Execute async workflow
-	execResp, err := http.Post(ts.URL+"/v1/runtime/demo/workflow", "application/json", nil)
+	execResp, err := http.Post(ts.URL+"/v1/runtime/default/workflow", "application/json", nil)
 	require.NoError(t, err)
 	defer func() { _ = execResp.Body.Close() }()
 

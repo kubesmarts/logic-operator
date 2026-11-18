@@ -45,7 +45,7 @@ paths:
       tags: [Definitions]
       responses:
         "200":
-          description: Workflow identities from the gateway routing table
+          description: Workflow identities and links to the operations available for each workflow
           content:
             application/json:
               schema:
@@ -392,7 +392,7 @@ components:
   schemas:
     WorkflowDefinition:
       type: object
-      required: [namespace, name, version]
+      required: [namespace, name, version, _links]
       properties:
         namespace:
           type: string
@@ -400,6 +400,28 @@ components:
           type: string
         version:
           type: string
+        _links:
+          type: object
+          description: HATEOAS links for operations on this workflow and its instances
+          additionalProperties:
+            $ref: "#/components/schemas/ApiLink"
+
+    ApiLink:
+      type: object
+      required: [href, method, operationId]
+      properties:
+        href:
+          type: string
+          description: Relative API path; may be a URI template when templated is true
+        method:
+          type: string
+          enum: [GET, POST]
+        operationId:
+          type: string
+          description: Operation identifier from this OpenAPI document
+        templated:
+          type: boolean
+          description: True when href contains URI template variables
 
     InstanceStatus:
       type: string

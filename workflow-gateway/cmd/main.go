@@ -95,11 +95,13 @@ func main() {
 	platformStore := platform.NewPlatformStore()
 	diClient := dataindex.NewClient(platformStore)
 
-	// On-demand reader for full LogicFlowDefinition documents.
-	defReader := definitions.NewReader(mgr.GetCache(), mgr.GetAPIReader())
+	// Definition identities are maintained by the catalog watcher; full flow
+	// documents are still fetched on demand by the reader.
+	definitionStore := definitions.NewDefinitionStore()
+	defReader := definitions.NewReader(mgr.GetCache(), mgr.GetAPIReader(), definitionStore)
 
 	// Register watchers as manager runnables (share the manager's cache).
-	catalogWatcher := catalog.NewWatcher(mgr.GetCache(), resolver)
+	catalogWatcher := catalog.NewWatcher(mgr.GetCache(), resolver, definitionStore)
 	if err := mgr.Add(catalogWatcher); err != nil {
 		setupLog.Error(err, "unable to register catalog watcher")
 		os.Exit(1)

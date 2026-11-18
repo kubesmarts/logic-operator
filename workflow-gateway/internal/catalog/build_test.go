@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/routing"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -104,10 +105,10 @@ func TestBuildExecutionEndpoints(t *testing.T) {
 			return nil, fmt.Errorf("not found")
 		}
 
-		endpoints, errs := BuildExecutionEndpoints([]logicv1.LogicFlowService{svc}, resolve)
+		endpoints, errs := buildLogicFlowServiceEndpoints([]logicv1.LogicFlowService{svc}, resolve)
 
 		assert.Empty(t, errs)
-		expected := routing.WorkflowKey{Namespace: "myapp", Name: "flow", Version: "v1"}
+		expected := internal.WorkflowKey{Namespace: "myapp", Name: "flow", Version: "v1"}
 		assert.Equal(t, routing.URL("https://external.example.com"), endpoints[expected])
 		assert.Equal(t, 1, len(endpoints))
 	})
@@ -124,7 +125,7 @@ func TestBuildExecutionEndpoints(t *testing.T) {
 			return nil, fmt.Errorf("not found")
 		}
 
-		endpoints, errs := BuildExecutionEndpoints([]logicv1.LogicFlowService{svc}, resolve)
+		endpoints, errs := buildLogicFlowServiceEndpoints([]logicv1.LogicFlowService{svc}, resolve)
 
 		assert.Empty(t, errs)
 		assert.Empty(t, endpoints)
@@ -141,7 +142,7 @@ func TestBuildExecutionEndpoints(t *testing.T) {
 			return nil, fmt.Errorf("not found")
 		}
 
-		endpoints, errs := BuildExecutionEndpoints([]logicv1.LogicFlowService{svc}, resolve)
+		endpoints, errs := buildLogicFlowServiceEndpoints([]logicv1.LogicFlowService{svc}, resolve)
 
 		assert.NotEmpty(t, errs)
 		assert.Empty(t, endpoints)
@@ -165,7 +166,7 @@ func TestBuildExecutionEndpoints(t *testing.T) {
 			return nil, fmt.Errorf("not found")
 		}
 
-		endpoints, errs := BuildExecutionEndpoints([]logicv1.LogicFlowService{svc}, resolve)
+		endpoints, errs := buildLogicFlowServiceEndpoints([]logicv1.LogicFlowService{svc}, resolve)
 
 		assert.NotEmpty(t, errs)
 		assert.Empty(t, endpoints)
@@ -179,7 +180,7 @@ func TestBuildExecutionEndpoints(t *testing.T) {
 			return nil, fmt.Errorf("definition %s/%s not found", namespace, name)
 		}
 
-		endpoints, errs := BuildExecutionEndpoints([]logicv1.LogicFlowService{svc}, resolve)
+		endpoints, errs := buildLogicFlowServiceEndpoints([]logicv1.LogicFlowService{svc}, resolve)
 
 		assert.NotEmpty(t, errs)
 		assert.Empty(t, endpoints)
@@ -198,7 +199,7 @@ func TestBuildExecutionEndpoints(t *testing.T) {
 			return nil, fmt.Errorf("not found")
 		}
 
-		endpoints, errs := BuildExecutionEndpoints([]logicv1.LogicFlowService{svc1, svc2}, resolve)
+		endpoints, errs := buildLogicFlowServiceEndpoints([]logicv1.LogicFlowService{svc1, svc2}, resolve)
 
 		assert.NotEmpty(t, errs)
 		assert.Equal(t, 1, len(endpoints)) // First one wins
@@ -241,13 +242,13 @@ func TestBuildExecutionEndpoints(t *testing.T) {
 			return nil, fmt.Errorf("not found")
 		}
 
-		endpoints, errs := BuildExecutionEndpoints([]logicv1.LogicFlowService{svc}, resolve)
+		endpoints, errs := buildLogicFlowServiceEndpoints([]logicv1.LogicFlowService{svc}, resolve)
 
 		assert.Empty(t, errs)
 		assert.Equal(t, 2, len(endpoints))
 
-		keyV1 := routing.WorkflowKey{Namespace: "myapp", Name: "flow", Version: "v1.0"}
-		keyV2 := routing.WorkflowKey{Namespace: "myapp", Name: "flow", Version: "v2.0"}
+		keyV1 := internal.WorkflowKey{Namespace: "myapp", Name: "flow", Version: "v1.0"}
+		keyV2 := internal.WorkflowKey{Namespace: "myapp", Name: "flow", Version: "v2.0"}
 		assert.Equal(t, routing.URL("https://external.example.com"), endpoints[keyV1])
 		assert.Equal(t, routing.URL("https://external.example.com"), endpoints[keyV2])
 	})
@@ -266,11 +267,11 @@ func TestBuildExecutionEndpoints(t *testing.T) {
 			return nil, fmt.Errorf("not found")
 		}
 
-		endpoints, errs := BuildExecutionEndpoints([]logicv1.LogicFlowService{svc1, svc2}, resolve)
+		endpoints, errs := buildLogicFlowServiceEndpoints([]logicv1.LogicFlowService{svc1, svc2}, resolve)
 
 		// Same URL, no error
 		assert.Empty(t, errs)
-		expected := routing.WorkflowKey{Namespace: "myapp", Name: "flow", Version: "v1"}
+		expected := internal.WorkflowKey{Namespace: "myapp", Name: "flow", Version: "v1"}
 		assert.Equal(t, routing.URL("https://external1.example.com"), endpoints[expected])
 	})
 
@@ -281,7 +282,7 @@ func TestBuildExecutionEndpoints(t *testing.T) {
 			return nil, fmt.Errorf("transient error")
 		}
 
-		endpoints, errs := BuildExecutionEndpoints([]logicv1.LogicFlowService{svc}, resolve)
+		endpoints, errs := buildLogicFlowServiceEndpoints([]logicv1.LogicFlowService{svc}, resolve)
 
 		assert.NotEmpty(t, errs)
 		assert.Empty(t, endpoints)
@@ -304,12 +305,12 @@ func TestBuildExecutionEndpoints(t *testing.T) {
 			return nil, fmt.Errorf("not found")
 		}
 
-		endpoints, errs := BuildExecutionEndpoints([]logicv1.LogicFlowService{svc1, svc2}, resolve)
+		endpoints, errs := buildLogicFlowServiceEndpoints([]logicv1.LogicFlowService{svc1, svc2}, resolve)
 
 		assert.Empty(t, errs)
 		assert.Equal(t, 2, len(endpoints))
-		key1 := routing.WorkflowKey{Namespace: "app1", Name: "flow", Version: "v1"}
-		key2 := routing.WorkflowKey{Namespace: "app2", Name: "flow", Version: "v1"}
+		key1 := internal.WorkflowKey{Namespace: "app1", Name: "flow", Version: "v1"}
+		key2 := internal.WorkflowKey{Namespace: "app2", Name: "flow", Version: "v1"}
 		assert.Equal(t, routing.URL("https://ep1.example.com"), endpoints[key1])
 		assert.Equal(t, routing.URL("https://ep2.example.com"), endpoints[key2])
 	})

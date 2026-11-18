@@ -52,6 +52,31 @@ func testValidator() *LogicFlowDefinitionValidator {
 	}
 }
 
+func TestLogicFlowDefinitionDefaulter_UsesResourceNamespace(t *testing.T) {
+	def := &LogicFlowDefinition{
+		ObjectMeta: metav1.ObjectMeta{Name: "def", Namespace: "workflows"},
+		Spec:       LogicFlowDefinitionSpec{Flow: validFlowRaw()},
+	}
+
+	if err := (&LogicFlowDefinitionDefaulter{}).Default(context.Background(), def); err != nil {
+		t.Fatalf("Default() error = %v", err)
+	}
+	wf, err := def.Spec.ParseFlow()
+	if err != nil {
+		t.Fatalf("ParseFlow() after default = %v", err)
+	}
+	if wf.Document.Namespace != def.Namespace {
+		t.Fatalf("workflow namespace = %q, want resource namespace %q", wf.Document.Namespace, def.Namespace)
+	}
+}
+
+func TestLogicFlowDefinitionDefaulter_LeavesInvalidFlowForValidator(t *testing.T) {
+	def := &LogicFlowDefinition{Spec: LogicFlowDefinitionSpec{Flow: invalidFlowRaw()}}
+	if err := (&LogicFlowDefinitionDefaulter{}).Default(context.Background(), def); err != nil {
+		t.Fatalf("Default() should leave validation errors to the validator, got %v", err)
+	}
+}
+
 func TestLogicFlowDefinitionValidator_ValidateCreate(t *testing.T) {
 	v := testValidator()
 	ctx := context.Background()

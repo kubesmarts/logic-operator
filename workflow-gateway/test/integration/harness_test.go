@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/definitions"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/routing"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/server"
@@ -39,7 +40,7 @@ func newHeadlessGatewayWithResolver(t *testing.T) (*httptest.Server, *routing.Re
 		fakePodResolver{hostPort: "127.0.0.1"},
 		routing.WithRunnerPort(runnerPort),
 	)
-	resolver.UpdateExecutionEndpoints(map[routing.WorkflowKey]routing.URL{
+	resolver.UpdateExecutionEndpoints(map[internal.WorkflowKey]routing.URL{
 		{Namespace: "demo", Name: "hello-world", Version: "1.0.0"}: routing.URL(baseURL),
 		{Namespace: "demo", Name: "sleepy", Version: "1.0.0"}:      routing.URL(baseURL),
 	})
@@ -47,7 +48,7 @@ func newHeadlessGatewayWithResolver(t *testing.T) (*httptest.Server, *routing.Re
 	srv := server.New(
 		server.DefaultConfig(),
 		resolver,
-		definitions.NewReader(nil, nil),
+		definitions.NewReader(nil, nil, definitions.NewDefinitionStore()),
 		nil, // diClient
 	)
 
