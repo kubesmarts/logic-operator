@@ -4,4 +4,8 @@ metadata:
   name: default
 spec:
   targetNamespace: logic-platform
-  gateway: {}
+  gateway:
+    ingress:
+      enabled: true
+      host: gateway.lvh.me
+      ingressClassName: nginx

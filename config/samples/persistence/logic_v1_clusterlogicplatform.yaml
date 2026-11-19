@@ -35,6 +35,10 @@ spec:
         limits:
           memory: "512Mi"
           cpu: "250m"
+    ingress:
+      enabled: true
+      host: gateway.lvh.me
+      ingressClassName: nginx
 
   # Vector log forwarder
   vector:
