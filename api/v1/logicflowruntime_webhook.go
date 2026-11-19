@@ -64,10 +64,13 @@ func (v *LogicFlowRuntimeValidator) ValidateDelete(_ context.Context, _ *LogicFl
 }
 
 func (v *LogicFlowRuntimeValidator) validate(obj *LogicFlowRuntime) (admission.Warnings, error) {
-	allErrs := field.ErrorList{}
-	allErrs = append(allErrs, validateRunnerImage(obj)...)
-	allErrs = append(allErrs, validateSecuritySpec(obj)...)
-	allErrs = append(allErrs, validatePlatformRef(obj)...)
+	runnerErrs := validateRunnerImage(obj)
+	securityErrs := validateSecuritySpec(obj)
+	platformErrs := validatePlatformRef(obj)
+	allErrs := make(field.ErrorList, 0, len(runnerErrs)+len(securityErrs)+len(platformErrs))
+	allErrs = append(allErrs, runnerErrs...)
+	allErrs = append(allErrs, securityErrs...)
+	allErrs = append(allErrs, platformErrs...)
 	return nil, allErrs.ToAggregate()
 }
 
@@ -87,10 +90,10 @@ func validateRunnerImage(obj *LogicFlowRuntime) field.ErrorList {
 		}
 		fieldPath := field.NewPath("spec", "image")
 		if strings.HasSuffix(obj.Spec.Image, "-"+ImageVariantMinimal) && !IsEphemeral(obj) {
-			return field.ErrorList{field.Invalid(fieldPath, obj.Spec.Image, fmt.Sprintf("configured image is the minimal variant and does not support persistence; set spec.persistenceMode=Ephemeral or use the standard image"))}
+			return field.ErrorList{field.Invalid(fieldPath, obj.Spec.Image, "configured image is the minimal variant and does not support persistence; set spec.persistenceMode=Ephemeral or use the standard image")}
 		}
 		if strings.HasSuffix(obj.Spec.Image, "-"+ImageVariantStandard) && IsEphemeral(obj) {
-			return field.ErrorList{field.Invalid(fieldPath, obj.Spec.Image, fmt.Sprintf("configured image is the standard variant and requires persistence; set spec.persistenceMode=PlatformDB or use the minimal image"))}
+			return field.ErrorList{field.Invalid(fieldPath, obj.Spec.Image, "configured image is the standard variant and requires persistence; set spec.persistenceMode=PlatformDB or use the minimal image")}
 		}
 	}
 	return allErrs
