@@ -76,7 +76,7 @@ The container receives:
 
 - `QUARKUS_DATASOURCE_USERNAME` / `QUARKUS_DATASOURCE_PASSWORD` from the datastore's **DDL** credential (`migrationSecretRef`, falling back to `postgresql.secretRef`), read from `targetNamespace`.
 - `QUARKUS_DATASOURCE_JDBC_URL` built the same way as for runtimes (schema via `currentSchema`, TLS via `sslmode`).
-- `LOGIC_DB_MIGRATOR_INCLUDE` — comma-joined streams to apply (`runtime`, `quartz`, `data-index`).
+- `LOGIC_APPS_MIGRATOR_INCLUDE` — comma-joined streams to apply (`runtime`, `quartz`, `data-index`).
 
 ### Report harvesting
 

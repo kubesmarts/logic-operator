@@ -15,7 +15,7 @@ import (
 
 const (
 	MigrationContainerName = "db-migrator"
-	MigrationIncludeEnvVar = "LOGIC_DB_MIGRATOR_INCLUDE"
+	MigrationIncludeEnvVar = "LOGIC_APPS_MIGRATOR_INCLUDE"
 
 	MigrationStreamRuntime   = "runtime"
 	MigrationStreamQuartz    = "quartz"
