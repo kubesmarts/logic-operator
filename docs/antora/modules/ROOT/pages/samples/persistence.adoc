@@ -347,7 +347,7 @@ Look for messages about workflow events being processed.
 
 [source,bash]
 ----
-kubectl exec -n logic-platform -it deploy/postgresql -- psql -U flowuser logicflow \
+kubectl exec -n logic-platform -it <postgresql-pod> -- psql -U flowuser logicflow \
   -c "SELECT COUNT(*) FROM data_index.workflow_events_raw;"
 ----
 
@@ -394,7 +394,7 @@ You can inspect raw events that have not been processed yet:
 
 [source,bash]
 ----
-kubectl exec -n logic-platform -it deploy/postgresql -- psql -U flowuser logicflow \
+kubectl exec -n logic-platform -it <postgresql-pod> -- psql -U flowuser logicflow \
   -c "SELECT instance_id, name, status, event_timestamp FROM data_index.workflow_events_raw LIMIT 5;"
 ----
 
