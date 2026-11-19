@@ -3,23 +3,25 @@ package routing
 import (
 	"sort"
 	"sync"
+
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal"
 )
 
 // ExecutionEndpointStore is a concurrency-safe store of execution endpoints for workflows.
 type ExecutionEndpointStore struct {
 	mu        sync.RWMutex
-	endpoints map[WorkflowKey]URL
+	endpoints map[internal.WorkflowKey]URL
 }
 
 // NewExecutionEndpointStore creates a new, empty execution endpoint store.
 func NewExecutionEndpointStore() *ExecutionEndpointStore {
 	return &ExecutionEndpointStore{
-		endpoints: make(map[WorkflowKey]URL),
+		endpoints: make(map[internal.WorkflowKey]URL),
 	}
 }
 
 // Lookup returns the execution endpoint URL for a workflow key, or ("", false) if not found.
-func (s *ExecutionEndpointStore) Lookup(key WorkflowKey) (URL, bool) {
+func (s *ExecutionEndpointStore) Lookup(key internal.WorkflowKey) (URL, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	url, ok := s.endpoints[key]
@@ -71,11 +73,11 @@ func (s *ExecutionEndpointStore) Snapshot() []ExecutionEndpoint {
 
 // Replace atomically swaps the entire endpoint map. The input is copied so that
 // the caller cannot bypass the lock by mutating the map after return.
-func (s *ExecutionEndpointStore) Replace(endpoints map[WorkflowKey]URL) {
+func (s *ExecutionEndpointStore) Replace(endpoints map[internal.WorkflowKey]URL) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// Defensive copy: prevent caller from mutating the stored map outside the lock.
-	s.endpoints = make(map[WorkflowKey]URL, len(endpoints))
+	s.endpoints = make(map[internal.WorkflowKey]URL, len(endpoints))
 	for k, v := range endpoints {
 		s.endpoints[k] = v
 	}

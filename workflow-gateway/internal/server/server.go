@@ -18,6 +18,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/dataindex"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/definitions"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/routing"
@@ -105,16 +106,54 @@ func workflowNotFound(w http.ResponseWriter) {
 
 // Definitions
 
-// listDefinitionsHandler returns the workflow catalog from the in-memory
-// routing table.
+// listDefinitionsHandler returns the workflow catalog from the watched definitions.
 func (s *Server) listDefinitionsHandler(w http.ResponseWriter, _ *http.Request) {
-	snapshot := s.resolver.ExecutionEndpointsSnapshot()
-	keys := make([]routing.WorkflowKey, 0, len(snapshot))
-	for _, r := range snapshot {
-		keys = append(keys, r.WorkflowKey)
+	keys := s.definitions.Snapshot()
+	items := make([]definitionResource, 0, len(keys))
+	for _, key := range keys {
+		items = append(items, newDefinitionResource(key))
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(keys)
+	_ = json.NewEncoder(w).Encode(items)
+}
+
+type definitionResource struct {
+	internal.WorkflowKey
+	Links map[string]apiLink `json:"_links"`
+}
+
+type apiLink struct {
+	Href        string `json:"href"`
+	Method      string `json:"method"`
+	OperationID string `json:"operationId"`
+	Templated   bool   `json:"templated,omitempty"`
+}
+
+func newDefinitionResource(key internal.WorkflowKey) definitionResource {
+	namespace := url.PathEscape(key.Namespace)
+	name := url.PathEscape(key.Name)
+	version := url.PathEscape(key.Version)
+	identity := namespace + "/" + name + "/" + version
+	instanceQuery := url.Values{
+		"namespace": {key.Namespace},
+		"name":      {key.Name},
+		"version":   {key.Version},
+	}.Encode()
+	runtimePath := "/v1/runtime/" + namespace + "/" + name + "/" + version
+
+	return definitionResource{
+		WorkflowKey: key,
+		Links: map[string]apiLink{
+			"self":        {Href: "/v1/definitions/" + identity, Method: http.MethodGet, OperationID: "getDefinition"},
+			"execute":     {Href: runtimePath, Method: http.MethodPost, OperationID: "executeWorkflowVersioned"},
+			"executeSync": {Href: runtimePath + "/sync", Method: http.MethodPost, OperationID: "executeWorkflowSyncVersioned"},
+			"instances":   {Href: "/v1/instances/?" + instanceQuery, Method: http.MethodGet, OperationID: "listInstances"},
+			"instance":    {Href: "/v1/instances/{id}", Method: http.MethodGet, OperationID: "getInstance", Templated: true},
+			"suspend":     {Href: runtimePath + "/instance/{id}/suspend", Method: http.MethodPost, OperationID: "suspendInstanceVersioned", Templated: true},
+			"resume":      {Href: runtimePath + "/instance/{id}/resume", Method: http.MethodPost, OperationID: "resumeInstanceVersioned", Templated: true},
+			"cancel":      {Href: runtimePath + "/instance/{id}/cancel", Method: http.MethodPost, OperationID: "cancelInstanceVersioned", Templated: true},
+		},
+	}
 }
 
 // getDefinitionHandler fetches a specific flow document on demand. The informer
@@ -211,7 +250,7 @@ func (s *Server) getInstanceHandler(w http.ResponseWriter, r *http.Request) {
 // resolveWorkflow confirms the workflow exists in the routing table.
 func (s *Server) resolveWorkflow(w http.ResponseWriter, r *http.Request) (routing.URL, bool) {
 	ns, name, version := workflowParams(r)
-	execURL, err := s.resolver.ResolveExecution(ns, name, version)
+	execURL, err := s.resolver.ResolveExecutionEndpoint(ns, name, version)
 	if err == nil {
 		return execURL, true
 	}

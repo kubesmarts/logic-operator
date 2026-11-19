@@ -3,13 +3,14 @@ package routing
 import (
 	"testing"
 
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestLookupHit(t *testing.T) {
 	s := NewExecutionEndpointStore()
-	key := WorkflowKey{Namespace: "default", Name: "hello", Version: "1.0"}
-	s.Replace(map[WorkflowKey]URL{key: "https://hello.example.com"})
+	key := internal.WorkflowKey{Namespace: "default", Name: "hello", Version: "1.0"}
+	s.Replace(map[internal.WorkflowKey]URL{key: "https://hello.example.com"})
 
 	url, ok := s.Lookup(key)
 	assert.True(t, ok)
@@ -18,7 +19,7 @@ func TestLookupHit(t *testing.T) {
 
 func TestLookupMiss(t *testing.T) {
 	s := NewExecutionEndpointStore()
-	key := WorkflowKey{Namespace: "default", Name: "notfound", Version: "1.0"}
+	key := internal.WorkflowKey{Namespace: "default", Name: "notfound", Version: "1.0"}
 
 	url, ok := s.Lookup(key)
 	assert.False(t, ok)
@@ -27,7 +28,7 @@ func TestLookupMiss(t *testing.T) {
 
 func TestSnapshot(t *testing.T) {
 	s := NewExecutionEndpointStore()
-	m := map[WorkflowKey]URL{
+	m := map[internal.WorkflowKey]URL{
 		{Namespace: "ns1", Name: "a", Version: "1.0"}: "http://a.example.com",
 		{Namespace: "ns1", Name: "b", Version: "2.0"}: "http://b.example.com",
 	}
@@ -42,7 +43,7 @@ func TestSnapshot(t *testing.T) {
 
 func TestSnapshotIsACopy(t *testing.T) {
 	s := NewExecutionEndpointStore()
-	s.Replace(map[WorkflowKey]URL{
+	s.Replace(map[internal.WorkflowKey]URL{
 		{Namespace: "ns1", Name: "a", Version: "1.0"}: "http://a.example.com",
 	})
 
@@ -56,12 +57,12 @@ func TestSnapshotIsACopy(t *testing.T) {
 
 func TestConcurrentLookupAndReplace(_ *testing.T) {
 	s := NewExecutionEndpointStore()
-	key := WorkflowKey{Namespace: "ns1", Name: "concurrent", Version: "1.0"}
+	key := internal.WorkflowKey{Namespace: "ns1", Name: "concurrent", Version: "1.0"}
 
 	// Simulate concurrent access
 	go func() {
 		for i := 0; i < 100; i++ {
-			s.Replace(map[WorkflowKey]URL{key: "http://url.example.com"})
+			s.Replace(map[internal.WorkflowKey]URL{key: "http://url.example.com"})
 		}
 	}()
 
@@ -74,8 +75,8 @@ func TestConcurrentLookupAndReplace(_ *testing.T) {
 
 func TestReplaceMakesDefensiveCopy(t *testing.T) {
 	s := NewExecutionEndpointStore()
-	key := WorkflowKey{Namespace: "ns", Name: "wf", Version: "v1"}
-	original := map[WorkflowKey]URL{key: "https://original.example.com"}
+	key := internal.WorkflowKey{Namespace: "ns", Name: "wf", Version: "v1"}
+	original := map[internal.WorkflowKey]URL{key: "https://original.example.com"}
 
 	s.Replace(original)
 
@@ -90,7 +91,7 @@ func TestReplaceMakesDefensiveCopy(t *testing.T) {
 
 func TestLookupLatest_SingleVersion(t *testing.T) {
 	s := NewExecutionEndpointStore()
-	s.Replace(map[WorkflowKey]URL{
+	s.Replace(map[internal.WorkflowKey]URL{
 		{Namespace: "demo", Name: "hello", Version: "1.0.0"}: "https://hello.example.com",
 	})
 	url, ok := s.LookupLatest("demo", "hello")
@@ -102,7 +103,7 @@ func TestLookupLatest_MultipleVersions_ReturnsSameURL(t *testing.T) {
 	// All versions of a workflow share one LogicFlowService and therefore the
 	// same upstream URL. LookupLatest returns whichever it finds first.
 	s := NewExecutionEndpointStore()
-	s.Replace(map[WorkflowKey]URL{
+	s.Replace(map[internal.WorkflowKey]URL{
 		{Namespace: "demo", Name: "hello", Version: "1.0.0"}: "https://hello.example.com",
 		{Namespace: "demo", Name: "hello", Version: "2.0.0"}: "https://hello.example.com",
 	})
@@ -119,7 +120,7 @@ func TestLookupLatest_NotFound(t *testing.T) {
 
 func TestLookupLatest_DifferentNamespace(t *testing.T) {
 	s := NewExecutionEndpointStore()
-	s.Replace(map[WorkflowKey]URL{
+	s.Replace(map[internal.WorkflowKey]URL{
 		{Namespace: "prod", Name: "hello", Version: "1.0.0"}: "https://prod.example.com",
 	})
 	_, ok := s.LookupLatest("demo", "hello")

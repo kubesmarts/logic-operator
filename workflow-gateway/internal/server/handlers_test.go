@@ -7,19 +7,21 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/definitions"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/routing"
 )
 
 // helpers
 
-func newTestServer(routes map[routing.WorkflowKey]routing.URL) *Server {
+func newTestServer(routes map[internal.WorkflowKey]routing.URL) *Server {
 	resolver := routing.NewResolver(routing.NewExecutionEndpointStore(), routing.NewInstanceStore(), nil)
 	if routes != nil {
 		resolver.UpdateExecutionEndpoints(routes)
 	}
-	return New(DefaultConfig(), resolver, definitions.NewReader(nil, nil), nil)
+	return New(DefaultConfig(), resolver, definitions.NewReader(nil, nil, definitions.NewDefinitionStore()), nil)
 }
 
 // mockUpstreamServer creates a test HTTP server that mimics the quarkus-flow runner behavior.
@@ -61,17 +63,17 @@ func mockUpstreamServer() *httptest.Server {
 	}))
 }
 
-func newTestServerWithUpstream(routes map[routing.WorkflowKey]routing.URL, upstream *httptest.Server) *Server {
+func newTestServerWithUpstream(routes map[internal.WorkflowKey]routing.URL, upstream *httptest.Server) *Server {
 	resolver := routing.NewResolver(routing.NewExecutionEndpointStore(), routing.NewInstanceStore(), nil)
 	if routes != nil {
 		// Replace URLs with upstream server URL
-		updatedRoutes := make(map[routing.WorkflowKey]routing.URL)
+		updatedRoutes := make(map[internal.WorkflowKey]routing.URL)
 		for k := range routes {
 			updatedRoutes[k] = routing.URL(upstream.URL)
 		}
 		resolver.UpdateExecutionEndpoints(updatedRoutes)
 	}
-	return New(DefaultConfig(), resolver, definitions.NewReader(nil, nil), nil)
+	return New(DefaultConfig(), resolver, definitions.NewReader(nil, nil, definitions.NewDefinitionStore()), nil)
 }
 
 // Definitions
@@ -87,24 +89,53 @@ func TestListDefinitions_Empty(t *testing.T) {
 }
 
 func TestListDefinitions_ReturnsCatalog(t *testing.T) {
-	srv := newTestServer(map[routing.WorkflowKey]routing.URL{
-		{Namespace: "demo", Name: "hello", Version: "1.0.0"}: routing.URL("https://hello.example.com"),
-		{Namespace: "prod", Name: "order", Version: "2.0.0"}: routing.URL("https://order.example.com"),
+	srv := newTestServer(nil)
+	srv.definitions.Store().Replace([]internal.WorkflowKey{
+		{Namespace: "demo", Name: "hello", Version: "1.0.0"},
+		{Namespace: "prod", Name: "order", Version: "2.0.0"},
 	})
 	req := httptest.NewRequest(http.MethodGet, "/v1/definitions", nil)
 	w := httptest.NewRecorder()
 	srv.router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusOK, w.Code)
-	var defs []routing.WorkflowKey
+	var defs []definitionResource
 	err := json.Unmarshal(w.Body.Bytes(), &defs)
 	assert.NoError(t, err)
 	assert.Len(t, defs, 2)
-	// Upstream URL must not be exposed to clients.
-	assert.NotContains(t, w.Body.String(), "hello.example.com")
+	assert.Equal(t, []internal.WorkflowKey{
+		{Namespace: "demo", Name: "hello", Version: "1.0.0"},
+		{Namespace: "prod", Name: "order", Version: "2.0.0"},
+	}, []internal.WorkflowKey{defs[0].WorkflowKey, defs[1].WorkflowKey})
+}
+
+func TestListDefinitions_ReturnsHATEOASLinks(t *testing.T) {
+	srv := newTestServer(nil)
+	key := internal.WorkflowKey{Namespace: "demo", Name: "hello", Version: "1.0.0"}
+	srv.resolver.UpdateExecutionEndpoints(map[internal.WorkflowKey]routing.URL{key: "http://hello.default"})
+	srv.definitions.Store().Replace([]internal.WorkflowKey{key})
+	req := httptest.NewRequest(http.MethodGet, "/v1/definitions", nil)
+	w := httptest.NewRecorder()
+	srv.router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	var defs []definitionResource
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &defs))
+	require.Len(t, defs, 1)
+	assert.Equal(t, key, defs[0].WorkflowKey)
+	assert.Equal(t, "/v1/definitions/demo/hello/1.0.0", defs[0].Links["self"].Href)
+	assert.Equal(t, "/v1/runtime/demo/hello/1.0.0", defs[0].Links["execute"].Href)
+	assert.Equal(t, http.MethodPost, defs[0].Links["execute"].Method)
+	assert.Equal(t, "executeWorkflowVersioned", defs[0].Links["execute"].OperationID)
+	assert.Equal(t, "/v1/runtime/demo/hello/1.0.0/sync", defs[0].Links["executeSync"].Href)
+	assert.Equal(t, "/v1/instances/?name=hello&namespace=demo&version=1.0.0", defs[0].Links["instances"].Href)
+	assert.Equal(t, "/v1/instances/{id}", defs[0].Links["instance"].Href)
+	assert.True(t, defs[0].Links["instance"].Templated)
+	assert.Equal(t, "/v1/runtime/demo/hello/1.0.0/instance/{id}/suspend", defs[0].Links["suspend"].Href)
+	assert.Equal(t, "/v1/runtime/demo/hello/1.0.0/instance/{id}/resume", defs[0].Links["resume"].Href)
+	assert.Equal(t, "/v1/runtime/demo/hello/1.0.0/instance/{id}/cancel", defs[0].Links["cancel"].Href)
 }
 
 func TestListDefinitions_DoesNotExposeURL(t *testing.T) {
-	srv := newTestServer(map[routing.WorkflowKey]routing.URL{
+	srv := newTestServer(map[internal.WorkflowKey]routing.URL{
 		{Namespace: "demo", Name: "hello", Version: "1.0.0"}: routing.URL("https://hello.example.com"),
 	})
 	req := httptest.NewRequest(http.MethodGet, "/v1/definitions", nil)
@@ -171,7 +202,7 @@ func TestSuspend_UnknownWorkflow_Returns404(t *testing.T) {
 func TestExecuteAsync_KnownWorkflow_Returns202(t *testing.T) {
 	upstream := mockUpstreamServer()
 	defer upstream.Close()
-	srv := newTestServerWithUpstream(map[routing.WorkflowKey]routing.URL{
+	srv := newTestServerWithUpstream(map[internal.WorkflowKey]routing.URL{
 		{Namespace: "demo", Name: "hello", Version: "1.0.0"}: routing.URL(""),
 	}, upstream)
 	req := httptest.NewRequest(http.MethodPost, "/v1/runtime/demo/hello", nil)
@@ -187,7 +218,7 @@ func TestExecuteAsync_KnownWorkflow_Returns202(t *testing.T) {
 func TestExecuteAsyncVersioned_KnownWorkflow_Returns202(t *testing.T) {
 	upstream := mockUpstreamServer()
 	defer upstream.Close()
-	srv := newTestServerWithUpstream(map[routing.WorkflowKey]routing.URL{
+	srv := newTestServerWithUpstream(map[internal.WorkflowKey]routing.URL{
 		{Namespace: "demo", Name: "hello", Version: "1.0.0"}: routing.URL(""),
 	}, upstream)
 	req := httptest.NewRequest(http.MethodPost, "/v1/runtime/demo/hello/1.0.0", nil)
@@ -199,7 +230,7 @@ func TestExecuteAsyncVersioned_KnownWorkflow_Returns202(t *testing.T) {
 func TestExecuteSync_KnownWorkflow_Returns200(t *testing.T) {
 	upstream := mockUpstreamServer()
 	defer upstream.Close()
-	srv := newTestServerWithUpstream(map[routing.WorkflowKey]routing.URL{
+	srv := newTestServerWithUpstream(map[internal.WorkflowKey]routing.URL{
 		{Namespace: "demo", Name: "hello", Version: "1.0.0"}: routing.URL(""),
 	}, upstream)
 	req := httptest.NewRequest(http.MethodPost, "/v1/runtime/demo/hello/sync", nil)
@@ -219,7 +250,7 @@ func TestSuspend_LiteralInstanceNotVersion(t *testing.T) {
 	// routing it calls LookupLatest and routes to suspend endpoint.
 	upstream := mockUpstreamServer()
 	defer upstream.Close()
-	srv := newTestServerWithUpstream(map[routing.WorkflowKey]routing.URL{
+	srv := newTestServerWithUpstream(map[internal.WorkflowKey]routing.URL{
 		{Namespace: "demo", Name: "hello", Version: "1.0.0"}: routing.URL(""),
 	}, upstream)
 	req := httptest.NewRequest(http.MethodPost, "/v1/runtime/demo/hello/instance/test-instance-123/suspend", nil)

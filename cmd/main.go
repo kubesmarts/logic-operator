@@ -242,6 +242,7 @@ func main() {
 		os.Exit(1)
 	}
 	if err := builder.WebhookManagedBy(mgr, &logicv1.LogicFlowDefinition{}).
+		WithDefaulter(&logicv1.LogicFlowDefinitionDefaulter{}).
 		WithValidator(&logicv1.LogicFlowDefinitionValidator{Reader: mgr.GetClient()}).
 		Complete(); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "LogicFlowDefinition")

@@ -2,11 +2,48 @@ package v1
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
+	"github.com/open-workflow-specification/sdk-go/v4/model"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
+
+// +kubebuilder:webhook:path=/mutate-logic-kubesmarts-org-v1-logicflowdefinition,mutating=true,failurePolicy=fail,sideEffects=None,groups=logic.kubesmarts.org,resources=logicflowdefinitions,verbs=create;update,versions=v1,name=mlogicflowdefinition-v1.kb.io,admissionReviewVersions=v1
+
+// +kubebuilder:object:generate=false
+type LogicFlowDefinitionDefaulter struct{}
+
+var _ admission.Defaulter[*LogicFlowDefinition] = &LogicFlowDefinitionDefaulter{}
+
+func (d *LogicFlowDefinitionDefaulter) Default(_ context.Context, obj *LogicFlowDefinition) error {
+	wf, err := obj.Spec.ParseFlow()
+	if err != nil {
+		// Let the validating webhook report malformed flow documents.
+		return nil
+	}
+	_, err = NormalizeLogicFlowDefinitionNamespace(obj, wf)
+	return err
+}
+
+// NormalizeLogicFlowDefinitionNamespace makes the CR's Kubernetes namespace
+// authoritative for the workflow document and stores the normalized document
+// back in spec.flow. The parsed workflow is updated too so reconcilers can use
+// the same value without reparsing.
+func NormalizeLogicFlowDefinitionNamespace(obj *LogicFlowDefinition, wf *model.Workflow) (bool, error) {
+	if wf.Document.Namespace == obj.Namespace {
+		return false, nil
+	}
+	wf.Document.Namespace = obj.Namespace
+	raw, err := json.Marshal(wf)
+	if err != nil {
+		return false, fmt.Errorf("marshal normalized spec.flow: %w", err)
+	}
+	obj.Spec.Flow.Raw = raw
+	obj.Spec.Flow.Object = nil
+	return true, nil
+}
 
 // +kubebuilder:webhook:path=/validate-logic-kubesmarts-org-v1-logicflowdefinition,mutating=false,failurePolicy=fail,sideEffects=None,groups=logic.kubesmarts.org,resources=logicflowdefinitions,verbs=create;update,versions=v1,name=vlogicflowdefinition-v1.kb.io,admissionReviewVersions=v1
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/routing"
 )
 
@@ -50,7 +51,7 @@ func TestManagementReadyHandler_Ready(t *testing.T) {
 
 func TestManagementDebugRoutesHandler(t *testing.T) {
 	resolver := routing.NewResolver(routing.NewExecutionEndpointStore(), routing.NewInstanceStore(), nil)
-	resolver.UpdateExecutionEndpoints(map[routing.WorkflowKey]routing.URL{
+	resolver.UpdateExecutionEndpoints(map[internal.WorkflowKey]routing.URL{
 		{Namespace: "demo", Name: "hello", Version: "1.0.0"}: routing.URL("https://hello.example.com"),
 	})
 	m := NewManagement(DefaultManagementConfig(), resolver, func() bool { return true })

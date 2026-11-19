@@ -55,7 +55,7 @@ func buildReader(ctx context.Context, t *testing.T) *Reader {
 	go func() { _ = mgr.Start(ctx) }()
 	require.True(t, mgr.WaitForCacheSync(ctx))
 
-	return NewReader(mgr.GetCache(), mgr.GetAPIReader())
+	return NewReader(mgr.GetCache(), mgr.GetAPIReader(), NewDefinitionStore())
 }
 
 func TestFetchDefinitionReturnsFullSpec(t *testing.T) {

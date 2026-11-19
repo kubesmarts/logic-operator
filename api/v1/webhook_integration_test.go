@@ -76,6 +76,7 @@ func TestWebhookIntegration(t *testing.T) {
 	}
 
 	if err := builder.WebhookManagedBy(mgr, &LogicFlowDefinition{}).
+		WithDefaulter(&LogicFlowDefinitionDefaulter{}).
 		WithValidator(&LogicFlowDefinitionValidator{Reader: mgr.GetClient()}).
 		Complete(); err != nil {
 		t.Fatalf("register LFD webhook: %v", err)
@@ -133,6 +134,17 @@ func testLFDWebhooks(ctx context.Context, t *testing.T, k8sClient client.Client)
 		}
 		if err := k8sClient.Create(ctx, def); err != nil {
 			t.Fatalf("expected valid create to succeed: %v", err)
+		}
+		var created LogicFlowDefinition
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(def), &created); err != nil {
+			t.Fatalf("get created definition: %v", err)
+		}
+		wf, err := created.Spec.ParseFlow()
+		if err != nil {
+			t.Fatalf("parse created flow: %v", err)
+		}
+		if wf.Document.Namespace != testNamespace {
+			t.Errorf("workflow namespace = %q, want resource namespace %q", wf.Document.Namespace, testNamespace)
 		}
 		t.Cleanup(func() { _ = k8sClient.Delete(ctx, def) })
 	})

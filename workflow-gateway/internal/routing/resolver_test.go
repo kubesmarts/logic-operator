@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -31,10 +32,10 @@ func TestResolveExecution_WithVersion_Hit(t *testing.T) {
 	pods := newFakePodResolver(nil)
 	resolver := NewResolver(endpoints, instances, pods)
 
-	key := WorkflowKey{Namespace: "default", Name: "hello", Version: "1.0"}
-	endpoints.Replace(map[WorkflowKey]URL{key: "https://hello.example.com"})
+	key := internal.WorkflowKey{Namespace: "default", Name: "hello", Version: "1.0"}
+	endpoints.Replace(map[internal.WorkflowKey]URL{key: "https://hello.example.com"})
 
-	url, err := resolver.ResolveExecution("default", "hello", "1.0")
+	url, err := resolver.ResolveExecutionEndpoint("default", "hello", "1.0")
 	require.NoError(t, err)
 	assert.Equal(t, URL("https://hello.example.com"), url)
 }
@@ -45,7 +46,7 @@ func TestResolveExecution_WithVersion_Miss(t *testing.T) {
 	pods := newFakePodResolver(nil)
 	resolver := NewResolver(endpoints, instances, pods)
 
-	url, err := resolver.ResolveExecution("default", "hello", "1.0")
+	url, err := resolver.ResolveExecutionEndpoint("default", "hello", "1.0")
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrWorkflowNotFound))
 	assert.Empty(t, url)
@@ -57,10 +58,10 @@ func TestResolveExecution_Latest_Hit(t *testing.T) {
 	pods := newFakePodResolver(nil)
 	resolver := NewResolver(endpoints, instances, pods)
 
-	key := WorkflowKey{Namespace: "default", Name: "hello", Version: "2.0"}
-	endpoints.Replace(map[WorkflowKey]URL{key: "https://hello.example.com"})
+	key := internal.WorkflowKey{Namespace: "default", Name: "hello", Version: "2.0"}
+	endpoints.Replace(map[internal.WorkflowKey]URL{key: "https://hello.example.com"})
 
-	url, err := resolver.ResolveExecution("default", "hello", "")
+	url, err := resolver.ResolveExecutionEndpoint("default", "hello", "")
 	require.NoError(t, err)
 	assert.Equal(t, URL("https://hello.example.com"), url)
 }
@@ -71,7 +72,7 @@ func TestResolveExecution_Latest_Miss(t *testing.T) {
 	pods := newFakePodResolver(nil)
 	resolver := NewResolver(endpoints, instances, pods)
 
-	url, err := resolver.ResolveExecution("default", "missing", "")
+	url, err := resolver.ResolveExecutionEndpoint("default", "missing", "")
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrWorkflowNotFound))
 	assert.Empty(t, url)
@@ -98,8 +99,8 @@ func TestResolveInstance_NotCached_FallsBackToService(t *testing.T) {
 	pods := newFakePodResolver(nil)
 	resolver := NewResolver(endpoints, instances, pods)
 
-	key := WorkflowKey{Namespace: "default", Name: "hello", Version: "1.0"}
-	endpoints.Replace(map[WorkflowKey]URL{key: "https://hello.example.com"})
+	key := internal.WorkflowKey{Namespace: "default", Name: "hello", Version: "1.0"}
+	endpoints.Replace(map[internal.WorkflowKey]URL{key: "https://hello.example.com"})
 
 	dest, err := resolver.ResolveInstance(context.Background(), "default", "hello", "unknown-instance")
 	require.NoError(t, err)
@@ -113,8 +114,8 @@ func TestResolveInstance_PodLookupReturnsNotFound_FallsBackToService(t *testing.
 	pods := newFakePodResolver(map[string]string{}) // No pods; all lookups return found=false
 	resolver := NewResolver(endpoints, instances, pods)
 
-	key := WorkflowKey{Namespace: "default", Name: "hello", Version: "1.0"}
-	endpoints.Replace(map[WorkflowKey]URL{key: "https://hello.example.com"})
+	key := internal.WorkflowKey{Namespace: "default", Name: "hello", Version: "1.0"}
+	endpoints.Replace(map[internal.WorkflowKey]URL{key: "https://hello.example.com"})
 
 	// Cache the instance with a lease, but the pod won't be found
 	resolver.CacheInstance("instance-1", "default/my-lease")
@@ -159,7 +160,7 @@ func TestUpdateAndSnapshotExecutionEndpoints(t *testing.T) {
 	pods := newFakePodResolver(nil)
 	resolver := NewResolver(endpoints, instances, pods)
 
-	endpointMap := map[WorkflowKey]URL{
+	endpointMap := map[internal.WorkflowKey]URL{
 		{Namespace: "ns1", Name: "a", Version: "1.0"}: "http://a.example.com",
 		{Namespace: "ns1", Name: "b", Version: "2.0"}: "http://b.example.com",
 	}

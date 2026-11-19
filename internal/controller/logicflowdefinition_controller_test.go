@@ -129,6 +129,13 @@ var _ = Describe("LogicFlowDefinition Controller", func() {
 			Expect(cm.Name).To(Equal("lfd-" + defName))
 		})
 
+		It("should normalize flow namespace to the CR namespace even without admission defaulting", func() {
+			def := reconcileDefAndFetch(ctx, r, defNN)
+			wf, err := def.Spec.ParseFlow()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(wf.Document.Namespace).To(Equal(testNamespace))
+		})
+
 		It("should set correct labels on the ConfigMap", func() {
 			reconcileDefAndFetch(ctx, r, defNN)
 
