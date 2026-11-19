@@ -116,7 +116,7 @@ func TestMigrationTargets(t *testing.T) {
 		plat := testMigrationPlatform(testDatastore("runtime", service), logicv1.DatastoreSpec{})
 		ds := testDatastore("data_index", job)
 		plat.Spec.DataIndex = &logicv1.DataIndexSpec{Persistence: &ds}
-		g.Expect(runtimeMigrationTargets(plat)).To(gomega.BeEmpty())
+		g.Expect(flowRunnerMigrationTargets(plat)).To(gomega.BeEmpty())
 		targets := migrationTargets(plat)
 		g.Expect(targets).To(gomega.HaveLen(1))
 		g.Expect(targets[0].Datastore).To(gomega.Equal(MigrationStreamDataIndex))

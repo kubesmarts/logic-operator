@@ -41,22 +41,26 @@ type migrationTarget struct {
 
 // migrationTargets returns every platform datastore that opted into the job strategy.
 func migrationTargets(plat *logicv1.ClusterLogicPlatform) []migrationTarget {
-	return append(runtimeMigrationTargets(plat), dataIndexMigrationTargets(plat)...)
+	return append(flowRunnerMigrationTargets(plat), dataIndexMigrationTargets(plat)...)
 }
 
 // dataIndexMigrationTargets returns the Data Index datastore when it opted into the job strategy.
 func dataIndexMigrationTargets(plat *logicv1.ClusterLogicPlatform) []migrationTarget {
 	di := plat.Spec.DataIndex
-	if di == nil || di.Persistence == nil || di.Persistence.PostgreSQL == nil ||
-		di.Persistence.DBMigrationStrategy != logicv1.DBMigrationStrategyJob {
+	if dataIndexDoesNotRequireMigration(di) {
 		return nil
 	}
 	return []migrationTarget{{Datastore: MigrationStreamDataIndex, Spec: di.Persistence, Include: []string{MigrationStreamDataIndex}}}
 }
 
-// runtimeMigrationTargets returns the runtime and Quartz datastores that opted into the job strategy.
+func dataIndexDoesNotRequireMigration(di *logicv1.DataIndexSpec) bool {
+	return di == nil || di.Persistence == nil || di.Persistence.PostgreSQL == nil ||
+		di.Persistence.DBMigrationStrategy != logicv1.DBMigrationStrategyJob
+}
+
+// flowRunnerMigrationTargets returns the runtime and Quartz datastores that opted into the job strategy.
 // Quartz tables are migrated only when the quartz datastore itself opts in.
-func runtimeMigrationTargets(plat *logicv1.ClusterLogicPlatform) []migrationTarget {
+func flowRunnerMigrationTargets(plat *logicv1.ClusterLogicPlatform) []migrationTarget {
 	if plat.Spec.Runtime == nil || plat.Spec.Runtime.Persistence == nil {
 		return nil
 	}

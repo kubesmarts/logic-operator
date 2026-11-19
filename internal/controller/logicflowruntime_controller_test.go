@@ -1751,7 +1751,7 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 		setPlatformMigration := func(phase logicv1.MigrationPhase) {
 			var clp logicv1.ClusterLogicPlatform
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-platform"}, &clp)).To(Succeed())
-			target := runtimeMigrationTargets(&clp)[0]
+			target := flowRunnerMigrationTargets(&clp)[0]
 			clp.Status.DBMigrator = &logicv1.DBMigratorStatus{Migrations: []logicv1.DatastoreMigrationStatus{{
 				Datastore: target.Datastore, JobRef: buildMigrationJob(&clp, target).Name, Phase: phase, Message: "boom",
 			}}}
@@ -1833,7 +1833,7 @@ func TestSetMigrationCondition(t *testing.T) {
 		return func(clp *logicv1.ClusterLogicPlatform) {
 			jobRef := "outdated-job"
 			if currentJob {
-				jobRef = buildMigrationJob(clp, runtimeMigrationTargets(clp)[0]).Name
+				jobRef = buildMigrationJob(clp, flowRunnerMigrationTargets(clp)[0]).Name
 			}
 			clp.Status.DBMigrator = &logicv1.DBMigratorStatus{Migrations: []logicv1.DatastoreMigrationStatus{
 				{Datastore: MigrationStreamRuntime, JobRef: jobRef, Phase: phase, Message: "connection refused"},

@@ -604,7 +604,7 @@ func setMigrationCondition(rt *logicv1.LogicFlowRuntime, eff *runtimePersistence
 		meta.RemoveStatusCondition(&rt.Status.Conditions, logicv1.ConditionDBMigration)
 		return true
 	}
-	targets := runtimeMigrationTargets(eff.Platform)
+	targets := flowRunnerMigrationTargets(eff.Platform)
 	if len(targets) == 0 {
 		meta.RemoveStatusCondition(&rt.Status.Conditions, logicv1.ConditionDBMigration)
 		return true
