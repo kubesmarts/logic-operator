@@ -209,7 +209,7 @@ func TestDBMigrator_DataIndexDatastore(t *testing.T) {
 	g.Expect(comp.UpdateStatus(ctx, plat)).To(gomega.Succeed())
 	diTargets := dataIndexMigrationTargets(plat)
 	g.Expect(pendingMigration(plat, diTargets)).To(gomega.BeNil())
-	g.Expect(pendingMigration(plat, runtimeMigrationTargets(plat))).NotTo(gomega.BeNil())
+	g.Expect(pendingMigration(plat, flowRunnerMigrationTargets(plat))).NotTo(gomega.BeNil())
 	cond := meta.FindStatusCondition(plat.Status.Conditions, logicv1.ConditionDBMigration)
 	g.Expect(cond.Reason).To(gomega.Equal(logicv1.ReasonMigrationJobRunning))
 }
