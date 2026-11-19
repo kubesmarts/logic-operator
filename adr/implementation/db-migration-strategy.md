@@ -129,7 +129,6 @@ Embedding another `ApplicationSpec` pushed the `ClusterLogicPlatform` CRD to ~1.
 | `internal/controller/clusterplatform_dataindex.go` | Data Index Deployment gating |
 | `internal/controller/quarkus_config.go` | Hibernate schema-management env var |
 | `internal/controller/platform_shared_objects.go` | Data Index Flyway env vars |
-| `hack/test-db-migration-local.sh` | Manual end-to-end check against KIND and a real Postgres |
 
 ## Testing
 
@@ -146,4 +145,4 @@ Embedding another `ApplicationSpec` pushed the `ClusterLogicPlatform` CRD to ~1.
 
 1. **Quartz DDL in the runner is not disabled.** The schema-management env var only covers Hibernate. Whether the runner initializes Quartz tables on its own when a Quartz datastore uses `job`/`none` depends on the runner image.
 2. **Populated databases.** Migrating a database that was previously managed by `service` (Data Index ran Flyway with `baselineOnMigrate`) may need a Flyway baseline in the migrator; not tuned yet.
-3. **No automated e2e coverage.** `hack/test-db-migration-local.sh` covers the path manually against KIND.
+3. **No automated e2e coverage.** The Job → Postgres → runtime rollout path is only covered by unit and envtest tests.
