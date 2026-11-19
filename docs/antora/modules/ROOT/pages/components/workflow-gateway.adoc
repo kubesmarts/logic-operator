@@ -38,6 +38,13 @@ cancel requests use that mapping to resolve the current lease holder and call th
 port 8080. If the mapping or lease holder is unavailable, the gateway falls back to the workflow's
 runtime Service.
 
+Each gateway pod has a default `20Mi` budget for instance mappings. The gateway charges
+the byte lengths of the instance ID and lease ID plus an estimated 128 bytes of overhead per
+mapping. When a new mapping would exceed the budget, the gateway evicts the least recently used
+mappings until the new one fits. An evicted instance follows the same service fallback as any cache miss.
+To override the budget, add an argument such as `--instance-cache-max-size=100Mi` to
+`spec.gateway.application.container.args` on the `ClusterLogicPlatform`.
+
 == HTTP API
 
 All public API paths are under `/v1`. The API listener uses container port 8080 and the Kubernetes

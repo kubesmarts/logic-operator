@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -34,14 +35,16 @@ import (
 func main() {
 	// Parse command-line flags
 	var (
-		bindAddr        string
-		managementAddr  string
-		readTimeout     time.Duration
-		writeTimeout    time.Duration
-		idleTimeout     time.Duration
-		shutdownTimeout time.Duration
+		instanceCacheSize = resource.NewQuantity(routing.DefaultInstanceCacheBytes, resource.BinarySI).String()
+		bindAddr          string
+		managementAddr    string
+		readTimeout       time.Duration
+		writeTimeout      time.Duration
+		idleTimeout       time.Duration
+		shutdownTimeout   time.Duration
 	)
 
+	flag.StringVar(&instanceCacheSize, "instance-cache-max-size", instanceCacheSize, "Estimated byte budget for cached instance-to-lease mappings (e.g. 20Mi or 100Mi).")
 	flag.StringVar(&bindAddr, "bind-address", ":"+strconv.Itoa(int(logicv1.WorkflowGatewayHTTPPort)), "The address the server binds to.")
 	flag.StringVar(&managementAddr, "management-bind-address", ":"+strconv.Itoa(int(logicv1.WorkflowGatewayManagementPort)), "The address the management server binds to.")
 	flag.DurationVar(&readTimeout, "read-timeout", 15*time.Second, "Read timeout for HTTP connections.")
@@ -58,6 +61,12 @@ func main() {
 	// Set up structured logging
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 	setupLog := ctrl.Log.WithName("setup")
+
+	cacheBytes, err := parseInstanceCacheSize(instanceCacheSize)
+	if err != nil {
+		setupLog.Error(err, "invalid --instance-cache-max-size", "value", instanceCacheSize)
+		os.Exit(1)
+	}
 
 	operatorNamespace := os.Getenv("POD_NAMESPACE")
 	if operatorNamespace == "" {
@@ -87,7 +96,7 @@ func main() {
 	// Routing core: execution endpoint table + instance cache + lease->pod resolver.
 	resolver := routing.NewResolver(
 		routing.NewExecutionEndpointStore(),
-		routing.NewInstanceStore(),
+		routing.NewInstanceStoreWithLimit(cacheBytes),
 		lease.NewResolver(mgr.GetClient()),
 	)
 
@@ -203,4 +212,15 @@ func main() {
 
 	cancel() // stop the manager and its watchers
 	setupLog.Info("server shut down gracefully")
+}
+
+func parseInstanceCacheSize(value string) (int64, error) {
+	quantity, err := resource.ParseQuantity(value)
+	if err != nil {
+		return 0, err
+	}
+	if quantity.Sign() <= 0 || quantity.CmpInt64(1<<63-1) > 0 || !quantity.RoundUp(0) {
+		return 0, errors.New("expected a positive whole number of bytes that fits in int64")
+	}
+	return quantity.Value(), nil
 }
