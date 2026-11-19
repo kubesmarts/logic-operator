@@ -38,7 +38,7 @@ func IsGatewayAPIAvailable() bool {
 	return isGatewayAPIAvailable
 }
 
-// SetNoStandardsAPIsAvailability sets the global flag isOpenShift by the controller manager.
+// SetNoStandardsAPIsAvailability sets the global APIs availability flags by the controller manager.
 // We don't need to keep fetching the API every reconciliation cycle that we need to know about the platform.
 func SetNoStandardsAPIsAvailability(cfg *rest.Config) {
 	if cfg == nil {
@@ -49,6 +49,14 @@ func SetNoStandardsAPIsAvailability(cfg *rest.Config) {
 	if err != nil {
 		panic(fmt.Sprintf("Impossible to get new client for config when fetching cluster information: %s", err))
 	}
+	SetNoStandardsAPIsAvailabilityFromDiscovery(client)
+}
+
+// SetNoStandardsAPIsAvailabilityFromDiscovery sets the global APIs availability flags by the controller manager.
+// Facilitates testing while keeping the api.
+func SetNoStandardsAPIsAvailabilityFromDiscovery(client discovery.DiscoveryInterface) {
+	isOpenShift = false
+	isGatewayAPIAvailable = false
 	apiList, err := client.ServerGroups()
 	if err != nil {
 		panic(fmt.Sprintf("issue occurred while fetching ServerGroups: %s", err))

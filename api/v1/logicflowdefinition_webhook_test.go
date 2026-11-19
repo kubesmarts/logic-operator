@@ -82,9 +82,10 @@ func TestLogicFlowDefinitionValidator_ValidateCreate(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name    string
-		obj     *LogicFlowDefinition
-		wantErr bool
+		name      string
+		obj       *LogicFlowDefinition
+		validator *LogicFlowDefinitionValidator
+		wantErr   bool
 	}{
 		{
 			name: "valid flow passes",
@@ -126,11 +127,93 @@ func TestLogicFlowDefinitionValidator_ValidateCreate(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "invalid runtimeRef.name DNS format rejected",
+			obj: &LogicFlowDefinition{
+				Spec: LogicFlowDefinitionSpec{
+					RuntimeRef: corev1.LocalObjectReference{Name: "invalid_name"},
+					Flow:       validFlowRaw(),
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "same runtime check fails when existing definition uses a different runtime",
+			obj: &LogicFlowDefinition{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "new-def",
+					Namespace: testNamespace,
+				},
+				Spec: LogicFlowDefinitionSpec{
+					RuntimeRef: corev1.LocalObjectReference{Name: "new-runtime"},
+					Flow:       validFlowRaw(),
+				},
+			},
+			validator: func() *LogicFlowDefinitionValidator {
+				existingDef := &LogicFlowDefinition{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "existing-def",
+						Namespace: testNamespace,
+						Labels: map[string]string{
+							LabelWorkflowName:      "hello-world",
+							LabelWorkflowNamespace: testNamespace,
+						},
+					},
+					Spec: LogicFlowDefinitionSpec{
+						RuntimeRef: corev1.LocalObjectReference{Name: "old-runtime"},
+					},
+				}
+				scheme := runtime.NewScheme()
+				_ = AddToScheme(scheme)
+				return &LogicFlowDefinitionValidator{
+					Reader: fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(existingDef).Build(),
+				}
+			}(),
+			wantErr: true,
+		},
+		{
+			name: "same runtime check passes when existing definition uses the same runtime",
+			obj: &LogicFlowDefinition{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "new-def",
+					Namespace: testNamespace,
+				},
+				Spec: LogicFlowDefinitionSpec{
+					RuntimeRef: corev1.LocalObjectReference{Name: "old-runtime"},
+					Flow:       validFlowRaw(),
+				},
+			},
+			validator: func() *LogicFlowDefinitionValidator {
+				existingDef := &LogicFlowDefinition{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "existing-def",
+						Namespace: testNamespace,
+						Labels: map[string]string{
+							LabelWorkflowName:      "hello-world",
+							LabelWorkflowNamespace: testNamespace,
+						},
+					},
+					Spec: LogicFlowDefinitionSpec{
+						RuntimeRef: corev1.LocalObjectReference{Name: "old-runtime"},
+					},
+				}
+				scheme := runtime.NewScheme()
+				_ = AddToScheme(scheme)
+				return &LogicFlowDefinitionValidator{
+					Reader: fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(existingDef).Build(),
+				}
+			}(),
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := v.ValidateCreate(ctx, tt.obj)
+			validator := v
+			if tt.validator != nil {
+				validator = tt.validator
+			}
+			_, err := validator.ValidateCreate(ctx, tt.obj)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ValidateCreate() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -201,6 +284,34 @@ func TestLogicFlowDefinitionValidator_ValidateUpdate(t *testing.T) {
 				return n
 			}(),
 			wantErr: false,
+		},
+		{
+			name: "failed to parse old workflow rejected",
+			oldObj: func() *LogicFlowDefinition {
+				o := base.DeepCopy()
+				o.Spec.Flow.Raw = []byte(`{"not": "valid"}`)
+				return o
+			}(),
+			newObj:  base.DeepCopy(),
+			wantErr: true,
+		},
+		{
+			name:   "workflow name change rejected",
+			oldObj: base,
+			newObj: func() *LogicFlowDefinition {
+				n := base.DeepCopy()
+				n.Spec.Flow.Raw = []byte(`{
+					"document": {
+						"dsl": "1.0.0",
+						"namespace": "examples",
+						"name": "changed-name",
+						"version": "1.0.0"
+					},
+					"do": []
+				}`)
+				return n
+			}(),
+			wantErr: true,
 		},
 	}
 
