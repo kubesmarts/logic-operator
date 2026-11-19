@@ -171,9 +171,9 @@ During that window the instance is in a `waiting` state, persisted in PostgreSQL
 
 [source,bash]
 ----
-kubectl wait --for=condition=available deployment/postgresql --timeout=120s
-kubectl wait --for=condition=available deployment/hello-runtime --timeout=120s
-kubectl wait --for=condition=available deployment/default-data-index --timeout=120s
+kubectl wait -n logic-platform --for=condition=available deployment/postgresql --timeout=120s
+kubectl wait -n logic-platform --for=condition=available deployment/hello-runtime --timeout=120s
+kubectl wait -n logic-platform --for=condition=available deployment/default-data-index --timeout=120s
 ----
 
 == Section A: Durable Workflow Execution
@@ -203,7 +203,7 @@ While a workflow is in the `waiting` state, kill all runner pods:
 
 [source,bash]
 ----
-kubectl delete pod -l app.kubernetes.io/name=hello-runtime --wait=false
+kubectl delete pod -n logic-platform -l app.kubernetes.io/name=hello-runtime --wait=false
 ----
 
 New pods start, re-connect to PostgreSQL, and resume the workflow automatically when the timer fires.
@@ -247,9 +247,9 @@ Workflow Pods (running sleepy-workflow)
 Kubernetes Container Logs (/var/log/containers/*.log)
   ↓ (Vector DaemonSet tails logs)
 Vector (parses, filters, forwards)
-  ↓ (HTTP to PostgreSQL)
+  ↓ (INSERT into PostgreSQL)
 PostgreSQL (workflow_events_raw, task_events_raw tables)
-  ↓ (Triggers normalize events)
+  ↓ (Data Index polls and normalizes events)
 Data Index Service (GraphQL endpoint)
   ↓ (User queries)
 Workflow Instance History
@@ -264,7 +264,7 @@ Port-forward the Data Index Service to your local machine:
 
 [source,bash]
 ----
-kubectl port-forward svc/default-data-index 8080:80 &
+kubectl port-forward -n logic-platform svc/default-data-index 8080:80 &
 ----
 
 Then query workflow instances and their execution data:
@@ -274,7 +274,7 @@ Then query workflow instances and their execution data:
 curl -X POST "http://localhost:8080/graphql" \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "{ getWorkflowInstances { id status outputData completedAt } }"
+    "query": "{ getWorkflowInstances { id status outputData endedAt } }"
   }'
 ----
 
@@ -286,13 +286,13 @@ Example response:
   "data": {
     "getWorkflowInstances": [
       {
-        "id": "sleepy-workflow:durable-test:001",
+        "id": "01M7TCBET8VH2DX6A9ZYB7XF9K",
         "status": "COMPLETED",
         "outputData": {
           "name": "durable-test",
           "message": "Done! durable-test woke up after sleeping."
         },
-        "completedAt": "2026-09-30T14:35:22Z"
+        "endedAt": "2026-09-30T14:35:22Z"
       }
     ]
   }
@@ -338,7 +338,7 @@ Start with `false` for both and enable only if you need specific payload data in
 
 [source,bash]
 ----
-kubectl -n logic-platform logs -l app.kubernetes.io/name=logic-platform-vector -f
+kubectl -n logic-platform logs -l app.kubernetes.io/name=default-vector -f
 ----
 
 Look for messages about workflow events being processed.
@@ -347,7 +347,7 @@ Look for messages about workflow events being processed.
 
 [source,bash]
 ----
-kubectl exec -n logic-platform -it <postgresql-pod> -- psql -U flowuser logicflow \
+kubectl exec -n logic-platform -it deploy/postgresql -- psql -U flowuser logicflow \
   -c "SELECT COUNT(*) FROM data_index.workflow_events_raw;"
 ----
 
@@ -355,7 +355,7 @@ kubectl exec -n logic-platform -it <postgresql-pod> -- psql -U flowuser logicflo
 
 [source,bash]
 ----
-kubectl -n logic-platform logs -l app.kubernetes.io/name=logic-platform-data-index -f
+kubectl -n logic-platform logs -l app.kubernetes.io/name=default-data-index -f
 ----
 
 *Verify GraphQL connectivity:*
@@ -371,30 +371,31 @@ curl -X POST http://localhost:8080/graphql \
 
 If this returns `Query`, the GraphQL endpoint is working.
 
-(Use `kubectl -n logic-platform port-forward svc/logic-platform-data-index 8080:80` from your workstation to reach the service.)
+(Use `kubectl -n logic-platform port-forward svc/default-data-index 8080:80` from your workstation to reach the service.)
 
 === Data Index PostgreSQL Schema
 
-Vector creates and populates two raw event tables in the `data_index` schema:
+Data Index creates two raw event tables in the `data_index` schema, and Vector populates them:
 
 [cols="1,2"]
 |===
 |Table |Purpose
 
 |`workflow_events_raw`
-|Raw workflow start/complete/fault events with JSON payloads
+|Raw workflow start/complete/fault events
 
 |`task_events_raw`
-|Raw task start/complete events with JSON payloads
+|Raw task start/complete events
 |===
 
-Triggers (created by Data Index during initialization) normalize these into queryable tables.
-You can inspect the raw events:
+Data Index polls these tables, normalizes the events into `workflow_instances` and `task_instances`, and deletes the processed rows.
+Events that fail normalization are moved to `workflow_events_dlq` and `task_events_dlq`.
+You can inspect raw events that have not been processed yet:
 
 [source,bash]
 ----
-kubectl exec -n logic-platform -it <postgresql-pod> -- psql -U flowuser logicflow \
-  -c "SELECT id, event_type, payload FROM data_index.workflow_events_raw LIMIT 5;"
+kubectl exec -n logic-platform -it deploy/postgresql -- psql -U flowuser logicflow \
+  -c "SELECT instance_id, name, status, event_timestamp FROM data_index.workflow_events_raw LIMIT 5;"
 ----
 
 == Clean Up
