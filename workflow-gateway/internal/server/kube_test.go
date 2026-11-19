@@ -183,16 +183,16 @@ func TestE2EListDefinitions(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "application/json", resp.Header.Get("Content-Type"))
 
-	var definitions []struct {
+	var discoveredDefinitions []struct {
 		internal.WorkflowKey
 		Links map[string]struct {
 			Href string `json:"href"`
 		} `json:"_links"`
 	}
-	require.NoError(t, json.Unmarshal(body, &definitions))
-	require.Len(t, definitions, 1)
-	assert.Equal(t, internal.WorkflowKey{Namespace: "default", Name: "hello", Version: "v1"}, definitions[0].WorkflowKey)
-	selfLink := definitions[0].Links["self"].Href
+	require.NoError(t, json.Unmarshal(body, &discoveredDefinitions))
+	require.Len(t, discoveredDefinitions, 1)
+	assert.Equal(t, internal.WorkflowKey{Namespace: "default", Name: "hello", Version: "v1"}, discoveredDefinitions[0].WorkflowKey)
+	selfLink := discoveredDefinitions[0].Links["self"].Href
 	assert.Equal(t, "/v1/definitions/default/hello/v1", selfLink)
 	definitionResp, err := http.Get(ts.URL + selfLink)
 	require.NoError(t, err)
