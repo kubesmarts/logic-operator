@@ -140,7 +140,7 @@ func platformTests() {
 				"-o", "jsonpath={.spec.template.spec.containers[0].image}")
 			out, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(out).To(ContainSubstring("data-index-service:" + version.GetDataIndexVersion()))
+			Expect(out).To(ContainSubstring("logic-data-index:" + version.GetDataIndexVersion()))
 			Expect(out).To(ContainSubstring("postgresql"))
 
 			By("verifying deployment has default resources")
