@@ -346,11 +346,11 @@ kind-create: ## Create a KIND cluster for local development.
 			echo "Waiting for cert-manager to be ready..."; \
 			$(KUBECTL) wait --namespace cert-manager --for=condition=available deployment --all --timeout=180s; \
 			echo "Loading quarkus-flow-runner (minimal) into KIND..."; \
-			@docker image inspect $(QUARKUS_FLOW_RUNNER_MINIMAL_IMG) >/dev/null 2>&1 || docker pull $(QUARKUS_FLOW_RUNNER_MINIMAL_IMG); \
-			$(KIND) load docker-image $(QUARKUS_FLOW_RUNNER_MINIMAL_IMG) --name $(KIND_DEV_CLUSTER); \
+			docker image inspect $(QUARKUS_FLOW_RUNNER_MINIMAL_IMG) >/dev/null 2>&1 || docker pull $(QUARKUS_FLOW_RUNNER_MINIMAL_IMG); \
+			tools/load-kind-image.sh "$(KIND_DEV_CLUSTER)" "$(QUARKUS_FLOW_RUNNER_MINIMAL_IMG)" "$(KIND)"; \
 			echo "Loading quarkus-flow-runner (standard) into KIND..."; \
-			@docker image inspect $(QUARKUS_FLOW_RUNNER_STANDARD_IMG) >/dev/null 2>&1 || docker pull $(QUARKUS_FLOW_RUNNER_STANDARD_IMG); \
-			$(KIND) load docker-image $(QUARKUS_FLOW_RUNNER_STANDARD_IMG) --name $(KIND_DEV_CLUSTER) ;; \
+			docker image inspect $(QUARKUS_FLOW_RUNNER_STANDARD_IMG) >/dev/null 2>&1 || docker pull $(QUARKUS_FLOW_RUNNER_STANDARD_IMG); \
+			tools/load-kind-image.sh "$(KIND_DEV_CLUSTER)" "$(QUARKUS_FLOW_RUNNER_STANDARD_IMG)" "$(KIND)" ;; \
 	esac
 
 KIND_IMG ?= $(KIND_OPERATOR_IMG)
