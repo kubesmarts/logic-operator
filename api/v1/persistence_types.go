@@ -168,6 +168,7 @@ type RuntimePersistenceSpec struct {
 	// +optional
 	Runtime DatastoreSpec `json:"runtime,omitempty"`
 	// Quartz optionally configures a separate datasource for Quartz scheduler tables.
+	// Without postgresql it inherits the runtime connection; Quartz tables are migrated only when its dbMigrationStrategy is job.
 	// +optional
 	Quartz DatastoreSpec `json:"quartz,omitempty"`
 }

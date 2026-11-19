@@ -38349,8 +38349,9 @@ spec:
                       and Quartz datastores.
                     properties:
                       quartz:
-                        description: Quartz optionally configures a separate datasource
-                          for Quartz scheduler tables.
+                        description: |-
+                          Quartz optionally configures a separate datasource for Quartz scheduler tables.
+                          Without postgresql it inherits the runtime connection; Quartz tables are migrated only when its dbMigrationStrategy is job.
                         properties:
                           dbMigrationStrategy:
                             default: service

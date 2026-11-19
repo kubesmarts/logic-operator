@@ -34,13 +34,13 @@ ClusterLogicPlatform (spec.runtime.persistence.*.dbMigrationStrategy=job)
         └── Pod (db-migrator container)
 ```
 
-`migrationTargets` decides which datastores need a Job. The migrator takes a single datasource, so there is one Job per datastore:
+`migrationTargets` decides which datastores need a Job. The migrator takes a single datasource, so there is one Job per datastore. The `quartz` stream runs only when the `quartz` datastore opts into `job`; when it has no `postgresql`, it inherits the runtime connection and `migrationSecretRef` (matching the runner, which falls back to the runtime datasource for Quartz):
 
 | Configuration | Jobs |
 |---------------|------|
-| `runtime` = `job`, no separate `quartz` | `runtime` Job applying streams `runtime,quartz` (the runner keeps Quartz tables on the runtime datasource) |
-| `runtime` = `job`, separate `quartz` = `job` | `runtime` Job (`runtime`) and `quartz` Job (`quartz`) |
-| only separate `quartz` = `job` | `quartz` Job (`quartz`) |
+| `runtime` = `job`, `quartz` not `job` | `runtime` Job (`runtime`); Quartz tables are not migrated by the operator |
+| `runtime` = `job`, `quartz` = `job` | `runtime` Job (`runtime`) and `quartz` Job (`quartz`) |
+| only `quartz` = `job` | `quartz` Job (`quartz`) |
 | `dataIndex.persistence` = `job` | `data-index` Job (`data-index`), independent of the runtime ones |
 
 **Reconcile** creates each missing Job and deletes migration Jobs of this platform that are no longer desired (strategy switched away, or configuration changed). A Job whose status already records `Succeeded` under the same name is not recreated after its TTL removes it; a failed Job reruns once deleted (manually or by TTL).

@@ -54,28 +54,35 @@ func dataIndexMigrationTargets(plat *logicv1.ClusterLogicPlatform) []migrationTa
 	return []migrationTarget{{Datastore: MigrationStreamDataIndex, Spec: di.Persistence, Include: []string{MigrationStreamDataIndex}}}
 }
 
-// runtimeMigrationTargets returns the runtime datastores that opted into the job strategy.
-// Without a separate Quartz datastore the runner keeps Quartz tables on the runtime datastore,
-// so the runtime Job also applies the quartz stream.
+// runtimeMigrationTargets returns the runtime and Quartz datastores that opted into the job strategy.
+// Quartz tables are migrated only when the quartz datastore itself opts in.
 func runtimeMigrationTargets(plat *logicv1.ClusterLogicPlatform) []migrationTarget {
 	if plat.Spec.Runtime == nil || plat.Spec.Runtime.Persistence == nil {
 		return nil
 	}
 	p := plat.Spec.Runtime.Persistence
-	separateQuartz := p.Quartz.PostgreSQL != nil
 
 	var targets []migrationTarget
 	if p.Runtime.PostgreSQL != nil && p.Runtime.DBMigrationStrategy == logicv1.DBMigrationStrategyJob {
-		include := []string{MigrationStreamRuntime}
-		if !separateQuartz {
-			include = append(include, MigrationStreamQuartz)
-		}
-		targets = append(targets, migrationTarget{Datastore: MigrationStreamRuntime, Spec: &p.Runtime, Include: include})
+		targets = append(targets, migrationTarget{Datastore: MigrationStreamRuntime, Spec: &p.Runtime, Include: []string{MigrationStreamRuntime}})
 	}
-	if separateQuartz && p.Quartz.DBMigrationStrategy == logicv1.DBMigrationStrategyJob {
-		targets = append(targets, migrationTarget{Datastore: MigrationStreamQuartz, Spec: &p.Quartz, Include: []string{MigrationStreamQuartz}})
+	if quartz := quartzMigrationDatastore(p); quartz.PostgreSQL != nil && quartz.DBMigrationStrategy == logicv1.DBMigrationStrategyJob {
+		targets = append(targets, migrationTarget{Datastore: MigrationStreamQuartz, Spec: quartz, Include: []string{MigrationStreamQuartz}})
 	}
 	return targets
+}
+
+// quartzMigrationDatastore returns the Quartz datastore, inheriting the runtime connection and DDL
+// credential when it has no PostgreSQL of its own, matching the runner's datasource fallback.
+func quartzMigrationDatastore(p *logicv1.RuntimePersistenceSpec) *logicv1.DatastoreSpec {
+	quartz := p.Quartz
+	if quartz.PostgreSQL == nil {
+		quartz.PostgreSQL = p.Runtime.PostgreSQL
+		if quartz.MigrationSecretRef == nil {
+			quartz.MigrationSecretRef = p.Runtime.MigrationSecretRef
+		}
+	}
+	return &quartz
 }
 
 // migrationEnvVars builds the datasource env vars for the migration container using the DDL credential.
