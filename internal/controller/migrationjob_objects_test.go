@@ -60,13 +60,44 @@ func TestMigrationTargets(t *testing.T) {
 		g.Expect(migrationTargets(plat)).To(gomega.BeEmpty())
 	})
 
-	t.Run("runtime job without separate quartz migrates both streams", func(t *testing.T) {
+	t.Run("runtime job without quartz migrates only the runtime stream", func(t *testing.T) {
 		g := gomega.NewWithT(t)
 		plat := testMigrationPlatform(testDatastore("runtime", job), logicv1.DatastoreSpec{})
 		targets := migrationTargets(plat)
 		g.Expect(targets).To(gomega.HaveLen(1))
 		g.Expect(targets[0].Datastore).To(gomega.Equal(MigrationStreamRuntime))
-		g.Expect(targets[0].Include).To(gomega.Equal([]string{MigrationStreamRuntime, MigrationStreamQuartz}))
+		g.Expect(targets[0].Include).To(gomega.Equal([]string{MigrationStreamRuntime}))
+	})
+
+	t.Run("quartz without postgresql inherits the runtime connection", func(t *testing.T) {
+		g := gomega.NewWithT(t)
+		runtimeDS := testDatastore("runtime", job)
+		runtimeDS.MigrationSecretRef = &logicv1.PostgreSQLSecretOptions{Name: "ddl-creds"}
+		plat := testMigrationPlatform(runtimeDS, logicv1.DatastoreSpec{DBMigrationStrategy: job})
+		targets := migrationTargets(plat)
+		g.Expect(targets).To(gomega.HaveLen(2))
+		g.Expect(targets[1].Datastore).To(gomega.Equal(MigrationStreamQuartz))
+		g.Expect(targets[1].Include).To(gomega.Equal([]string{MigrationStreamQuartz}))
+		g.Expect(targets[1].Spec.PostgreSQL.ServiceRef.DatabaseSchema).To(gomega.Equal("runtime"))
+		g.Expect(targets[1].Spec.MigrationSecretRef.Name).To(gomega.Equal("ddl-creds"))
+		// The platform spec is not mutated by the inheritance.
+		g.Expect(plat.Spec.Runtime.Persistence.Quartz.PostgreSQL).To(gomega.BeNil())
+	})
+
+	t.Run("quartz with its own postgresql keeps its own DDL credential", func(t *testing.T) {
+		g := gomega.NewWithT(t)
+		runtimeDS := testDatastore("runtime", job)
+		runtimeDS.MigrationSecretRef = &logicv1.PostgreSQLSecretOptions{Name: "ddl-creds"}
+		plat := testMigrationPlatform(runtimeDS, testDatastore("quartz", job))
+		targets := migrationTargets(plat)
+		g.Expect(targets).To(gomega.HaveLen(2))
+		g.Expect(targets[1].Spec.MigrationSecretRef).To(gomega.BeNil())
+	})
+
+	t.Run("quartz without postgresql and no runtime postgresql has no target", func(t *testing.T) {
+		g := gomega.NewWithT(t)
+		plat := testMigrationPlatform(logicv1.DatastoreSpec{}, logicv1.DatastoreSpec{DBMigrationStrategy: job})
+		g.Expect(migrationTargets(plat)).To(gomega.BeEmpty())
 	})
 
 	t.Run("separate quartz datastore gets its own target", func(t *testing.T) {
@@ -157,7 +188,7 @@ func TestBuildMigrationJob_Defaults(t *testing.T) {
 	g.Expect(c.Image).To(gomega.Equal(logicv1.DefaultDBMigratorImage()))
 	g.Expect(c.TerminationMessagePolicy).To(gomega.Equal(corev1.TerminationMessageReadFile))
 	g.Expect(*c.SecurityContext.AllowPrivilegeEscalation).To(gomega.BeFalse())
-	g.Expect(findCoreEnv(c.Env, MigrationIncludeEnvVar).Value).To(gomega.Equal("runtime,quartz"))
+	g.Expect(findCoreEnv(c.Env, MigrationIncludeEnvVar).Value).To(gomega.Equal("runtime"))
 }
 
 func TestBuildMigrationJob_HonorsApplicationSpec(t *testing.T) {
@@ -211,11 +242,11 @@ func TestMigrationJobName(t *testing.T) {
 		g.Expect(nameOf(changed)).ToNot(gomega.Equal(base))
 	})
 
-	t.Run("changes with included streams", func(t *testing.T) {
+	t.Run("unaffected by quartz configuration", func(t *testing.T) {
 		g := gomega.NewWithT(t)
 		changed := plat.DeepCopy()
-		changed.Spec.Runtime.Persistence.Quartz = testDatastore("quartz", logicv1.DBMigrationStrategyService)
-		g.Expect(nameOf(changed)).ToNot(gomega.Equal(base))
+		changed.Spec.Runtime.Persistence.Quartz = logicv1.DatastoreSpec{DBMigrationStrategy: logicv1.DBMigrationStrategyJob}
+		g.Expect(nameOf(changed)).To(gomega.Equal(base))
 	})
 
 	t.Run("truncates long platform names", func(t *testing.T) {

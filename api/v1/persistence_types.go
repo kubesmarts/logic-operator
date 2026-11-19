@@ -122,6 +122,7 @@ type RuntimePersistenceSpec struct {
 	// +optional
 	Runtime DatastoreSpec `json:"runtime,omitempty"`
 	// Quartz configures a separate datasource for Quartz tables; defaults to Runtime.
+	// Its tables are migrated only when its dbMigrationStrategy is job.
 	// +optional
 	Quartz DatastoreSpec `json:"quartz,omitempty"`
 }

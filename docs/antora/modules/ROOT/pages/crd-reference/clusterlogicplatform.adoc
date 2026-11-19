@@ -83,8 +83,21 @@ Each datastore accepts `dbMigrationStrategy`:
   management is disabled.
 
 The migration Job authenticates with `migrationSecretRef` (DDL credentials) when set, falling back
-to `postgresql.secretRef`. Without a separate `quartz` datastore, the runtime Job also migrates
-the Quartz tables.
+to `postgresql.secretRef`. The runtime Job migrates only the runtime tables; Quartz tables are
+migrated in their own Job only when `quartz.dbMigrationStrategy` is `job`. A `quartz` datastore
+without `postgresql` inherits the runtime connection and `migrationSecretRef`:
+
+[source,yaml]
+----
+spec:
+  runtime:
+    persistence:
+      runtime:
+        dbMigrationStrategy: job
+        postgresql: ...
+      quartz:
+        dbMigrationStrategy: job
+----
 
 `dataIndex.persistence.dbMigrationStrategy` accepts the same values. With `job`, the operator
 migrates the Data Index schema in its own Job and deploys Data Index only after it succeeds;
