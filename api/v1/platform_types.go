@@ -30,7 +30,7 @@ type DataIndexSpec struct {
 	//
 	// Example:
 	//   application:
-	//     image: quay.io/kubesmarts/data-index:2.0.0
+	//     image: quay.io/kubesmarts/logic-data-index:2.0.0-postgresql
 	//     replicas: 2
 	//     resources:
 	//       requests:

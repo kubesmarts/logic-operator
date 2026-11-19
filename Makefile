@@ -237,7 +237,7 @@ setup-test-e2e: manifests generate fmt vet ## Set up complete E2E test infrastru
 	@echo "Loading quarkus-flow-runner (standard) image for E2E tests..."
 	@docker image inspect $(QUARKUS_FLOW_RUNNER_STANDARD_IMG) >/dev/null 2>&1 || docker pull $(QUARKUS_FLOW_RUNNER_STANDARD_IMG)
 	tools/load-kind-image.sh "$(KIND_CLUSTER)" "$(QUARKUS_FLOW_RUNNER_STANDARD_IMG)" "$(KIND)"
-	@echo "Loading data-index-service image for E2E tests..."
+	@echo "Loading logic-data-index image for E2E tests..."
 	@docker image inspect $(DATA_INDEX_IMG) >/dev/null 2>&1 || docker pull $(DATA_INDEX_IMG)
 	tools/load-kind-image.sh "$(KIND_CLUSTER)" "$(DATA_INDEX_IMG)" "$(KIND)"
 	@echo "Loading Vector image for E2E tests..."
@@ -316,7 +316,7 @@ QUARKUS_FLOW_RUNNER_STANDARD_IMG ?= quay.io/quarkiverse/quarkus-flow-runner:$(QU
 QUARKUS_FLOW_RUNNER_IMG ?= $(QUARKUS_FLOW_RUNNER_STANDARD_IMG)
 POSTGRES_VERSION ?= 16-alpine
 POSTGRES_IMG ?= postgres:$(POSTGRES_VERSION)
-DATA_INDEX_IMG ?= quay.io/kubesmarts/data-index-service:$(DATA_INDEX_VERSION)
+DATA_INDEX_IMG ?= quay.io/kubesmarts/logic-data-index:$(DATA_INDEX_VERSION)
 VECTOR_IMG ?= timberio/vector:0.54.0-distroless-libc
 
 .PHONY: kind-create
@@ -640,9 +640,9 @@ catalog-push: ## Push a catalog image.
 
 # Vector Config Recipes
 .PHONY: sync-configs
-sync-configs: ## Sync Vector configs from the pinned logic-apps commit.
-	@echo "Updating logic-apps dependency to commit aa71c7d..."
-	go get github.com/kubesmarts/logic-apps/data-index/collectors@aa71c7ddc5b13bfe81e2df310f4c924d78c6f77c
+sync-configs: ## Update logic-apps dependency to latest main and sync Vector configs.
+	@echo "Updating logic-apps dependency to latest main..."
+	go get -u github.com/kubesmarts/logic-apps/data-index/collectors@main
 	@echo "Syncing data-index configs from Go module..."
 	@mkdir -p internal/controller/configs
 	@MODPATH=$$(go list -m -f '{{.Dir}}' github.com/kubesmarts/logic-apps/data-index/collectors 2>/dev/null); \

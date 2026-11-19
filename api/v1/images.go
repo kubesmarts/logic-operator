@@ -8,7 +8,7 @@ import (
 
 // DefaultDataIndexImage returns the default Data Index service image
 func DefaultDataIndexImage() string {
-	return fmt.Sprintf("quay.io/kubesmarts/data-index-service:%s", version.GetDataIndexVersion())
+	return fmt.Sprintf("quay.io/kubesmarts/logic-data-index:%s", version.GetDataIndexVersion())
 }
 
 // DefaultVectorImage returns the default Vector service image
