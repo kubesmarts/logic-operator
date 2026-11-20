@@ -21,7 +21,7 @@ func newTestServer(routes map[internal.WorkflowKey]routing.URL) *Server {
 	if routes != nil {
 		resolver.UpdateExecutionEndpoints(routes)
 	}
-	return New(DefaultConfig(), resolver, definitions.NewReader(nil, nil, definitions.NewDefinitionStore()), nil)
+	return New(DefaultConfig(), resolver, definitions.NewReader(nil, nil, definitions.NewDefinitionStore()), nil, nil)
 }
 
 // mockUpstreamServer creates a test HTTP server that mimics the quarkus-flow runner behavior.
@@ -73,7 +73,7 @@ func newTestServerWithUpstream(routes map[internal.WorkflowKey]routing.URL, upst
 		}
 		resolver.UpdateExecutionEndpoints(updatedRoutes)
 	}
-	return New(DefaultConfig(), resolver, definitions.NewReader(nil, nil, definitions.NewDefinitionStore()), nil)
+	return New(DefaultConfig(), resolver, definitions.NewReader(nil, nil, definitions.NewDefinitionStore()), nil, nil)
 }
 
 // Definitions
