@@ -139,6 +139,10 @@ func persistenceQuarkusEnvVars(p *logicv1.DatastoreSpec) []*corev1ac.EnvVarApply
 	if p.PostgreSQL.ServiceRef.DatabaseSchema != "" {
 		envs = append(envs, envLiteral("QUARKUS_HIBERNATE_ORM_DATABASE_DEFAULT_SCHEMA", p.PostgreSQL.ServiceRef.DatabaseSchema))
 	}
+	// With job/none the schema is owned outside Hibernate, so it must not run DDL.
+	if p.DBMigrationStrategy == logicv1.DBMigrationStrategyJob || p.DBMigrationStrategy == logicv1.DBMigrationStrategyNone {
+		envs = append(envs, envLiteral("QUARKUS_HIBERNATE_ORM_SCHEMA_MANAGEMENT_STRATEGY", "none"))
+	}
 	return envs
 }
 

@@ -22,12 +22,13 @@ type PlatformComponent interface {
 // componentFactory is a function that builds the ordered set of components for one reconcile.
 type componentFactory func(r *ClusterLogicPlatformReconciler) []PlatformComponent
 
-// defaultComponents returns the standard set of platform components (Data Index, Vector, Workflow Gateway).
+// defaultComponents returns the standard set of platform components (Data Index, Vector, Workflow Gateway, DBMigrator).
 func defaultComponents(r *ClusterLogicPlatformReconciler) []PlatformComponent {
 	return []PlatformComponent{
 		&dataIndexComponent{r},
 		&vectorComponent{r},
 		&workflowGatewayComponent{r},
+		&dbMigratorComponent{r},
 	}
 }
 

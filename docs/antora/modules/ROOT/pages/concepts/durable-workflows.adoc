@@ -236,8 +236,8 @@ spec:
 
 This enables GraphQL queries over the workflow execution history while maintaining durability for in-flight instances.
 
-The `dbMigrationStrategy` field is present in the persistence schema, but the current operator does
-not create migration Jobs or otherwise act on that field. Database initialization is handled by
-the runtime or component image.
+By default the runtime initializes its own schema. Set `dbMigrationStrategy: job` on a platform
+datastore to have the operator migrate the schema with a Job before runtimes roll out. See
+xref:crd-reference/clusterlogicplatform.adoc#_runtime_persistence[`runtime.persistence`].
 
 See xref:samples/persistence.adoc[Persistence & Data Index sample] for a complete example.

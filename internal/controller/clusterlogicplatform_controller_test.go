@@ -8,10 +8,14 @@ import (
 
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -259,6 +263,84 @@ var _ = Describe("ClusterLogicPlatform Controller", func() {
 			Expect(cond).NotTo(BeNil())
 			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(cond.Reason).To(Equal(logicv1.ReasonTargetNamespaceMissing))
+		})
+	})
+
+	Context("With Data Index dbMigrationStrategy=job", func() {
+		const name = "test-clp-di-migration"
+		var nn types.NamespacedName
+		var r *ClusterLogicPlatformReconciler
+		depName := types.NamespacedName{Name: name + "-data-index", Namespace: testNamespace}
+
+		BeforeEach(func() {
+			r = newCLPReconciler()
+			nn = createCLP(ctx, name, logicv1.ClusterLogicPlatformSpec{
+				TargetNamespace: testNamespace,
+				DataIndex: &logicv1.DataIndexSpec{
+					Persistence: &logicv1.DatastoreSpec{
+						PostgreSQL: &logicv1.PersistencePostgreSQL{
+							SecretRef:  logicv1.PostgreSQLSecretOptions{Name: "data-index-secret"},
+							ServiceRef: logicv1.PostgreSQLServiceOptions{Name: "data-index-postgres", DatabaseSchema: "data_index"},
+						},
+						DBMigrationStrategy: logicv1.DBMigrationStrategyJob,
+					},
+				},
+			})
+		})
+
+		AfterEach(func() {
+			var jobs batchv1.JobList
+			Expect(k8sClient.List(ctx, &jobs, client.InNamespace(testNamespace), client.MatchingLabels{LabelKeyName: name})).To(Succeed())
+			for i := range jobs.Items {
+				Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, &jobs.Items[i],
+					client.PropagationPolicy(metav1.DeletePropagationBackground)))).To(Succeed())
+			}
+			var pods corev1.PodList
+			Expect(k8sClient.List(ctx, &pods, client.InNamespace(testNamespace), client.HasLabels{"job-name"})).To(Succeed())
+			for i := range pods.Items {
+				Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, &pods.Items[i]))).To(Succeed())
+			}
+			dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: depName.Name, Namespace: depName.Namespace}}
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, dep))).To(Succeed())
+			clp := &logicv1.ClusterLogicPlatform{}
+			if err := k8sClient.Get(ctx, nn, clp); err == nil {
+				Expect(k8sClient.Delete(ctx, clp)).To(Succeed())
+			}
+		})
+
+		It("should deploy Data Index only after its migration Job succeeds", func() {
+			clp := reconcileCLPAndFetch(ctx, r, nn)
+
+			var dep appsv1.Deployment
+			Expect(errors.IsNotFound(k8sClient.Get(ctx, depName, &dep))).To(BeTrue())
+			Expect(clp.Status.DBMigrator).NotTo(BeNil())
+			migration := clp.Status.DBMigrator.Migrations[0]
+			Expect(migration.Datastore).To(Equal(MigrationStreamDataIndex))
+
+			var job batchv1.Job
+			jobNN := types.NamespacedName{Name: migration.JobRef, Namespace: testNamespace}
+			Expect(k8sClient.Get(ctx, jobNN, &job)).To(Succeed())
+			now := metav1.Now()
+			job.Status.StartTime = &now
+			job.Status.CompletionTime = &now
+			job.Status.Conditions = []batchv1.JobCondition{
+				{Type: batchv1.JobSuccessCriteriaMet, Status: corev1.ConditionTrue},
+				{Type: batchv1.JobComplete, Status: corev1.ConditionTrue},
+			}
+			Expect(k8sClient.Status().Update(ctx, &job)).To(Succeed())
+
+			// First reconcile records the success; the next one rolls out Data Index.
+			clp = reconcileCLPAndFetch(ctx, r, nn)
+			Expect(clp.Status.DBMigrator.Migrations[0].Phase).To(Equal(logicv1.MigrationPhaseSucceeded))
+			Expect(meta.IsStatusConditionTrue(clp.Status.Conditions, logicv1.ConditionDBMigration)).To(BeTrue())
+			reconcileCLPAndFetch(ctx, r, nn)
+
+			Expect(k8sClient.Get(ctx, depName, &dep)).To(Succeed())
+			envs := dep.Spec.Template.Spec.Containers[0].Env
+			flyway := findEnvVar(envs, "QUARKUS_FLYWAY_MIGRATE_AT_START")
+			Expect(flyway).NotTo(BeNil())
+			Expect(flyway.Value).To(Equal("false"))
+			Expect(findEnvVar(envs, "QUARKUS_FLYWAY_BASELINE_ON_MIGRATE")).To(BeNil())
 		})
 	})
 })
