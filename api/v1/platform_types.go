@@ -62,7 +62,7 @@ type DataIndexSpec struct {
 	// to collect and forward logs from all pods (Data Index and workflow runtimes) to
 	// external log aggregation systems.
 	//
-	// The DaemonSet is deployed 1:1 per LogicPlatform (one DaemonSet coordinates all
+	// The DaemonSet is deployed 1:1 per ClusterLogicPlatform (one DaemonSet coordinates all
 	// event inflow for the platform).
 	//
 	// Example:
@@ -225,7 +225,7 @@ type ReplicaStatus struct {
 
 // VectorStatus contains status information for the Vector DaemonSet.
 //
-// There is a 1:1 relationship between LogicPlatform and the Vector DaemonSet.
+// There is a 1:1 relationship between ClusterLogicPlatform and the Vector DaemonSet.
 // One DaemonSet per platform coordinates all event inflow from Data Index and runtimes.
 type VectorStatus struct {
 	// Ready indicates whether the Vector DaemonSet is ready.
@@ -295,7 +295,7 @@ type WorkflowGatewayStatus struct {
 	Replicas ReplicaStatus `json:"replicas,omitempty"`
 
 	// URL is the external URL to access the gateway (via Ingress/Route).
-	// Populated only when spec.workflowGateway.ingress.enabled is true and hostname is assigned.
+	// Populated only when spec.gateway.ingress.enabled is true and hostname is assigned.
 	// +optional
 	URL string `json:"url,omitempty"`
 }
