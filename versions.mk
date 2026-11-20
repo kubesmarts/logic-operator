@@ -11,5 +11,5 @@ VERSION ?= $(OPERATOR_VERSION)
 
 # Keep these streams independently configurable even while their defaults align.
 GATEWAY_VERSION ?= 2.0.0-Alpha4
-DATA_INDEX_VERSION ?= 2.0.0-SNAPSHOT-postgresql
-QUARKUS_FLOW_RUNNER_VERSION ?= 1.3.0
+DATA_INDEX_VERSION ?= 2.0.0-Alpha4-postgresql
+QUARKUS_FLOW_RUNNER_VERSION ?= 1.4.0

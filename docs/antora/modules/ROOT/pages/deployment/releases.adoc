@@ -27,7 +27,7 @@ The Release workflow will:
 * Publish both charts to `ghcr.io/kubesmarts/charts` using the built-in `GITHUB_TOKEN`
 * Provide the release tag in the workflow summary for use in the next step
 
-Example release tag: `v2.0.0-Alpha3`
+Example release tag: `v{operator-version}`
 
 === What gets validated
 
@@ -43,12 +43,12 @@ Example release tag: `v2.0.0-Alpha3`
 
 Operator and gateway versions are independent and configured in `versions.mk`:
 
-[source,makefile]
+[source,makefile,subs="attributes+"]
 ----
-OPERATOR_VERSION ?= 2.0.0-Alpha3
-GATEWAY_VERSION ?= 2.0.0-Alpha3
-DATA_INDEX_VERSION ?= 2.0.0-SNAPSHOT-postgresql
-QUARKUS_FLOW_RUNNER_VERSION ?= 1.3.0
+OPERATOR_VERSION ?= {operator-version}
+GATEWAY_VERSION ?= {workflow-gateway-version}
+DATA_INDEX_VERSION ?= {data-index-version}
+QUARKUS_FLOW_RUNNER_VERSION ?= {quarkus-flow-runner-version}
 ----
 
 Update these values before running the Release workflow. The workflow creates a single Git tag using `OPERATOR_VERSION`, but both versions are embedded in the operator image build arguments.
@@ -59,10 +59,10 @@ The *Publish Images* workflow builds multi-architecture images (linux/amd64, lin
 
 To publish images:
 
-1. Note the release tag created by the Release workflow (e.g., `v2.0.0-Alpha3`)
+1. Note the release tag created by the Release workflow (e.g., `v{operator-version}`)
 2. Navigate to https://github.com/kubesmarts/logic-operator/actions/workflows/publish-images.yaml[Actions → Publish Images]
 3. Click **Run workflow**
-4. Enter the release tag in `source_tag` (e.g., `v2.0.0-Alpha3`)
+4. Enter the release tag in `source_tag` (e.g., `v{operator-version}`)
 5. Leave `image_tag` empty to use component-specific versions, or provide a custom tag to apply to both images
 6. Click **Run workflow**
 
@@ -91,15 +91,15 @@ When `image_tag` is provided:
 * Both images use the supplied tag exactly as specified
 
 For example, if the tag's `versions.mk` defines:
-[source]
+[source,subs="attributes+"]
 ----
-OPERATOR_VERSION=2.0.0-Alpha3
-GATEWAY_VERSION=2.0.0-Alpha3
+OPERATOR_VERSION={operator-version}
+GATEWAY_VERSION={workflow-gateway-version}
 ----
 
 Running with `image_tag` empty publishes:
-- `quay.io/kubesmarts/logic-operator:2.0.0-Alpha3`
-- `quay.io/kubesmarts/workflow-gateway:2.0.0-Alpha3`
+- `quay.io/kubesmarts/logic-operator:{operator-version}`
+- `quay.io/kubesmarts/workflow-gateway:{workflow-gateway-version}`
 
 Running with `image_tag: 2.0.0` publishes both to their respective `2.0.0` tags.
 
@@ -109,7 +109,7 @@ To rebuild and republish images from an existing release tag (for example, after
 
 1. Navigate to https://github.com/kubesmarts/logic-operator/actions/workflows/publish-images.yaml[Actions → Publish Images]
 2. Click **Run workflow**
-3. Enter the existing release tag in `source_tag` (e.g., `v2.0.0-Alpha3`)
+3. Enter the existing release tag in `source_tag` (e.g., `v{operator-version}`)
 4. Leave both input fields as they are or provide the same `image_tag` as before
 5. Click **Run workflow**
 
@@ -148,9 +148,9 @@ The Publish Images workflow builds images for `linux/amd64` and `linux/arm64` pl
 
 After publishing, you can inspect the manifest:
 
-[source,bash]
+[source,bash,subs="attributes+"]
 ----
-docker manifest inspect quay.io/kubesmarts/logic-operator:2.0.0-Alpha3 | jq '.manifests[] | .platform'
+docker manifest inspect quay.io/kubesmarts/logic-operator:{operator-version} | jq '.manifests[] | .platform'
 ----
 
 Both platforms should appear in the output.
