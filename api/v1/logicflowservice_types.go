@@ -24,10 +24,6 @@ import (
 const LogicFlowServiceKind = "LogicFlowService"
 
 // LogicFlowServiceSpec defines the desired state of LogicFlowService.
-//
-// Provides stable external HTTP access to workflows with traffic splitting and TLS.
-// Forward reference pattern: Service → Definition (no bidirectional references).
-// The runtime is discovered transitively from the referenced definitions.
 type LogicFlowServiceSpec struct {
 	// DefaultDefinition routes 100% traffic to a single LogicFlowDefinition.
 	// Mutually exclusive with Traffic.
@@ -94,7 +90,6 @@ type IngressSpec struct {
 	TLS TLSSpec `json:"tls,omitempty"`
 }
 
-// TLSSpec configures TLS/HTTPS termination.
 // GatewayRef references a Gateway for HTTPRoute parentRefs.
 type GatewayRef struct {
 	// Name of the Gateway.
@@ -155,10 +150,7 @@ type TrafficStatus struct {
 	Ready bool `json:"ready"`
 }
 
-// LogicFlowService provides stable external HTTP access to workflows.
-//
-// Forward reference pattern: Service → Definition (no bidirectional references).
-// Supports traffic splitting for canary deployments and gradual rollouts.
+// LogicFlowService provides stable external HTTP access to workflows, with optional traffic splitting.
 //
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status

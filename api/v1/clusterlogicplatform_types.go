@@ -5,9 +5,6 @@ import (
 )
 
 // ClusterLogicPlatformSpec defines the desired state of ClusterLogicPlatform.
-//
-// ClusterLogicPlatform manages the cluster-scoped configuration for Logic Platform,
-// including Data Index, optional Vector log collection, and Workflow Gateway.
 type ClusterLogicPlatformSpec struct {
 	// TargetNamespace is the namespace where platform components are deployed.
 	// +kubebuilder:validation:Required
@@ -72,33 +69,6 @@ type DBMigratorSpec struct {
 }
 
 // ClusterLogicPlatform manages the cluster-scoped configuration for Logic Platform.
-//
-// Architecture: ClusterLogicPlatform manages cluster-wide platform configuration in its own namespace,
-// while LogicFlowRuntime resources are deployed in the target namespace.
-//
-// Example:
-//
-//	apiVersion: logic.kubesmarts.org/v1
-//	kind: ClusterLogicPlatform
-//	metadata:
-//	  name: global-platform
-//	spec:
-//	  targetNamespace: workflows
-//	  dataIndex:
-//	    enabled: true
-//	  gateway:
-//	    application:
-//	      image: quay.io/kubesmarts/workflow-gateway:2.0.0
-//	  runtime:
-//	    persistence:
-//	      runtime:
-//	        postgresql:
-//	          secretRef:
-//	            name: postgres-credentials
-//	          serviceRef:
-//	            name: postgres
-//	            databaseName: workflows
-//	            databaseSchema: runtime
 //
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
