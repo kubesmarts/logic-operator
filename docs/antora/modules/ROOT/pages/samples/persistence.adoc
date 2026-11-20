@@ -155,13 +155,17 @@ spec:
     do:
       - greet:
           set:
-            message: '${ "Hello, " + .name + "! Sleeping for 30s..." }'
+            greet-message: '${ "Hello, " + .name + "! Sleeping for 30s..." }'
+          output:
+            as: '${ $input + . }'
       - nap:
           wait:
             seconds: 30
       - wakeUp:
           set:
-            message: '${ "Done! " + .name + " woke up after sleeping." }'
+            wakeup-message: '${ "Done! " + .name + " woke up after sleeping." }'
+          output:
+            as: '${ $input + . }'
 ----
 
 The `nap` task suspends the workflow instance for 30 seconds.
@@ -180,15 +184,61 @@ kubectl wait -n logic-platform --for=condition=available deployment/default-data
 
 === Invoke the Sleepy Workflow
 
+==== Asynchronous invocation
+
 [source,bash]
 ----
-curl -X POST http://sleepy.lvh.me/ \
+curl -X POST http://sleepy.lvh.me/q/flow/exec/logic-platform/sleepy-workflow/1.0.0 \
   -H "Content-Type: application/json" \
   -d '{"name": "durable-test"}'
 ----
 
-The response arrives immediately with the initial greeting.
-The workflow is now suspended in the database for 30 seconds.
+The response arrives immediately and returns the instance identifiers for the newly created instance (`instanceId` and `workflowApplicationId`),
+along with "status": "RUNNING" and the workflow start time.
+
+The workflow instance is persisted in the database throughout the 30-second waiting period.
+Once the waiting period ends, the workflow execution finishes and the instance is removed from the database.
+
+[source,json]
+----
+{
+  "workflowApplicationId": "flow-pool-member-hello-runtime-01",
+  "instanceId": "01M7WDGB5J9ZXHN46VEWFRS3F1",
+  "status": "RUNNING",
+  "startedAt": "2026-11-20T12:04:39.218306391Z",
+  "completedAt": null
+}
+----
+
+==== Synchronous invocation
+
+[source,bash]
+----
+curl -X POST http://sleepy.lvh.me/q/flow/exec/logic-platform/sleepy-workflow/1.0.0?wait=true \
+  -H "Content-Type: application/json" \
+  -d '{"name": "durable-test"}'
+----
+
+The POST request blocks until the workflow finishes, then returns the execution result along with the workflow identifiers.
+
+The workflow instance is persisted in the database throughout the 30-second waiting period.
+Once the waiting period ends, the workflow execution finishes and the instance is removed from the database.
+
+[source,json]
+----
+{
+  "workflowApplicationId": "flow-pool-member-hello-runtime-01",
+  "instanceId": "01M7WEPGRM279R6GYP041PJ6VC",
+  "status": "COMPLETED",
+  "startedAt": "2026-11-20T12:25:30.132960265Z",
+  "completedAt": "2026-11-20T12:26:00.170620534Z",
+  "workflowOutput": {
+    "name": "durable-test",
+    "greet-message": "Hello, durable-test! Sleeping for 30s...",
+    "wakeup-message": "Done! durable-test woke up after sleeping."
+  }
+}
+----
 
 [TIP]
 ====
@@ -290,7 +340,8 @@ Example response:
         "status": "COMPLETED",
         "outputData": {
           "name": "durable-test",
-          "message": "Done! durable-test woke up after sleeping."
+          "greet-message": "Hello, durable-test! Sleeping for 30s...",
+          "wakeup-message": "Done! durable-test woke up after sleeping."
         },
         "endedAt": "2026-09-30T14:35:22Z"
       }

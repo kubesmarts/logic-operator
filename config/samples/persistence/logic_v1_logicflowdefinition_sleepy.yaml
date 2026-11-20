@@ -17,10 +17,14 @@ spec:
     do:
       - greet:
           set:
-            message: '${ "Hello, " + .name + "! Sleeping for 30s..." }'
+            greet-message: '${ "Hello, " + .name + "! Sleeping for 30s..." }'
+          output:
+            as: '${ $input + . }'
       - nap:
           wait:
             seconds: 30
       - wakeUp:
           set:
-            message: '${ "Done! " + .name + " woke up after sleeping." }'
+            wakeup-message: '${ "Done! " + .name + " woke up after sleeping." }'
+          output:
+            as: '${ $input + . }'
