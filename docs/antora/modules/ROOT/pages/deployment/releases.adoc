@@ -47,7 +47,7 @@ Operator and gateway versions are independent and configured in `versions.mk`:
 ----
 OPERATOR_VERSION ?= 2.0.0-Alpha3
 GATEWAY_VERSION ?= 2.0.0-Alpha3
-DATA_INDEX_VERSION ?= 2.0.0-SNAPSHOT-postgresql
+DATA_INDEX_VERSION ?= 2.0.0-Alpha4-postgresql
 QUARKUS_FLOW_RUNNER_VERSION ?= 1.4.0
 ----
 
