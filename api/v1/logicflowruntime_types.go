@@ -45,8 +45,6 @@ type PlatformReference struct {
 }
 
 // LogicFlowRuntimeSpec defines the desired state of LogicFlowRuntime.
-//
-// Shared Quarkus Flow runner that executes multiple workflow definitions.
 type LogicFlowRuntimeSpec struct {
 	RuntimeSpec `json:",inline"`
 	Security    RuntimeSecuritySpec    `json:"security,omitempty"`
@@ -123,9 +121,6 @@ type RuntimeDefinitionStatus struct {
 }
 
 // LogicFlowRuntime is a shared Quarkus Flow runner deployment that executes multiple workflow definitions.
-//
-// Architecture: 1 Runtime = N Workflow Definitions (shared runner model)
-// Workflows are loaded from ConfigMaps or embedded in the runtime image.
 //
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
@@ -262,9 +257,6 @@ type SecretKeySelector struct {
 }
 
 // StructuredLoggingSpec configures structured JSON logging for workflow events.
-//
-// Structured logging enables Vector and observability platforms to capture workflow
-// execution data (events, metrics, payloads) for querying and analytics.
 type StructuredLoggingSpec struct {
 	// Enabled enables structured JSON logging for workflow events.
 	// Defaults to true (respects runner image defaults).

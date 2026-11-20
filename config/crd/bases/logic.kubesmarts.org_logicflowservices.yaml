@@ -42,11 +42,8 @@ spec:
     name: v1
     schema:
       openAPIV3Schema:
-        description: |-
-          LogicFlowService provides stable external HTTP access to workflows.
-
-          Forward reference pattern: Service → Definition (no bidirectional references).
-          Supports traffic splitting for canary deployments and gradual rollouts.
+        description: LogicFlowService provides stable external HTTP access to workflows,
+          with optional traffic splitting.
         properties:
           apiVersion:
             description: |-
@@ -66,12 +63,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: |-
-              LogicFlowServiceSpec defines the desired state of LogicFlowService.
-
-              Provides stable external HTTP access to workflows with traffic splitting and TLS.
-              Forward reference pattern: Service → Definition (no bidirectional references).
-              The runtime is discovered transitively from the referenced definitions.
+            description: LogicFlowServiceSpec defines the desired state of LogicFlowService.
             properties:
               defaultDefinition:
                 description: |-

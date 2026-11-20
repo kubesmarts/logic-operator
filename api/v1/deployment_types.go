@@ -3,8 +3,7 @@ package v1
 import corev1 "k8s.io/api/core/v1"
 
 // ApplicationSpec defines common deployment configuration for operator-managed applications.
-//
-// Configuration precedence: podTemplate.container > container > top-level shortcuts
+// Precedence: podTemplate.container > container > top-level fields.
 type ApplicationSpec struct {
 	// Image specifies the container image.
 	// +optional

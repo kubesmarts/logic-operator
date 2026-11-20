@@ -29,18 +29,8 @@ spec:
     name: v1
     schema:
       openAPIV3Schema:
-        description: "ClusterLogicPlatform manages the cluster-scoped configuration
-          for Logic Platform.\n\nArchitecture: ClusterLogicPlatform manages cluster-wide
-          platform configuration in its own namespace,\nwhile LogicFlowRuntime resources
-          are deployed in the target namespace.\n\nExample:\n\n\tapiVersion: logic.kubesmarts.org/v1\n\tkind:
-          ClusterLogicPlatform\n\tmetadata:\n\t  name: global-platform\n\tspec:\n\t
-          \ targetNamespace: workflows\n\t  dataIndex:\n\t    application:\n\t      image:
-          quay.io/kubesmarts/data-index:2.0.0\n\t  gateway:\n\t    application:\n\t
-          \     image: quay.io/kubesmarts/workflow-gateway:2.0.0\n\t  runtime:\n\t
-          \   persistence:\n\t      runtime:\n\t        postgresql:\n\t          secretRef:\n\t
-          \           name: postgres-credentials\n\t          serviceRef:\n\t            name:
-          postgres\n\t            databaseName: workflows\n\t            databaseSchema:
-          runtime"
+        description: ClusterLogicPlatform manages the cluster-scoped configuration
+          for Logic Platform.
         properties:
           apiVersion:
             description: |-
@@ -60,11 +50,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: |-
-              ClusterLogicPlatformSpec defines the desired state of ClusterLogicPlatform.
-
-              ClusterLogicPlatform manages the cluster-scoped configuration for Logic Platform,
-              including Data Index, optional Vector log collection, and Workflow Gateway.
+            description: ClusterLogicPlatformSpec defines the desired state of ClusterLogicPlatform.
             properties:
               dataIndex:
                 description: DataIndex configures the Data Index service for workflow
