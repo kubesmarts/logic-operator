@@ -138,9 +138,12 @@ helm-package: kustomize ## Generate and package both Helm charts and CRDs for a 
 
 ##@ Development
 
+# CRD generator options; kind-deploy drops field descriptions to stay under etcd's request size limit.
+CRD_OPTIONS ?= crd
+
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./api/..." paths="./cmd/..." paths="./internal/..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=manager-role $(CRD_OPTIONS) webhook paths="./api/..." paths="./cmd/..." paths="./internal/..." output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -365,11 +368,13 @@ kind-build-gateway: ## Build and load the configured gateway image into KIND.
 	@echo "Workflow gateway image loaded into KIND cluster."
 
 .PHONY: kind-deploy
-kind-deploy: manifests generate kustomize ## Build, load, and deploy the operator into KIND.
+kind-deploy: generate kustomize ## Build, load, and deploy the operator into KIND.
 	$(CONTAINER_TOOL) build $(VERSION_BUILD_ARGS) -t $(KIND_IMG) .
 	$(KIND) load docker-image $(KIND_IMG) --name $(KIND_DEV_CLUSTER)
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(KIND_IMG)
-	$(KUSTOMIZE) build config/default | $(KUBECTL) apply --server-side -f -
+	$(MAKE) manifests CRD_OPTIONS=crd:maxDescLen=0
+	status=0; $(KUSTOMIZE) build config/default | $(KUBECTL) apply --server-side -f - || status=$$?; \
+		$(MAKE) manifests; exit $$status
 	@echo "Waiting for operator deployment to be ready..."
 	@$(KUBECTL) wait --namespace logic-operator-system --for=condition=available deployment --all --timeout=120s
 	@echo "Operator deployed successfully."
