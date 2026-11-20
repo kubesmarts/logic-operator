@@ -200,9 +200,6 @@ curl -X POST http://sleepy.lvh.me/q/flow/exec/logic-platform/sleepy-workflow/1.0
   -d '{"name": "durable-test"}'
 ----
 
-The `LogicFlowService` forwards the request path unchanged, so call the runner's execution path.
-The path uses the Kubernetes namespace (`logic-platform`), not the workflow document namespace.
-
 The response arrives immediately with the initial greeting.
 The workflow is now suspended in the database for 30 seconds.
 
