@@ -279,7 +279,7 @@ test-e2e: ## Run all E2E tests (requires setup-test-e2e to be run first)
 	E2E_CURL_IMAGE=$(CURL_IMG) KIND_CLUSTER=$(KIND_CLUSTER) go test -ldflags "$(VERSION_LDFLAGS)" ./test/e2e/ -v -ginkgo.v
 
 test-e2e-platform: ## Run ClusterLogicPlatform E2E tests
-	E2E_CURL_IMAGE=$(CURL_IMG) KIND_CLUSTER=$(KIND_CLUSTER) go test -ldflags "$(VERSION_LDFLAGS)" ./test/e2e/ -v -ginkgo.v -ginkgo.focus="LogicPlatform"
+	E2E_CURL_IMAGE=$(CURL_IMG) KIND_CLUSTER=$(KIND_CLUSTER) go test -ldflags "$(VERSION_LDFLAGS)" ./test/e2e/ -v -ginkgo.v -ginkgo.focus="ClusterLogicPlatform"
 
 test-e2e-runtime: ## Run LogicFlowRuntime E2E tests
 	E2E_CURL_IMAGE=$(CURL_IMG) KIND_CLUSTER=$(KIND_CLUSTER) go test -ldflags "$(VERSION_LDFLAGS)" ./test/e2e/ -v -ginkgo.v -ginkgo.focus="LogicFlowRuntime"
