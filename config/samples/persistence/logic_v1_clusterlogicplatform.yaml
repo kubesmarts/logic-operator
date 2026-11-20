@@ -54,13 +54,13 @@ spec:
   # Workflow runtime and Quartz scheduler persistence
   runtime:
     persistence:
-      # The runner creates its own tables, so it needs DDL credentials.
-      # TODO: switch to job once https://github.com/quarkiverse/quarkus-flow/issues/1173 is fixed.
       runtime:
-        dbMigrationStrategy: service
+        dbMigrationStrategy: job
+        migrationSecretRef:
+          name: postgresql-secret
         postgresql:
           secretRef:
-            name: postgresql-secret
+            name: postgresql-app-secret
           serviceRef:
             name: postgresql
             namespace: logic-platform
