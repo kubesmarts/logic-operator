@@ -59,7 +59,7 @@ const (
 	ReasonIngressMisconfigured = "IngressMisconfigured"
 )
 
-// LogicPlatform conditions
+// ClusterLogicPlatform conditions
 const (
 	ConditionDataIndexReady               = "DataIndexReady"
 	ConditionDataIndexDeploymentAvailable = "DataIndexDeploymentAvailable"
@@ -71,7 +71,7 @@ const (
 	ConditionDBMigration                  = "DBMigration"
 )
 
-// LogicPlatform reasons
+// ClusterLogicPlatform reasons
 const (
 	ReasonDataIndexDeploymentNotFound = "DataIndexDeploymentNotFound"
 	ReasonDataIndexServiceNotFound    = "DataIndexServiceNotFound"

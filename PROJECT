@@ -13,11 +13,11 @@ repo: github.com/kubesmarts/logic-operator
 resources:
 - api:
     crdVersion: v1
-    namespaced: true
+    namespaced: false
   controller: true
   domain: kubesmarts.org
   group: logic
-  kind: LogicPlatform
+  kind: ClusterLogicPlatform
   path: github.com/kubesmarts/logic-operator/api/v1
   version: v1
 - api:

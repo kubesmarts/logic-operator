@@ -9759,7 +9759,7 @@ spec:
                       to collect and forward logs from all pods (Data Index and workflow runtimes) to
                       external log aggregation systems.
 
-                      The DaemonSet is deployed 1:1 per LogicPlatform (one DaemonSet coordinates all
+                      The DaemonSet is deployed 1:1 per ClusterLogicPlatform (one DaemonSet coordinates all
                       event inflow for the platform).
 
                       Example:
@@ -38908,7 +38908,7 @@ spec:
                   url:
                     description: |-
                       URL is the external URL to access the gateway (via Ingress/Route).
-                      Populated only when spec.workflowGateway.ingress.enabled is true and hostname is assigned.
+                      Populated only when spec.gateway.ingress.enabled is true and hostname is assigned.
                     type: string
                 required:
                 - ready
