@@ -179,13 +179,13 @@ To test durable workflows and Data Index integration:
 [source,bash]
 ----
 # Apply PostgreSQL and ClusterLogicPlatform
-kubectl apply -k config/samples/persistence/
+kubectl apply -k config/samples/persistence/ -n logic-platform
 
 # Wait for everything
-kubectl wait --for=condition=available deployment/postgresql deployment/hello-runtime deployment/default-data-index --timeout=120s
+kubectl wait -n logic-platform --for=condition=available deployment/postgresql deployment/hello-runtime deployment/default-data-index --timeout=120s
 
 # Test a durable workflow
-curl -X POST http://sleepy.lvh.me/ \
+curl -X POST http://sleepy.lvh.me/q/flow/exec/logic-platform/sleepy-workflow/1.0.0 \
   -H "Content-Type: application/json" \
   -d '{"name": "local-test"}'
 
