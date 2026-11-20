@@ -50,6 +50,7 @@ func newHeadlessGatewayWithResolver(t *testing.T) (*httptest.Server, *routing.Re
 		resolver,
 		definitions.NewReader(nil, nil, definitions.NewDefinitionStore()),
 		nil, // diClient
+		nil, // topologyReader
 	)
 
 	ts := httptest.NewServer(srv.Handler())

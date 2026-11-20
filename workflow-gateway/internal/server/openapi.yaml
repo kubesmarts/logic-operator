@@ -12,6 +12,32 @@ servers:
     description: Workflow Gateway API v1
 
 paths:
+  /topology:
+    get:
+      operationId: getTopology
+      summary: Discover workflow and platform topology
+      description: >
+        Uses the gateway service account. The endpoint performs no caller authentication or authorization.
+        A namespace selects workflow resources and includes related platforms and their infrastructure.
+        Platforms targeting the selected namespace are included even when no runtimes exist there.
+        Omit the filter for all namespaces.
+      parameters:
+        - in: query
+          name: namespace
+          schema: {type: string, minLength: 1, maxLength: 63}
+      responses:
+        "200":
+          description: Complete or partially discovered graph
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Topology'}
+        "400":
+          description: Invalid namespace query
+        "503":
+          description: All discovery sources are unavailable
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Topology'}
   /openapi.json:
     get:
       summary: Get this OpenAPI specification
@@ -390,6 +416,64 @@ components:
         type: string
 
   schemas:
+    Topology:
+      type: object
+      required: [nodes, edges, discovery]
+      properties:
+        nodes:
+          type: array
+          items: {$ref: '#/components/schemas/TopologyNode'}
+        edges:
+          type: array
+          items:
+            type: object
+            required: [id, type, source, target]
+            properties:
+              id: {type: string}
+              type: {type: string, enum: [routesTo, runsOn, usesPlatform, manages, usesSchema]}
+              source: {type: string, description: Source node ID}
+              target: {type: string, description: Target node ID}
+              weight: {type: integer, minimum: 0, maximum: 100, description: Configured routing percentage}
+        discovery:
+          type: object
+          required: [partial, warnings]
+          properties:
+            partial: {type: boolean}
+            warnings:
+              type: array
+              items:
+                type: object
+                required: [code, kind]
+                properties:
+                  code: {type: string, enum: [SourceUnavailable, UnresolvedReference]}
+                  kind: {type: string}
+                  nodeId: {type: string, description: Origin of an unresolved relationship}
+    TopologyNode:
+      type: object
+      required: [id, kind, name, label, status]
+      properties:
+        id: {type: string, description: Stable opaque node identity}
+        kind: {type: string, enum: [LogicFlowService, LogicFlowDefinition, LogicFlowRuntime, ClusterLogicPlatform, WorkflowGateway, Vector, DataIndex, PostgreSQLSchema]}
+        namespace: {type: string, description: Kubernetes namespace for namespaced resources and managed workloads}
+        name: {type: string}
+        label: {type: string}
+        status:
+          type: object
+          required: [state, source]
+          properties:
+            state: {type: string, enum: [Ready, NotReady, Unknown]}
+            source: {type: string, description: Operator status or configuration field used for this observation}
+        details:
+          type: object
+          properties:
+            version: {type: string}
+            replicas: {type: integer}
+            readyReplicas: {type: integer}
+            targetNamespace: {type: string}
+            workloadName: {type: string}
+            components:
+              type: object
+              additionalProperties: {type: string, enum: [Ready, NotReady, Unknown, NotConfigured]}
     WorkflowDefinition:
       type: object
       required: [namespace, name, version, _links]

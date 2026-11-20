@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"gopkg.in/yaml.v3"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
@@ -22,6 +23,7 @@ import (
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/dataindex"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/definitions"
 	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/routing"
+	"github.com/kubesmarts/logic-operator/workflow-gateway/internal/topology"
 )
 
 type Config struct {
@@ -43,23 +45,25 @@ func DefaultConfig() Config {
 }
 
 type Server struct {
-	config      Config
-	router      *chi.Mux
-	ready       atomic.Bool
-	server      *http.Server
-	resolver    *routing.Resolver
-	definitions *definitions.Reader
-	diClient    *dataindex.Client
+	config         Config
+	router         *chi.Mux
+	ready          atomic.Bool
+	server         *http.Server
+	resolver       *routing.Resolver
+	definitions    *definitions.Reader
+	diClient       *dataindex.Client
+	topologyReader client.Reader
 }
 
-func New(config Config, resolver *routing.Resolver, defReader *definitions.Reader, diClient *dataindex.Client) *Server {
+func New(config Config, resolver *routing.Resolver, defReader *definitions.Reader, diClient *dataindex.Client, topologyReader client.Reader) *Server {
 	router := chi.NewRouter()
 	s := &Server{
-		config:      config,
-		router:      router,
-		resolver:    resolver,
-		definitions: defReader,
-		diClient:    diClient,
+		config:         config,
+		router:         router,
+		resolver:       resolver,
+		definitions:    defReader,
+		diClient:       diClient,
+		topologyReader: topologyReader,
 	}
 	s.registerRoutes()
 	return s
@@ -73,6 +77,7 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) registerRoutes() {
 	s.router.Route("/v1", func(r chi.Router) {
+		r.Get("/topology", topology.Handler(s.topologyReader))
 		r.Route("/definitions", func(r chi.Router) {
 			r.Get("/", s.listDefinitionsHandler)
 			r.Get("/{namespace}/{name}/{version}", s.getDefinitionHandler)

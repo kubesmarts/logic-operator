@@ -13,6 +13,9 @@ rules:
   - get
   - list
   - watch
+- apiGroups: [logic.kubesmarts.org]
+  resources: [logicflowruntimes]
+  verbs: [list, watch]
 - apiGroups:
   - coordination.k8s.io
   resources:

@@ -313,6 +313,39 @@ spec:
 			}
 			Eventually(verifyCompletion, 2*time.Minute, 10*time.Second).Should(Succeed())
 		})
+
+		It("should list the runtime and definition in the gateway topology", func() {
+			client := &http.Client{Timeout: 10 * time.Second}
+			topologyURL := "http://" + gatewayHost + "/v1/topology?namespace=" + url.QueryEscape(testNamespace)
+
+			Eventually(func(g Gomega) {
+				resp, err := client.Get(topologyURL)
+				g.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = resp.Body.Close() }()
+				g.Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+				var topology struct {
+					Nodes []struct {
+						Kind      string `json:"kind"`
+						Namespace string `json:"namespace"`
+						Name      string `json:"name"`
+					} `json:"nodes"`
+				}
+				g.Expect(json.NewDecoder(resp.Body).Decode(&topology)).To(Succeed())
+
+				var runtimes, definitions []string
+				for _, node := range topology.Nodes {
+					switch node.Kind {
+					case "LogicFlowRuntime":
+						runtimes = append(runtimes, node.Namespace+"/"+node.Name)
+					case "LogicFlowDefinition":
+						definitions = append(definitions, node.Namespace+"/"+node.Name)
+					}
+				}
+				g.Expect(runtimes).To(ConsistOf(testNamespace + "/gateway-test-runtime"))
+				g.Expect(definitions).To(ConsistOf(testNamespace + "/e2e-gateway-sleepy-v1-0-0"))
+			}, 30*time.Second, time.Second).Should(Succeed())
+		})
 	})
 }
 

@@ -11,7 +11,7 @@ import (
 
 func TestServerRoutes(t *testing.T) {
 	resolver := routing.NewResolver(routing.NewExecutionEndpointStore(), routing.NewInstanceStore(), nil)
-	s := New(DefaultConfig(), resolver, definitions.NewReader(nil, nil, definitions.NewDefinitionStore()), nil)
+	s := New(DefaultConfig(), resolver, definitions.NewReader(nil, nil, definitions.NewDefinitionStore()), nil, nil)
 	s.SetReady(true)
 
 	tests := []struct {

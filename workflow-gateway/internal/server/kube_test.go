@@ -167,7 +167,7 @@ func TestE2EListDefinitions(t *testing.T) {
 		return err == nil
 	}, 10*time.Second, 100*time.Millisecond, "route must appear in store before querying server")
 
-	srv := server.New(server.DefaultConfig(), resolver, reader, nil)
+	srv := server.New(server.DefaultConfig(), resolver, reader, nil, nil)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -243,7 +243,7 @@ func TestE2EDataIndexDiscoveryAndProxy(t *testing.T) {
 
 	// Create server with Data Index client
 	diClient := dataindex.NewClient(platformStore)
-	srv := server.New(server.DefaultConfig(), resolver, reader, diClient)
+	srv := server.New(server.DefaultConfig(), resolver, reader, diClient, nil)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -312,7 +312,7 @@ func TestE2EGetDefinition(t *testing.T) {
 	}, 10*time.Second, 100*time.Millisecond, "route must appear in store")
 
 	// Create server and test handler
-	srv := server.New(server.DefaultConfig(), resolver, reader, nil)
+	srv := server.New(server.DefaultConfig(), resolver, reader, nil, nil)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -377,7 +377,7 @@ func TestE2EAsyncExecuteAndInstanceCaching(t *testing.T) {
 		return err == nil
 	}, 10*time.Second, 100*time.Millisecond, "route must appear")
 
-	srv := server.New(server.DefaultConfig(), resolver, reader, nil)
+	srv := server.New(server.DefaultConfig(), resolver, reader, nil, nil)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 

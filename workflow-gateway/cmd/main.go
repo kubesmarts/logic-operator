@@ -119,7 +119,7 @@ func main() {
 		IdleTimeout:     idleTimeout,
 		ShutdownTimeout: shutdownTimeout,
 	}
-	srv := server.New(serverCfg, resolver, defReader, diClient)
+	srv := server.New(serverCfg, resolver, defReader, diClient, mgr.GetCache())
 
 	// Create management server
 	mgmtCfg := server.ManagementConfig{
