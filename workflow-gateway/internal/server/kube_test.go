@@ -204,7 +204,7 @@ func TestE2EListDefinitions(t *testing.T) {
 }
 
 // TestE2EDataIndexDiscoveryAndProxy verifies the end-to-end Data Index integration:
-// LogicPlatform CRD creation → PlatformWatcher sync → endpoint discovery → GraphQL queries.
+// ClusterLogicPlatform CRD creation → PlatformWatcher sync → endpoint discovery → GraphQL queries.
 func TestE2EDataIndexDiscoveryAndProxy(t *testing.T) {
 	if testCfg == nil {
 		t.Skip("envtest unavailable; run 'make test-gateway'")

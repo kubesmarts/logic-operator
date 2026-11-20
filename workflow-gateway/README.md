@@ -5,7 +5,7 @@ The Workflow Gateway is an HTTP entry point for Logic Operator workflows. It dis
 Runner, and forwards instance lifecycle operations. It can also read workflow definitions from the
 Kubernetes API and query workflow instances through Data Index.
 
-For the user guide, API routes, LogicPlatform integration, and known limitations, see the
+For the user guide, API routes, ClusterLogicPlatform integration, and known limitations, see the
 [Workflow Gateway documentation](../docs/antora/modules/ROOT/pages/components/workflow-gateway.adoc).
 
 ## Routing behavior
@@ -35,12 +35,12 @@ make docker-build-gateway
 ```
 
 The default image tag is `quay.io/kubesmarts/workflow-gateway:$(GATEWAY_VERSION)`. When running in
-Kubernetes, `LogicPlatform` defaults the gateway image to the version embedded in the operator
-build. Set `spec.workflowGateway.application.image` to override it.
+Kubernetes, the gateway image defaults to the version embedded in the operator build. Set
+`spec.gateway.application.image` on the `ClusterLogicPlatform` to override it.
 
 To run the binary locally, provide a usable Kubernetes configuration and access to the Logic
-Operator CRDs and resources. The gateway uses `POD_NAMESPACE` to locate the LogicPlatform for
-Data Index discovery; it defaults to `default` when unset.
+Operator CRDs and resources. Data Index discovery reads the cluster-scoped `ClusterLogicPlatform`.
+`POD_NAMESPACE` is only used for logging and defaults to `default` when unset.
 
 The public API listener defaults to `:8080`. The management listener defaults to `:8081`.
 Containerized development runs can publish both ports:
@@ -62,14 +62,14 @@ The management listener provides:
 | `/ready` | Returns 200 after the cache and initial routing table are synchronized; otherwise 503. |
 | `/debug/routes` | Shows the current workflow execution endpoint table. |
 
-The LogicPlatform-managed Service exposes only port 80 targeting API port 8080. Port 8081 is used
-by container probes and is not exposed by that Service.
+The ClusterLogicPlatform-managed Service exposes only port 80 targeting API port 8080. Port 8081
+is used by container probes and is not exposed by that Service.
 
 ## Data Index behavior
 
-`GET /v1/instances` and `GET /v1/instances/{id}` use the GraphQL endpoint published by the
-LogicPlatform in the same namespace as the gateway. They return 503 if Data Index is disabled or
-not yet discovered. Workflow execution does not depend on Data Index.
+`GET /v1/instances` and `GET /v1/instances/{id}` use the GraphQL endpoint published in the
+`ClusterLogicPlatform` status (Data Index runs in the platform's `spec.targetNamespace`). They
+return 503 if Data Index is disabled or not yet discovered. Workflow execution does not depend on Data Index.
 
 ## Current limitations
 

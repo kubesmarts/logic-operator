@@ -185,7 +185,7 @@ replacements:
         index: 1
         create: true
 #
-- source: # LogicPlatform has a mutating webhook (defaulter)
+- source: # LogicFlowDefinition, LogicFlowRuntime and LogicFlowService have mutating webhooks (defaulters)
     kind: Certificate
     group: cert-manager.io
     version: v1
