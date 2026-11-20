@@ -28,10 +28,10 @@ data:
     CREATE SCHEMA IF NOT EXISTS quartz;
 
     CREATE ROLE flowapp LOGIN PASSWORD 'flowapppass';
-    GRANT USAGE ON SCHEMA quartz TO flowapp;
-    ALTER DEFAULT PRIVILEGES FOR ROLE flowuser IN SCHEMA quartz
+    GRANT USAGE ON SCHEMA runtime, quartz TO flowapp;
+    ALTER DEFAULT PRIVILEGES FOR ROLE flowuser IN SCHEMA runtime, quartz
       GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO flowapp;
-    ALTER DEFAULT PRIVILEGES FOR ROLE flowuser IN SCHEMA quartz
+    ALTER DEFAULT PRIVILEGES FOR ROLE flowuser IN SCHEMA runtime, quartz
       GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO flowapp;
 ---
 apiVersion: v1
