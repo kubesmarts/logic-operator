@@ -25,8 +25,7 @@ const (
 	DBMigrationStrategyNone    DBMigrationStrategyType = "none"
 )
 
-// TLSMode specifies the TLS connection mode for PostgreSQL connections.
-// See: https://www.postgresql.org/docs/current/libpq-ssl.html#LIBPQ-SSL-SSLMODE-STATEMENTS
+// TLSMode is the PostgreSQL sslmode.
 // +kubebuilder:validation:Enum=disable;allow;prefer;require;verify-ca;verify-full
 type TLSMode string
 
@@ -45,127 +44,82 @@ const (
 	TLSModeVerifyFull TLSMode = "verify-full"
 )
 
-// PersistencePostgreSQL configures a PostgreSQL database connection via Kubernetes Service reference.
-//
-// The operator constructs the JDBC URL dynamically from the service endpoint.
-//
-// Example:
-//
-//	postgresql:
-//	  secretRef:
-//	    name: postgres-credentials
-//	    userKey: POSTGRESQL_USER
-//	    passwordKey: POSTGRESQL_PASSWORD
-//	  serviceRef:
-//	    name: postgres
-//	    namespace: databases
-//	    port: 5432
-//	    databaseName: logicflow
-//	    databaseSchema: workflows
-//
+// PersistencePostgreSQL configures a PostgreSQL connection; the operator builds the JDBC URL from ServiceRef.
 // +kubebuilder:validation:MinProperties=2
 // +kubebuilder:validation:MaxProperties=3
 type PersistencePostgreSQL struct {
-	// Secret reference to the database user credentials
+	// SecretRef references the database user credentials.
 	SecretRef PostgreSQLSecretOptions `json:"secretRef"`
-	// Service reference to PostgreSQL. Required for operator to construct JDBC URL.
+	// ServiceRef references the PostgreSQL Service.
 	ServiceRef PostgreSQLServiceOptions `json:"serviceRef"`
-	// TLS configuration for PostgreSQL connections.
-	// When enabled, the operator will append SSL parameters to the JDBC URL.
+	// TLS configures SSL parameters appended to the JDBC URL.
 	// +optional
 	TLS *TLSConnection `json:"tls,omitempty"`
 }
 
-// TLSConnection configures TLS/SSL settings for PostgreSQL connections.
-//
-// When enabled, the operator appends SSL parameters to the JDBC URL based on the mode:
-//   - disable: sslmode=disable
-//   - allow: sslmode=allow
-//   - prefer: sslmode=prefer (PostgreSQL default if not specified)
-//   - require: sslmode=require
-//   - verify-ca: sslmode=verify-ca (requires CA certificate)
-//   - verify-full: sslmode=verify-full (requires CA certificate and hostname verification)
-//
-// For verify-ca and verify-full modes, ensure the PostgreSQL server certificate
-// is properly configured and the CA certificate is available to the application.
-//
-// Example:
-//
-//	tls:
-//	  enabled: true
-//	  tlsMode: require
+// TLSConnection configures TLS/SSL for PostgreSQL connections.
+// verify-ca and verify-full require the CA certificate to be available to the application.
 type TLSConnection struct {
-	// Enabled determines whether to use TLS/SSL for PostgreSQL connections.
-	// If true, SSL parameters will be added to the JDBC URL based on tlsMode.
-	// Defaults to false.
+	// Enabled adds sslmode to the JDBC URL.
 	// +optional
 	// +kubebuilder:default=false
 	Enabled bool `json:"enabled"`
-	// TLSMode specifies the SSL connection mode for PostgreSQL.
-	// Defaults to "prefer" when enabled is true.
-	// See: https://www.postgresql.org/docs/current/libpq-ssl.html
+	// TLSMode is the PostgreSQL sslmode.
 	// +optional
 	// +kubebuilder:default=prefer
 	TLSMode TLSMode `json:"tlsMode,omitempty"`
 }
 
-// PostgreSQLSecretOptions use credential secret for postgresql connection.
+// PostgreSQLSecretOptions references a Secret with PostgreSQL credentials.
 type PostgreSQLSecretOptions struct {
-	// Name of the postgresql credentials secret.
+	// Name of the credentials Secret.
 	Name string `json:"name"`
-	// Defaults to POSTGRESQL_USER
+	// UserKey is the Secret key holding the user; defaults to POSTGRESQL_USER.
 	// +optional
 	UserKey string `json:"userKey,omitempty"`
-	// Defaults to POSTGRESQL_PASSWORD
+	// PasswordKey is the Secret key holding the password; defaults to POSTGRESQL_PASSWORD.
 	// +optional
 	PasswordKey string `json:"passwordKey,omitempty"`
 }
 
-// PostgreSQLServiceOptions configures a Kubernetes Service reference for PostgreSQL database connectivity.
-// The operator constructs the JDBC URL dynamically from the service endpoint.
+// PostgreSQLServiceOptions references the Kubernetes Service exposing PostgreSQL.
 type PostgreSQLServiceOptions struct {
-	// Name of the DB k8s service.
+	// Name of the Service.
 	Name string `json:"name"`
-	// Namespace of a Kubernetes Service. When omitted, Name is used as a hostname and Kubernetes
-	// DNS search resolves a same-namespace Service. Set Namespace to build a fully qualified
-	// address for a Service in another namespace.
+	// Namespace of the Service; when omitted, Name resolves within the same namespace.
 	// +optional
 	Namespace string `json:"namespace,omitempty"`
-	// Port to use when connecting to the DB k8s service.
+	// Port of the Service.
 	// +optional
 	Port *int `json:"port,omitempty"`
-	// Name of postgresql database to be used.
+	// DatabaseName is the PostgreSQL database.
 	// +optional
 	DatabaseName string `json:"databaseName,omitempty"`
-	// Schema of postgresql database to be used. When empty, the database default schema is used (typically "public").
+	// DatabaseSchema is the PostgreSQL schema; defaults to the database default (typically "public").
 	// +optional
 	DatabaseSchema string `json:"databaseSchema,omitempty"`
 }
 
-// DatastoreSpec configures a single PostgreSQL datastore with separate DDL (migration) and DML (operational) credentials.
-// Used by ClusterLogicPlatform for runtime/quartz datastores, and by DataIndex for persistence.
-// The PostgreSQL field provides the operational (DML) connection via SecretRef.
-// The MigrationSecretRef field provides the DDL (schema migration) credential; when nil, the operational secret is reused.
+// DatastoreSpec configures a PostgreSQL datastore with separate DML (operational) and DDL (migration) credentials.
 type DatastoreSpec struct {
 	// PostgreSQL configures the PostgreSQL connection; SecretRef is the DML (operational) credential.
 	// +optional
 	PostgreSQL *PersistencePostgreSQL `json:"postgresql,omitempty"`
-	// MigrationSecretRef references the DDL (schema migration) credential. When nil, the operational secret (PostgreSQL.SecretRef) is used.
+	// MigrationSecretRef references the DDL credential; defaults to PostgreSQL.SecretRef.
 	// +optional
 	MigrationSecretRef *PostgreSQLSecretOptions `json:"migrationSecretRef,omitempty"`
-	// Reserved migration strategy setting. The current controllers do not create migration Jobs or otherwise act on this field.
+	// DBMigrationStrategy is reserved; controllers do not act on it yet.
 	// +optional
 	// +kubebuilder:default:=service
 	DBMigrationStrategy DBMigrationStrategyType `json:"dbMigrationStrategy,omitempty"`
 }
 
-// RuntimePersistenceSpec configures workflow state and, optionally, a separate Quartz datasource.
-// When Quartz is omitted, the runner profile uses the workflow runtime datasource for Quartz.
+// RuntimePersistenceSpec configures workflow state and an optional separate Quartz datasource.
 type RuntimePersistenceSpec struct {
 	// Runtime configures the datastore for Quarkus Flow workflow state.
 	// +optional
 	Runtime DatastoreSpec `json:"runtime,omitempty"`
-	// Quartz optionally configures a separate datasource for Quartz scheduler tables.
+	// Quartz configures a separate datasource for Quartz tables; defaults to Runtime.
 	// +optional
 	Quartz DatastoreSpec `json:"quartz,omitempty"`
 }

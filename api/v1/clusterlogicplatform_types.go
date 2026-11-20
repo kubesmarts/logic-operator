@@ -85,7 +85,8 @@ type DBMigratorSpec struct {
 //	spec:
 //	  targetNamespace: workflows
 //	  dataIndex:
-//	    enabled: true
+//	    application:
+//	      image: quay.io/kubesmarts/data-index:2.0.0
 //	  gateway:
 //	    application:
 //	      image: quay.io/kubesmarts/workflow-gateway:2.0.0

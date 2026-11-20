@@ -94,7 +94,6 @@ type IngressSpec struct {
 	TLS TLSSpec `json:"tls,omitempty"`
 }
 
-// TLSSpec configures TLS/HTTPS termination.
 // GatewayRef references a Gateway for HTTPRoute parentRefs.
 type GatewayRef struct {
 	// Name of the Gateway.
