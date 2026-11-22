@@ -161,7 +161,21 @@ func quartzPersistenceQuarkusEnvVars(p *logicv1.DatastoreSpec) []*corev1ac.EnvVa
 	if p == nil || p.PostgreSQL == nil {
 		return nil
 	}
-	return datasourcePersistenceEnvVars(p, "QUARKUS_DATASOURCE__FLOW_QUARTZ__")
+	// The runner declares flow-quartz unquoted, so the env var uses single underscores.
+	return datasourcePersistenceEnvVars(p, "QUARKUS_DATASOURCE_FLOW_QUARTZ_")
+}
+
+// WithQuartzMigrationEnvVars stops the runner from migrating Quartz tables at startup when a Job or an
+// external process owns the schema; the runner's standard profile enables flow-quartz migrate-at-start.
+func WithQuartzMigrationEnvVars(p *logicv1.DatastoreSpec) ContainerOption {
+	return func(c *corev1ac.ContainerApplyConfiguration) {
+		if p == nil {
+			return
+		}
+		if p.DBMigrationStrategy == logicv1.DBMigrationStrategyJob || p.DBMigrationStrategy == logicv1.DBMigrationStrategyNone {
+			c.WithEnv(envLiteral("QUARKUS_FLYWAY_FLOW_QUARTZ_MIGRATE_AT_START", "false"))
+		}
+	}
 }
 
 func datasourcePersistenceEnvVars(p *logicv1.DatastoreSpec, envPrefix string) []*corev1ac.EnvVarApplyConfiguration {

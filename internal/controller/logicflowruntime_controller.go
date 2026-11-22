@@ -190,7 +190,8 @@ func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *lo
 		WithFlowVolumeMounts(configMaps),
 	}
 	if eff != nil {
-		opts = append(opts, WithDurableEnvVars(rt), WithQuartzSchedulerEnvVars(rt), DurableStartupProbe())
+		opts = append(opts, WithDurableEnvVars(rt), WithQuartzSchedulerEnvVars(rt), DurableStartupProbe(),
+			WithQuartzMigrationEnvVars(&eff.Platform.Spec.Runtime.Persistence.Quartz))
 	}
 	spec := ToDeploymentSpec(
 		ContainerNameRunner,

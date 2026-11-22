@@ -40,12 +40,12 @@ func TestQuartzPersistenceEnvVars_UsesNamedDatasourceAndIndependentConfiguration
 
 	envs := quartzPersistenceQuarkusEnvVars(p)
 	g.Expect(envs).To(gomega.HaveLen(3))
-	g.Expect(*envs[0].Name).To(gomega.Equal("QUARKUS_DATASOURCE__FLOW_QUARTZ__USERNAME"))
+	g.Expect(*envs[0].Name).To(gomega.Equal("QUARKUS_DATASOURCE_FLOW_QUARTZ_USERNAME"))
 	g.Expect(*envs[0].ValueFrom.SecretKeyRef.Name).To(gomega.Equal("quartz-creds"))
 	g.Expect(*envs[0].ValueFrom.SecretKeyRef.Key).To(gomega.Equal("SCHEDULER_USER"))
-	g.Expect(*envs[1].Name).To(gomega.Equal("QUARKUS_DATASOURCE__FLOW_QUARTZ__PASSWORD"))
+	g.Expect(*envs[1].Name).To(gomega.Equal("QUARKUS_DATASOURCE_FLOW_QUARTZ_PASSWORD"))
 	g.Expect(*envs[1].ValueFrom.SecretKeyRef.Key).To(gomega.Equal("SCHEDULER_PASSWORD"))
-	g.Expect(*envs[2].Name).To(gomega.Equal("QUARKUS_DATASOURCE__FLOW_QUARTZ__JDBC_URL"))
+	g.Expect(*envs[2].Name).To(gomega.Equal("QUARKUS_DATASOURCE_FLOW_QUARTZ_JDBC_URL"))
 	g.Expect(*envs[2].Value).To(gomega.Equal("jdbc:postgresql://scheduler-postgres.databases.svc.cluster.local:5432/schedulers?currentSchema=quartz-state"))
 }
 
@@ -53,6 +53,25 @@ func TestQuartzPersistenceEnvVars_NilUsesEmbeddedDefaultDatasourceFallback(t *te
 	g := gomega.NewWithT(t)
 	g.Expect(quartzPersistenceQuarkusEnvVars(nil)).To(gomega.BeNil())
 	g.Expect(quartzPersistenceQuarkusEnvVars(&logicv1.DatastoreSpec{})).To(gomega.BeNil())
+}
+
+func TestWithQuartzMigrationEnvVars_DisablesMigrateAtStartWhenSchemaIsOwnedElsewhere(t *testing.T) {
+	for _, strategy := range []logicv1.DBMigrationStrategyType{logicv1.DBMigrationStrategyJob, logicv1.DBMigrationStrategyNone} {
+		g := gomega.NewWithT(t)
+		c := corev1ac.Container().WithName(ContainerNameRunner)
+		WithQuartzMigrationEnvVars(&logicv1.DatastoreSpec{DBMigrationStrategy: strategy})(c)
+		g.Expect(c.Env).To(gomega.HaveLen(1), "strategy %s", strategy)
+		g.Expect(*c.Env[0].Name).To(gomega.Equal("QUARKUS_FLYWAY_FLOW_QUARTZ_MIGRATE_AT_START"))
+		g.Expect(*c.Env[0].Value).To(gomega.Equal("false"))
+	}
+}
+
+func TestWithQuartzMigrationEnvVars_KeepsRunnerMigrationForService(t *testing.T) {
+	g := gomega.NewWithT(t)
+	c := corev1ac.Container().WithName(ContainerNameRunner)
+	WithQuartzMigrationEnvVars(&logicv1.DatastoreSpec{DBMigrationStrategy: logicv1.DBMigrationStrategyService})(c)
+	WithQuartzMigrationEnvVars(nil)(c)
+	g.Expect(c.Env).To(gomega.BeEmpty())
 }
 
 func TestPersistenceEnvVars_CustomSecretKeys(t *testing.T) {

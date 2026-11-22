@@ -669,11 +669,11 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 			Expect(jdbcURL).NotTo(BeNil())
 			Expect(jdbcURL.Value).To(Equal("jdbc:postgresql://pg:5432/logicflow?currentSchema=public"))
 
-			quartzUser := findEnvVar(envs, "QUARKUS_DATASOURCE__FLOW_QUARTZ__USERNAME")
+			quartzUser := findEnvVar(envs, "QUARKUS_DATASOURCE_FLOW_QUARTZ_USERNAME")
 			Expect(quartzUser).NotTo(BeNil())
 			Expect(quartzUser.ValueFrom.SecretKeyRef.Name).To(Equal("pg-creds"))
 
-			quartzURL := findEnvVar(envs, "QUARKUS_DATASOURCE__FLOW_QUARTZ__JDBC_URL")
+			quartzURL := findEnvVar(envs, "QUARKUS_DATASOURCE_FLOW_QUARTZ_JDBC_URL")
 			Expect(quartzURL).NotTo(BeNil())
 			Expect(quartzURL.Value).To(Equal("jdbc:postgresql://pg:5432/logicflow?currentSchema=quartz"))
 		})
