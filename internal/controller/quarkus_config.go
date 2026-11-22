@@ -166,7 +166,7 @@ func quartzPersistenceQuarkusEnvVars(p *logicv1.DatastoreSpec) []*corev1ac.EnvVa
 }
 
 // WithQuartzMigrationEnvVars stops the runner from migrating Quartz tables at startup when a Job or an
-// external process owns the schema; the runner's standard profile enables flow-quartz migrate-at-start.
+// external process owns the schema.
 func WithQuartzMigrationEnvVars(p *logicv1.DatastoreSpec) ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
 		if p == nil {
