@@ -20,7 +20,7 @@ The Release workflow will:
 * Read the operator and gateway versions from `versions.mk`
 * Validate that the operator version is not a SNAPSHOT build
 * Run all validation checks: formatting, generated code, linting, unit tests, gateway integration tests, and E2E tests
-* Create an annotated Git tag: `v${OPERATOR_VERSION}`
+* Create an annotated Git tag: `v$\{OPERATOR_VERSION}`
 * Create a GitHub Release with auto-generated release notes
 * Package the `logic-operator` and `logic-operator-stack` Helm charts
 * Attach both chart archives and `crds.yaml` to the GitHub Release
@@ -50,6 +50,8 @@ GATEWAY_VERSION ?= {workflow-gateway-version}
 DATA_INDEX_VERSION ?= {data-index-version}
 QUARKUS_FLOW_RUNNER_VERSION ?= {quarkus-flow-runner-version}
 ----
+
+`versions.mk` also pins `LOGIC_APPS_REF` to the `logic-apps` tag that provides the Vector configuration (and the `logic-db-migrator` image, which follows the operator version). `make sync-configs` resolves that tag, so release builds do not pick up unreleased `logic-apps` changes. Bump it together with the versions above. To test against unreleased changes, run `make sync-configs LOGIC_APPS_REF=main`.
 
 Update these values before running the Release workflow. The workflow creates a single Git tag using `OPERATOR_VERSION`, but both versions are embedded in the operator image build arguments.
 
@@ -83,8 +85,8 @@ The Publish Images workflow will:
 
 When `image_tag` is empty:
 
-* Operator image: `${OPERATOR_VERSION}` (from the tag's `versions.mk`)
-* Gateway image: `${GATEWAY_VERSION}` (from the tag's `versions.mk`)
+* Operator image: `$\{OPERATOR_VERSION}` (from the tag's `versions.mk`)
+* Gateway image: `$\{GATEWAY_VERSION}` (from the tag's `versions.mk`)
 
 When `image_tag` is provided:
 

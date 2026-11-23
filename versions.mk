@@ -13,3 +13,9 @@ VERSION ?= $(OPERATOR_VERSION)
 GATEWAY_VERSION ?= 2.0.0-Alpha4
 DATA_INDEX_VERSION ?= 2.0.0-Alpha4-postgresql
 QUARKUS_FLOW_RUNNER_VERSION ?= 1.4.0
+
+# logic-apps tag that provides the Vector config embedded in the operator
+# (synced by `make sync-configs`). Bump it together with the versions above on
+# each release. Use `main` only to test unreleased logic-apps changes.
+LOGIC_APPS_REPO ?= https://github.com/kubesmarts/logic-apps
+LOGIC_APPS_REF ?= v2.0.0-Alpha4

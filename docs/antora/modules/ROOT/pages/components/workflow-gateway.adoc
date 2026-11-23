@@ -55,7 +55,9 @@ Service exposes port 80.
 |Method and path |Purpose
 
 |`GET /v1/definitions/`
-|List discovered workflow identities (namespace, name, and version).
+|List discovered workflow identities (namespace, name, and version). Each item includes a
+`_links` object with the `self`, `execute`, `executeSync`, `instances`, `instance`, `suspend`,
+`resume`, and `cancel` operations for that workflow version.
 
 |`GET /v1/definitions/\{namespace}/\{name}/\{version}`
 |Fetch one workflow document from the Kubernetes API. JSON is returned by default; send
@@ -80,6 +82,10 @@ Service exposes port 80.
 |List or fetch workflow instances through Data Index. The list endpoint accepts optional
 `namespace`, `name`, `version`, and `status` query parameters.
 
+|`GET /v1/topology`
+|Return a graph of workflow definitions, services, runtimes, and platforms. The optional
+`namespace` query parameter limits workflow resources to one namespace. See <<topology>>.
+
 |`GET /v1/openapi` or `GET /v1/openapi.json`
 |Return the OpenAPI specification.
 |===
@@ -87,6 +93,24 @@ Service exposes port 80.
 Execution and lifecycle request and response bodies follow the link:https://docs.quarkiverse.io/quarkus-flow/dev/runner.html[Quarkus Flow Runner API]. The
 gateway forwards authorization headers and upstream responses; runtime security continues to be
 configured on `LogicFlowRuntime`.
+
+[[topology]]
+=== Topology
+
+`GET /v1/topology` reads `LogicFlowDefinition`, `LogicFlowService`, `LogicFlowRuntime`, and
+`ClusterLogicPlatform` resources and returns `nodes`, `edges`, and `discovery`:
+
+* `nodes` carry `id`, `kind`, `namespace`, `name`, `label`, and a `status` with a `state`
+(`Ready`, `NotReady`, or `Unknown`) and the `source` it was derived from.
+* `edges` connect resources with a `type` such as `runsOn` (definition to runtime) or `routesTo`
+(service to definition, with a `weight` for traffic splitting).
+* `discovery.partial` is `true` when a resource kind could not be listed or an edge points to a
+resource that was not found; `discovery.warnings` lists each case.
+
+Each resource kind is read independently, so an unavailable source does not hide the others. The
+endpoint returns `503` only when every source is unavailable, and `400` for an invalid
+`namespace` value. It uses the gateway's own ServiceAccount and performs no caller authentication
+or authorization; restrict access at the Ingress or Route if the graph should not be public.
 
 == Data Index integration
 

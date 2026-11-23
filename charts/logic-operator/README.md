@@ -5,7 +5,7 @@ This directory contains the hand-maintained source for the `logic-operator` Helm
 Do not install this source directory directly. Build the release artifacts from the repository root:
 
 ```sh
-make helm-package OPERATOR_VERSION=2.0.0-Alpha3
+make helm-package OPERATOR_VERSION=2.0.0-Alpha4
 ```
 
 This stages the generated chart resources and packages both charts under `dist/helm/`. It also writes the standalone `dist/helm/crds.yaml` release asset. The generated resource templates and CRDs are not committed under `charts/`.
