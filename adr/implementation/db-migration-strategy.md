@@ -107,7 +107,7 @@ Runtimes already watch `ClusterLogicPlatform` without a predicate, so a platform
 
 ## Disabling Workload DDL
 
-- Runtimes: `persistenceQuarkusEnvVars` sets `QUARKUS_HIBERNATE_ORM_SCHEMA_MANAGEMENT_STRATEGY=none` when the runtime datastore's strategy is `job` or `none`. It is not emitted for the Quartz datasource or the migrator container.
+- Runtimes: `persistenceQuarkusEnvVars` sets `QUARKUS_HIBERNATE_ORM_SCHEMA_MANAGEMENT_STRATEGY=none` when the runtime datastore's strategy is `job` or `none`. It is not emitted for the Quartz datasource or the migrator container; instead, `WithQuartzMigrationEnvVars` sets `QUARKUS_FLYWAY_FLOW_QUARTZ_MIGRATE_AT_START=false` when the Quartz strategy is `job` or `none`, since the runner's standard profile migrates Quartz at startup.
 - Data Index: `WithFlywayPersistenceVars` sets `QUARKUS_FLYWAY_MIGRATE_AT_START=false` (and drops the baseline settings) when its strategy is `job` or `none`.
 
 ## CRD Size
