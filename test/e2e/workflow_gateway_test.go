@@ -192,14 +192,21 @@ spec:
 			}
 			Eventually(verifyRuntimeReady, 2*time.Minute, 5*time.Second).Should(Succeed())
 
+			// Applying the workflow rolls the Deployment; wait so the port-forward targets the new pod.
+			By("waiting for the runtime Deployment rollout to finish")
+			cmd := exec.Command("kubectl", "rollout", "status", "deployment/gateway-test-runtime",
+				"-n", testNamespace, "--timeout=2m")
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
 			By("opening a port-forward to the runtime metrics endpoint")
-			cmd := exec.Command("kubectl", "get", "pods",
+			cmd = exec.Command("kubectl", "get", "pods",
 				"-l", "app.kubernetes.io/name=gateway-test-runtime",
 				"-n", testNamespace,
-				"-o", "jsonpath={.items[0].metadata.name}")
-			runtimePod, err := utils.Run(cmd)
+				"-o", "go-template={{ range .items }}{{ if not .metadata.deletionTimestamp }}{{ .metadata.name }}{{ \"\\n\" }}{{ end }}{{ end }}")
+			runtimePods, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
-			runtimePod = strings.TrimSpace(runtimePod)
+			runtimePod, _, _ := strings.Cut(strings.TrimSpace(runtimePods), "\n")
 			Expect(runtimePod).NotTo(BeEmpty(), "Runtime pod not found")
 			runnerURL, stopPortForward, err := startRunnerPortForwardInNamespace(testNamespace, runtimePod)
 			Expect(err).NotTo(HaveOccurred())
