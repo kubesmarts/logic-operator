@@ -25,7 +25,7 @@
       "name": "Inject Mantra SubFlow",
       "type": "inject",
       "data": {
-        "mantra-subflow": "SubFlow Serverless Workflow is awesome!"
+        "mantra-subflow": "SubFlow Open Workflow Specification is awesome!"
       },
       "end": true
     }

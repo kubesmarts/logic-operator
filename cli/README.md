@@ -56,7 +56,7 @@ Artifacts are generated in the `dist/` directory:
 
 ### Configuration
 
-Build metadata (Quarkus version, container images) is inherited from the parent `.env` file. You can override these values by setting environment variables:
+Build metadata (Quarkus version, container images) is injected at build time from the `QUARKUS_VERSION`, `QUARKUS_PLATFORM_GROUP_ID`, `RELATED_IMAGE_BASE_BUILDER`, and `RELATED_IMAGE_DEVMODE` variables. Set them in the environment:
 
 ```bash
 QUARKUS_VERSION=3.8.1 make build

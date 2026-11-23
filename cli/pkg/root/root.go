@@ -45,7 +45,7 @@ func NewRootCommand(cfg RootCmdConfig) *cobra.Command {
 	Manage SonataFlow projects
 	==========================
 
-	Currently, SonataFlow targets use cases with a single Serverless Workflow main
+	Currently, SonataFlow targets use cases with a single Open Workflow Specification main
 	file definition (i.e. workflow.sw.{json|yaml|yml}).
 
 	Additionally, you can define the configurable parameters of your application in the

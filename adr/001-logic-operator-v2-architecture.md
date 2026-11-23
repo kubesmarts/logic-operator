@@ -63,7 +63,7 @@
 
 Refactor the Logic Operator to:
 1. **Drop SonataFlow** in favor of **Quarkus Flow** runtime
-2. **Support Serverless Workflow Specification v1.0.0** exclusively
+2. **Support Open Workflow Specification v1.0.0** exclusively
 3. **Remove builder/container complexity** - use dynamic workflow loading
 4. **Implement new Data Index (MODE1)** - Vector + PostgreSQL + GraphQL
 5. **Support multi-version workflows** - side-by-side version execution
@@ -521,7 +521,7 @@ status:
     message: "15 active instances running"
 ```
 
-**Operator Behavior**: Constructs full Serverless Workflow document from metadata + spec:
+**Operator Behavior**: Constructs full Open Workflow Specification document from metadata + spec:
 
 ```yaml
 # Mounted to ConfigMap as payment-processor-v1.0.0.yaml:

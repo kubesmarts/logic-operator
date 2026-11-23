@@ -54,7 +54,7 @@ This suite isolates and validates step 3 (proxying) against a real **Quarkus Flo
 | **Container Management** | `testcontainers-go` | Programmatic, transactional lifecycle; tight integration with Go test harness. |
 | **Headless Mode** | Test-only wiring; no changes to `cmd/main.go` | Isolates test concerns; production code unchanged. |
 | **Runner Image** | `quay.io/quarkiverse/quarkus-flow-runner:1.2.0-minimal` | Sufficient for all instance operations (suspend/resume/cancel) because instances live in-memory; no Postgres or `-standard` image needed. |
-| **Workflow DSL Version** | Serverless Workflow Specification **v1.0.0** (Quarkus Flow format) | Project standard; same as operator config samples. |
+| **Workflow DSL Version** | Open Workflow Specification **v1.0.0** (Quarkus Flow format) | Project standard; same as operator config samples. |
 
 ---
 

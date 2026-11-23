@@ -1,43 +1,35 @@
 # Logic Operator
 
-A Kubernetes operator for managing Serverless Logic workflows powered by Quarkus Flow.
+A Kubernetes operator for deploying and managing [Open Workflow Specification](https://open-workflow-specification.org/) workflows powered by [Quarkus Flow](https://docs.quarkiverse.io/quarkus-flow/dev/index.html).
 
-## Description
+You describe your workflows and the runtimes that execute them as Kubernetes resources. The operator deploys the Quarkus Flow runners, an optional Workflow Gateway to invoke them, and optional Data Index and Vector components to persist and query workflow history.
 
-The Logic Operator provides a Kubernetes-native way to deploy, manage, and scale Serverless Logic workflows. Built on top of Quarkus Flow, it offers four core CRDs for defining and orchestrating workflow-based applications:
+| Resource | Purpose |
+|----------|---------|
+| `ClusterLogicPlatform` | Cluster-wide singleton that deploys the Workflow Gateway, and optionally Data Index and Vector |
+| `LogicFlowRuntime` | A Quarkus Flow Runner Deployment that executes workflows |
+| `LogicFlowDefinition` | A workflow document, loaded by the runtime it references |
+| `LogicFlowService` | Optional external endpoint and traffic-split policy for a workflow |
 
-- **ClusterLogicPlatform**: Data Index, optional Vector, and optional Workflow Gateway management
-- **LogicFlowService**: External workflow endpoint and optional traffic-split policy
-- **LogicFlowDefinition**: Workflow definitions and specifications
-- **LogicFlowRuntime**: Runtime instances of deployed workflows
+Full documentation: **https://kubesmarts.org/logic-operator/**
 
-This repository tracks the 2.0 development line. Operator and component versions are declared in `versions.mk`.
+## 1. Install the operator
 
-The standalone Workflow Gateway accepts execution and lifecycle requests and can route directly
-to a workflow's runtime Service. See the [Workflow Gateway guide](docs/antora/modules/ROOT/pages/components/workflow-gateway.adoc) for its API, ClusterLogicPlatform integration, and current scaling limitations.
-
-## Getting Started
-
-For a released version, install the Helm chart into a Kubernetes or OpenShift cluster that you manage. To build and exercise source code from a local checkout, follow the [KIND developer quickstart](#local-development-with-kind).
-
-### Install a released stack
-
-The `logic-operator-stack` chart installs the operator, PostgreSQL, and a `ClusterLogicPlatform` with Data Index, Vector, and Workflow Gateway. You remain responsible for creating and managing the cluster.
+This installs only the operator and its CRDs from a published release, on a Kubernetes or OpenShift cluster that you manage. Your first workflow comes in [section 3](#3-run-your-first-workflow).
 
 Prerequisites:
 
-- Kubernetes or OpenShift cluster with a working `kubectl` context
-- Helm 3.8+ and kubectl
-- cert-manager installed before the operator
-- For persistent PostgreSQL storage, a default StorageClass or an explicitly configured one
+- Kubernetes 1.29+ or OpenShift, with a working `kubectl` context
+- [Helm](https://helm.sh/docs/intro/install/) 3.8+
+- cert-manager, used for the operator's webhook certificates
 
-Check the current context before installing:
+Check that `kubectl` points at the cluster you intend to change:
 
 ```sh
 kubectl config current-context
 ```
 
-If cert-manager is not already installed, install the same release used by the repository's `make kind-create` recipe:
+If cert-manager is not installed yet:
 
 ```sh
 kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.3/cert-manager.yaml
@@ -47,27 +39,15 @@ kubectl wait --for=condition=Established --timeout=60s \
   crd/certificates.cert-manager.io crd/issuers.cert-manager.io
 ```
 
-Set `VERSION` to the release you want to install. The following example uses `2.0.0-Alpha3`. Apply the matching CRDs before installing either chart:
+Pick the release to install. The Helm chart does not contain the CRDs, so apply the release's `crds.yaml` first:
 
 ```sh
-VERSION=2.0.0-Alpha3
+VERSION=2.0.0-Alpha4
 curl -fsSL "https://github.com/kubesmarts/logic-operator/releases/download/v${VERSION}/crds.yaml" \
   | kubectl apply --server-side -f -
 ```
 
-Then install the stack:
-
-```sh
-helm install logic-stack \
-  oci://ghcr.io/kubesmarts/charts/logic-operator-stack \
-  --version "$VERSION" \
-  --namespace logic-operator-system \
-  --create-namespace
-```
-
-The chart installs the database and platform components; it does not create workflow definitions or runtimes. Configure PostgreSQL credentials and other chart settings in a values file before using the stack beyond a disposable cluster. See the [Helm installation and upgrade guide](docs/antora/modules/ROOT/pages/deployment/helm.adoc).
-
-If you only need the operator and CRDs, install the smaller chart instead:
+Install the operator:
 
 ```sh
 helm install logic-operator \
@@ -77,28 +57,72 @@ helm install logic-operator \
   --create-namespace
 ```
 
-The release's *Publish Images* workflow must have completed before installing, so the referenced Quay images exist. The GHCR chart packages must be public for anonymous pulls. The charts exclude CRDs. For every upgrade, apply the target release's `crds.yaml` with server-side apply before running `helm upgrade`; see the [upgrade instructions](docs/antora/modules/ROOT/pages/deployment/helm.adoc#upgrade).
+Check that it is running:
 
-### Expose the Workflow Gateway
-
-Gateway ingress is disabled by default. Enable it with a hostname and, for Kubernetes, an IngressClass that exists on your cluster.
-
-For a local KIND cluster created by `make kind-create`, use the host from the sample:
-
-```yaml
-clusterLogicPlatform:
-  gateway:
-    ingress:
-      enabled: true
-      host: gateway.lvh.me
-      className: nginx
+```sh
+kubectl wait --namespace logic-operator-system \
+  --for=condition=available deployment --all --timeout=120s
+kubectl get crd | grep logic.kubesmarts.org
 ```
 
-`gateway.lvh.me` resolves to localhost and is only suitable for a local cluster configured with ingress-nginx. On OpenShift, the operator detects the platform and creates a Route when ingress is enabled. Provide a host from your cluster's apps domain, for example `gateway.apps.example.com`, and omit `className`. For other Kubernetes clusters, provide a DNS name that resolves to the Ingress controller. The operator does not install an Ingress controller or OpenShift router. More examples are in the [Helm guide](docs/antora/modules/ROOT/pages/deployment/helm.adoc#expose-the-workflow-gateway).
+For every upgrade, apply the target release's `crds.yaml` with server-side apply before running `helm upgrade`. See the [Helm installation and upgrade guide](docs/antora/modules/ROOT/pages/deployment/helm.adoc) for upgrades, image overrides, and the `logic-operator-stack` chart, which installs the operator, PostgreSQL, and a sample platform in one step.
 
-## Local Development with KIND
+## 2. Next step: install PostgreSQL
 
-The `make kind-*` recipes are for developers and contributors working from a local clone. They build and apply the current checkout, including the currently selected branch and uncommitted changes; they do not install a published release. Run them from the repository root and choose the branch or commit you want to test first.
+Durable workflows, workflow history, and Data Index need a PostgreSQL database. Skip this step if you only want to try an ephemeral workflow.
+
+The repository ships a **disposable, single-pod sample** at [`config/samples/persistence/postgresql.yaml`](config/samples/persistence/postgresql.yaml). It creates a Secret (`flowuser` / `flowpass`), a 1Gi PVC, a `postgres:16-alpine` Deployment, a Service named `postgresql`, and the `runtime`, `quartz`, and `data_index` schemas in a `logicflow` database.
+
+The platform and PostgreSQL share the `logic-platform` namespace in the samples, so create it first:
+
+```sh
+kubectl create namespace logic-platform
+kubectl apply -n logic-platform \
+  -f "https://raw.githubusercontent.com/kubesmarts/logic-operator/v${VERSION}/config/samples/persistence/postgresql.yaml"
+kubectl wait -n logic-platform --for=condition=available deployment/postgresql --timeout=120s
+```
+
+The sample uses a demo password and a default StorageClass. For anything beyond a test cluster, use your own managed PostgreSQL or database operator and point the `ClusterLogicPlatform` at it, following the [CRD reference](https://kubesmarts.org/logic-operator/logic-operator/2.0.0-Alpha4/crd-reference/clusterlogicplatform.html).
+
+## 3. Run your first workflow
+
+From here, follow the [documentation](https://kubesmarts.org/logic-operator/logic-operator/2.0.0-Alpha4/index.html). Create the resources in this order, because each one refers to the previous:
+
+| Order | Resource | What it does | Reference |
+|-------|----------|--------------|-----------|
+| 1 | `ClusterLogicPlatform` | Deploys the Workflow Gateway (and Data Index and Vector if configured) into its `targetNamespace`. There is one per cluster, and the namespace must already exist. | [ClusterLogicPlatform](https://kubesmarts.org/logic-operator/logic-operator/2.0.0-Alpha4/crd-reference/clusterlogicplatform.html) |
+| 2 | `LogicFlowRuntime` | Runs the Quarkus Flow Runner as a Deployment and Service. `persistenceMode: Ephemeral` needs no database. `PlatformDB` uses the PostgreSQL from section 2 through `platformRef`. | [LogicFlowRuntime](https://kubesmarts.org/logic-operator/logic-operator/2.0.0-Alpha4/crd-reference/logicflowruntime.html) |
+| 3 | `LogicFlowDefinition` | Holds the workflow document and points to its runtime with `runtimeRef`. The operator loads it into the runtime. | [LogicFlowDefinition](https://kubesmarts.org/logic-operator/logic-operator/2.0.0-Alpha4/crd-reference/logicflowdefinition.html) |
+| 4 | Invoke it | Call the Workflow Gateway at `/v1/runtime/{namespace}/{name}/{version}/sync`. The namespace is the one the `LogicFlowDefinition` is created in. | [Workflow Gateway](https://kubesmarts.org/logic-operator/logic-operator/2.0.0-Alpha4/components/workflow-gateway.html) |
+| 5 | `LogicFlowService` (optional) | Adds an external endpoint and traffic splitting between workflow versions. | [LogicFlowService](https://kubesmarts.org/logic-operator/logic-operator/2.0.0-Alpha4/crd-reference/logicflowservice.html) |
+
+Two guided paths use exactly these resources:
+
+- **[Hello World](https://kubesmarts.org/logic-operator/logic-operator/2.0.0-Alpha4/samples/hello-world.html)**: an ephemeral runtime and a one-step workflow, with no database. Start here.
+- **[Durable workflow with PostgreSQL](https://kubesmarts.org/logic-operator/logic-operator/2.0.0-Alpha4/samples/persistence.html)**: builds on section 2 to add durable state, workflow history, and Data Index GraphQL queries.
+
+### Reaching the Workflow Gateway
+
+The gateway is a ClusterIP Service (`<platform-name>-workflow-gateway`, port 80) in the platform's `targetNamespace`. To call it from outside the cluster, expose it in one of these ways:
+
+- **Ingress or Route.** Set `spec.gateway.ingress` on the `ClusterLogicPlatform` with `enabled: true` and a host. **The operator does not install an Ingress controller**, so the cluster needs one. On OpenShift the operator creates a Route from an apps-domain host. See [Expose the Workflow Gateway](docs/antora/modules/ROOT/pages/deployment/helm.adoc#expose-the-workflow-gateway).
+- **Port forwarding.** This needs no Ingress and works on any cluster, which makes it the quickest way to try things:
+
+  ```sh
+  kubectl port-forward -n logic-platform svc/default-workflow-gateway 8080:80
+  curl -X POST http://localhost:8080/v1/runtime/default/hello-world/1.0.0/sync \
+    -H "Content-Type: application/json" -d '{"name": "World"}'
+  ```
+
+  Use your platform's `targetNamespace` and name in place of `logic-platform` and `default`.
+
+> **Running on KIND?** The sample manifests in [`config/samples/`](config/samples/) expose the gateway at `gateway.lvh.me` through an Ingress, so **KIND needs the NGINX Ingress controller** (ingress-nginx) with ports 80 and 443 mapped to your machine. A plain `kind create cluster` has neither, and the sample URLs will not respond. Use `make kind-create`, which installs ingress-nginx and applies the port mapping from [`hack/kind-config.yaml`](hack/kind-config.yaml). Otherwise, install ingress-nginx yourself using its [KIND provider manifest](https://kubernetes.github.io/ingress-nginx/deploy/#kind) on a cluster created with those port mappings, or use port forwarding as above. `*.lvh.me` resolves to `127.0.0.1`, so no `/etc/hosts` edits are needed.
+
+Other useful pages: [Runtime Model](https://kubesmarts.org/logic-operator/logic-operator/2.0.0-Alpha4/concepts/runtime-model.html), [Durable Workflows](https://kubesmarts.org/logic-operator/logic-operator/2.0.0-Alpha4/concepts/durable-workflows.html), [Monitoring](https://kubesmarts.org/logic-operator/logic-operator/2.0.0-Alpha4/deployment/monitoring.html), and [Troubleshooting](https://kubesmarts.org/logic-operator/logic-operator/2.0.0-Alpha4/deployment/troubleshooting.html).
+
+## 4. Development with KIND
+
+The `make kind-*` recipes are for developers and contributors working from a local clone. They build and apply the **current checkout**, including the selected branch and uncommitted changes. They do not install a published release. Run them from the repository root.
 
 Clone the repository and select the branch or commit you want to work on:
 
@@ -123,14 +147,14 @@ make kind-deploy    # build and deploy the operator from this checkout
 make kind-demo      # build/load the gateway image and apply sample resources
 ```
 
-A newly created cluster gets ingress-nginx and cert-manager. If the KIND cluster already exists, `kind-create` skips cluster and addon installation. See the [KIND developer guide](docs/antora/modules/ROOT/pages/deployment/kind-local.adoc) for all targets and troubleshooting.
+A new cluster gets ingress-nginx, cert-manager, and the Quarkus Flow runner images. **ingress-nginx is what exposes the gateway at `gateway.lvh.me`**, together with the port 80/443 mappings in `hack/kind-config.yaml`. If you use your own KIND cluster without it, reach the gateway with `kubectl port-forward` instead (see [Reaching the Workflow Gateway](#reaching-the-workflow-gateway)). If the KIND cluster already exists, `kind-create` skips cluster and add-on setup. See the [KIND developer guide](docs/antora/modules/ROOT/pages/deployment/kind-local.adoc) for all targets and troubleshooting.
 
-Check that the sample resources were created and invoke the workflow:
+`make kind-demo` applies [`config/samples/`](config/samples/): a `ClusterLogicPlatform` (gateway in the `logic-platform` namespace), an ephemeral `LogicFlowRuntime` named `hello-runtime`, and the hello-world `LogicFlowDefinition`, both in `default`. Check the resources and invoke the workflow:
 
 ```sh
 kubectl get clusterlogicplatforms,logicflowruntimes,logicflowdefinitions
 kubectl wait --for=condition=available deployment/hello-runtime --timeout=120s
-kubectl wait --for=condition=available deployment/default-workflow-gateway --timeout=120s
+kubectl wait -n logic-platform --for=condition=available deployment/default-workflow-gateway --timeout=120s
 curl -X POST http://gateway.lvh.me/v1/runtime/default/hello-world/1.0.0/sync \
   -H "Content-Type: application/json" \
   -d '{"name": "World"}'
@@ -162,10 +186,10 @@ kubectl rollout restart deployment/hello-runtime
 kubectl rollout status deployment/hello-runtime --timeout=120s
 ```
 
-Enable persistence and a durable workflow:
+Enable persistence and a durable workflow. This applies the PostgreSQL sample from section 2 together with a platform and runtime that use it, and it must target the `logic-platform` namespace:
 
 ```sh
-kubectl apply -k config/samples/persistence/
+kubectl apply -k config/samples/persistence/ -n logic-platform
 ```
 
 Enable Prometheus and Grafana:
@@ -181,7 +205,7 @@ Clean up the local demo and cluster:
 ```sh
 make kind-undemo
 kubectl delete -k config/samples/monitoring/ --ignore-not-found=true
-kubectl delete -k config/samples/persistence/ --ignore-not-found=true
+kubectl delete -k config/samples/persistence/ -n logic-platform --ignore-not-found=true
 make kind-delete
 ```
 
@@ -202,7 +226,7 @@ make kind-delete
 | `make test-e2e` | Run end-to-end tests |
 | `make cleanup-test-e2e` | Delete the E2E test cluster |
 
-Run `make help` from the repository root for the complete target list.
+Run `make help` from the repository root for the complete target list. Operator and component versions are declared in [`versions.mk`](versions.mk).
 
 ### Deploy a source build to an existing cluster
 
