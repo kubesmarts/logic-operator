@@ -15,9 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Include parent .env file for build metadata
--include ../.env
-
 BIN              := kn-workflow
 BIN_DARWIN_AMD64 ?= $(BIN)-darwin-amd64
 BIN_DARWIN_ARM64 ?= $(BIN)-darwin-arm64

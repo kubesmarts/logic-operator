@@ -40,7 +40,7 @@ jobs:
           fi
 
           if [[ ! "${OPERATOR_VERSION}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
-            echo "❌ ERROR: OPERATOR_VERSION must be a valid Helm SemVer version (for example, 2.0.0-Alpha3)"
+            echo "❌ ERROR: OPERATOR_VERSION must be a valid Helm SemVer version (for example, 2.0.0-Alpha4)"
             exit 1
           fi
 
@@ -236,5 +236,5 @@ jobs:
           echo "- Operator: \`${OPERATOR_VERSION}\`" >> $GITHUB_STEP_SUMMARY
           echo "- Workflow Gateway: \`${GATEWAY_VERSION}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Helm charts:** Published to GHCR and attached with `crds.yaml` to the GitHub Release." >> $GITHUB_STEP_SUMMARY
+          echo "**Helm charts:** Published to GHCR and attached with \`crds.yaml\` to the GitHub Release." >> $GITHUB_STEP_SUMMARY
           echo "**Next Step:** Run the [Publish Images](../../actions/workflows/publish-images.yaml) workflow with \`source_tag: ${TAG}\` before installing the chart." >> $GITHUB_STEP_SUMMARY

@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       source_tag:
-        description: 'Git release tag to build from (e.g., v2.0.0-Alpha2)'
+        description: 'Git release tag to build from (e.g., v2.0.0-Alpha4)'
         required: true
         type: string
       image_tag:
-        description: 'Optional image tag for both images (e.g., 2.0.0-Alpha2). If empty, uses OPERATOR_VERSION and GATEWAY_VERSION as-is.'
+        description: 'Optional image tag for both images (e.g., 2.0.0-Alpha4). If empty, uses OPERATOR_VERSION and GATEWAY_VERSION as-is.'
         required: false
         type: string
 
