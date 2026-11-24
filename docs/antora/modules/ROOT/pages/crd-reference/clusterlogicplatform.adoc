@@ -71,14 +71,78 @@ upstream configuration supports a single namespace; configure one exact namespac
 
 Optional datastore defaults for runtimes that reference this platform with `spec.platformRef` and
 use `spec.persistenceMode: PlatformDB`. Configure `runtime` and `quartz` independently under
-`runtime.persistence`. Each datastore has its own PostgreSQL connection and schema settings. See
+`runtime.persistence`. Each datastore can have its own PostgreSQL connection and schema settings;
+a `quartz` datastore without `postgresql` uses the runtime connection. See
 xref:samples/persistence.adoc[the persistence sample] for the complete YAML.
+
+Each datastore accepts `dbMigrationStrategy`:
+
+* `service` (default): the runtime manages its own schema at startup.
+* `job`: the operator runs a schema migration Job in `targetNamespace` and holds runtime
+  Deployments until it succeeds. Runtimes are started with Hibernate schema management disabled.
+* `none`: the schema is managed externally; the operator does nothing and Hibernate schema
+  management is disabled.
+
+The migration Job authenticates with `migrationSecretRef` (DDL credentials) when set, falling back
+to `postgresql.secretRef`. The runtime Job migrates only the runtime tables; Quartz tables are
+migrated in their own Job only when `quartz.dbMigrationStrategy` is `job`. A `quartz` datastore
+without `postgresql` inherits the runtime connection and `migrationSecretRef`:
+
+[source,yaml]
+----
+spec:
+  runtime:
+    persistence:
+      runtime:
+        dbMigrationStrategy: job
+        postgresql: ...
+      quartz:
+        dbMigrationStrategy: job
+----
+
+`dataIndex.persistence.dbMigrationStrategy` accepts the same values. With `job`, the operator
+migrates the Data Index schema in its own Job and deploys Data Index only after it succeeds;
+with `job` or `none`, Data Index no longer runs Flyway at startup. A Data Index migration never
+holds runtime Deployments.
+
+=== `dbMigrator`
+
+Optional customization of the migration Job. `dbMigrator.application` follows the same
+`ApplicationSpec` as other components (image, resources, pod template); `replicas` is ignored.
+The image defaults to `quay.io/kubesmarts/logic-db-migrator:{db-migrator-version}`.
+
+[source,yaml]
+----
+spec:
+  runtime:
+    persistence:
+      runtime:
+        dbMigrationStrategy: job
+        migrationSecretRef:
+          name: postgres-ddl-credentials
+        postgresql:
+          secretRef:
+            name: postgres-credentials
+          serviceRef:
+            name: postgres
+            databaseName: logicflow
+            databaseSchema: runtime
+  dbMigrator:
+    application:
+      resources:
+        limits:
+          memory: 256Mi
+----
+
+A Job that succeeds is not rerun unless its configuration changes. A failed Job is rerun once
+it is deleted, either manually or by its one-hour TTL.
 
 == Status
 
 Status reports readiness for configured components and includes an aggregate `phase` and
-conditions. Component status is exposed under `status.dataIndex`, `status.vector`, and
-`status.gateway`.
+conditions. Component status is exposed under `status.dataIndex`, `status.vector`,
+`status.gateway`, and `status.dbMigrator`. The `DBMigration` condition summarizes the migration
+Jobs and is mirrored onto every runtime gated by them.
 
 [source,yaml]
 ----

@@ -27,7 +27,7 @@ type ClusterLogicPlatformSpec struct {
 	// +optional
 	Runtime *RuntimePlatformSpec `json:"runtime,omitempty"`
 
-	// DBMigrator configures the schema migration tool.
+	// DBMigrator configures the schema migration Job used by datastores with dbMigrationStrategy=job.
 	// +optional
 	DBMigrator *DBMigratorSpec `json:"dbMigrator,omitempty"`
 }
@@ -55,6 +55,10 @@ type ClusterLogicPlatformStatus struct {
 	// +optional
 	Gateway *WorkflowGatewayStatus `json:"gateway,omitempty"`
 
+	// DBMigrator contains status for the schema migration Jobs when any datastore uses dbMigrationStrategy=job.
+	// +optional
+	DBMigrator *DBMigratorStatus `json:"dbMigrator,omitempty"`
+
 	// Conditions represent detailed platform state.
 	// +optional
 	// +listType=map
@@ -62,10 +66,65 @@ type ClusterLogicPlatformStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
-// DBMigratorSpec configures the schema migration tool.
+// DBMigratorSpec configures the schema migration Job.
 type DBMigratorSpec struct {
-	// Image is the container image for the database migration tool.
-	Image string `json:"image"`
+	// Application configures the migration Job's pod and container.
+	// Image defaults to the logic-db-migrator image bundled with this operator release; replicas is ignored.
+	// +optional
+	Application ApplicationSpec `json:"application,omitempty"`
+}
+
+// MigrationPhase summarizes the state of a schema migration Job.
+// +kubebuilder:validation:Enum=Pending;Running;Succeeded;Failed
+type MigrationPhase string
+
+const (
+	MigrationPhasePending   MigrationPhase = "Pending"
+	MigrationPhaseRunning   MigrationPhase = "Running"
+	MigrationPhaseSucceeded MigrationPhase = "Succeeded"
+	MigrationPhaseFailed    MigrationPhase = "Failed"
+)
+
+// DBMigratorStatus reports the schema migration Jobs of a ClusterLogicPlatform.
+type DBMigratorStatus struct {
+	// Migrations lists one entry per migrated datastore.
+	// +optional
+	// +listType=map
+	// +listMapKey=datastore
+	Migrations []DatastoreMigrationStatus `json:"migrations,omitempty"`
+}
+
+// DatastoreMigrationStatus is the outcome of the migration Job for one datastore.
+type DatastoreMigrationStatus struct {
+	// Datastore names the migrated datastore: runtime, quartz, or data-index.
+	Datastore string `json:"datastore"`
+	// JobRef names the Job backing this migration in the target namespace.
+	// +optional
+	JobRef string `json:"jobRef,omitempty"`
+	// Phase summarizes the Job state.
+	// +optional
+	Phase MigrationPhase `json:"phase,omitempty"`
+	// Message carries the failure detail reported by the migrator.
+	// +optional
+	Message string `json:"message,omitempty"`
+	// Streams reports the outcome per schema stream, parsed from the migrator's termination message.
+	// +optional
+	Streams []MigrationStreamStatus `json:"streams,omitempty"`
+}
+
+// MigrationStreamStatus is one schema stream's result within a migration Job.
+type MigrationStreamStatus struct {
+	// Name of the stream, e.g. runtime, quartz, or data-index.
+	Name string `json:"name"`
+	// AppliedVersion is the schema version reported after the run.
+	// +optional
+	AppliedVersion string `json:"appliedVersion,omitempty"`
+	// AppliedCount is how many migrations were applied in the run.
+	// +optional
+	AppliedCount int32 `json:"appliedCount,omitempty"`
+	// LastAppliedAt is when the Job that applied the stream completed.
+	// +optional
+	LastAppliedAt *metav1.Time `json:"lastAppliedAt,omitempty"`
 }
 
 // ClusterLogicPlatform manages the cluster-scoped configuration for Logic Platform.

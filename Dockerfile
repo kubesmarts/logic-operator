@@ -8,6 +8,7 @@ ARG OPERATOR_VERSION=unknown
 ARG GATEWAY_VERSION=unknown
 ARG DATA_INDEX_VERSION=unknown
 ARG QUARKUS_FLOW_RUNNER_VERSION=unknown
+ARG DB_MIGRATOR_VERSION=unknown
 
 WORKDIR /workspace
 # Copy the Go Modules manifests
@@ -33,7 +34,8 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a \
     -X github.com/kubesmarts/logic-operator/api/version.operatorVersion=${OPERATOR_VERSION} \
     -X github.com/kubesmarts/logic-operator/api/version.workflowGatewayVersion=${GATEWAY_VERSION} \
     -X github.com/kubesmarts/logic-operator/api/version.dataIndexVersion=${DATA_INDEX_VERSION} \
-    -X github.com/kubesmarts/logic-operator/api/version.quarkusFlowRunnerVersion=${QUARKUS_FLOW_RUNNER_VERSION}" \
+    -X github.com/kubesmarts/logic-operator/api/version.quarkusFlowRunnerVersion=${QUARKUS_FLOW_RUNNER_VERSION} \
+    -X github.com/kubesmarts/logic-operator/api/version.dbMigratorVersion=${DB_MIGRATOR_VERSION}" \
     -o manager cmd/main.go
 
 # Use distroless as minimal base image to package the manager binary

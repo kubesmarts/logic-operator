@@ -108,9 +108,11 @@ type DatastoreSpec struct {
 	// MigrationSecretRef references the DDL credential; defaults to PostgreSQL.SecretRef.
 	// +optional
 	MigrationSecretRef *PostgreSQLSecretOptions `json:"migrationSecretRef,omitempty"`
-	// DBMigrationStrategy is reserved; controllers do not act on it yet.
+	// DBMigrationStrategy selects who owns the schema: service (the workload migrates itself),
+	// job (the operator runs a logic-db-migrator Job before rollout), or none (externally managed).
 	// +optional
 	// +kubebuilder:default:=service
+	// +kubebuilder:validation:Enum=service;job;none
 	DBMigrationStrategy DBMigrationStrategyType `json:"dbMigrationStrategy,omitempty"`
 }
 
@@ -120,6 +122,7 @@ type RuntimePersistenceSpec struct {
 	// +optional
 	Runtime DatastoreSpec `json:"runtime,omitempty"`
 	// Quartz configures a separate datasource for Quartz tables; defaults to Runtime.
+	// Its tables are migrated only when its dbMigrationStrategy is job.
 	// +optional
 	Quartz DatastoreSpec `json:"quartz,omitempty"`
 }

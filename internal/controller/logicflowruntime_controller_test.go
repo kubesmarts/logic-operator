@@ -669,11 +669,11 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 			Expect(jdbcURL).NotTo(BeNil())
 			Expect(jdbcURL.Value).To(Equal("jdbc:postgresql://pg:5432/logicflow?currentSchema=public"))
 
-			quartzUser := findEnvVar(envs, "QUARKUS_DATASOURCE__FLOW_QUARTZ__USERNAME")
+			quartzUser := findEnvVar(envs, "QUARKUS_DATASOURCE_FLOW_QUARTZ_USERNAME")
 			Expect(quartzUser).NotTo(BeNil())
 			Expect(quartzUser.ValueFrom.SecretKeyRef.Name).To(Equal("pg-creds"))
 
-			quartzURL := findEnvVar(envs, "QUARKUS_DATASOURCE__FLOW_QUARTZ__JDBC_URL")
+			quartzURL := findEnvVar(envs, "QUARKUS_DATASOURCE_FLOW_QUARTZ_JDBC_URL")
 			Expect(quartzURL).NotTo(BeNil())
 			Expect(quartzURL.Value).To(Equal("jdbc:postgresql://pg:5432/logicflow?currentSchema=quartz"))
 		})
@@ -1738,4 +1738,148 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 			Expect(errors.IsNotFound(err)).To(BeTrue())
 		})
 	})
+
+	Context("Schema migration gating", func() {
+		var r *LogicFlowRuntimeReconciler
+
+		setRuntimeStrategy := func(strategy logicv1.DBMigrationStrategyType) {
+			var clp logicv1.ClusterLogicPlatform
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-platform"}, &clp)).To(Succeed())
+			clp.Spec.Runtime.Persistence.Runtime.DBMigrationStrategy = strategy
+			Expect(k8sClient.Update(ctx, &clp)).To(Succeed())
+		}
+		setPlatformMigration := func(phase logicv1.MigrationPhase) {
+			var clp logicv1.ClusterLogicPlatform
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-platform"}, &clp)).To(Succeed())
+			target := flowRunnerMigrationTargets(&clp)[0]
+			clp.Status.DBMigrator = &logicv1.DBMigratorStatus{Migrations: []logicv1.DatastoreMigrationStatus{{
+				Datastore: target.Datastore, JobRef: buildMigrationJob(&clp, target).Name, Phase: phase, Message: "boom",
+			}}}
+			Expect(k8sClient.Status().Update(ctx, &clp)).To(Succeed())
+		}
+		cleanup := func(nn types.NamespacedName) {
+			deleteRuntime(ctx, nn)
+			dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: nn.Name, Namespace: nn.Namespace}}
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, dep))).To(Succeed())
+		}
+
+		BeforeEach(func() {
+			r = newReconciler()
+			createClusterLogicPlatform(ctx)
+			createSourceDBSecret(ctx)
+			setRuntimeStrategy(logicv1.DBMigrationStrategyJob)
+		})
+		AfterEach(func() {
+			deleteClusterLogicPlatform(ctx)
+		})
+
+		It("should withhold the Deployment until the platform migration completes", func() {
+			nn := createRuntime(ctx, "test-migration-gated", persistenceSpec())
+			defer cleanup(nn)
+
+			rt := reconcileAndFetch(ctx, r, nn)
+			var dep appsv1.Deployment
+			Expect(errors.IsNotFound(k8sClient.Get(ctx, nn, &dep))).To(BeTrue())
+			cond := meta.FindStatusCondition(rt.Status.Conditions, logicv1.ConditionDBMigration)
+			Expect(cond).NotTo(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Reason).To(Equal(logicv1.ReasonMigrationJobRunning))
+
+			setPlatformMigration(logicv1.MigrationPhaseSucceeded)
+			rt = reconcileAndFetch(ctx, r, nn)
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+			Expect(meta.IsStatusConditionTrue(rt.Status.Conditions, logicv1.ConditionDBMigration)).To(BeTrue())
+
+			schema := findEnvVar(mainContainer(&dep).Env, "QUARKUS_HIBERNATE_ORM_SCHEMA_MANAGEMENT_STRATEGY")
+			Expect(schema).NotTo(BeNil())
+			Expect(schema.Value).To(Equal("none"))
+		})
+
+		It("should report Failed when the platform migration fails", func() {
+			nn := createRuntime(ctx, "test-migration-failed", persistenceSpec())
+			defer cleanup(nn)
+
+			setPlatformMigration(logicv1.MigrationPhaseFailed)
+			rt := reconcileAndFetch(ctx, r, nn)
+
+			var dep appsv1.Deployment
+			Expect(errors.IsNotFound(k8sClient.Get(ctx, nn, &dep))).To(BeTrue())
+			Expect(rt.Status.Phase).To(Equal(logicv1.ApplicationPhaseFailed))
+		})
+
+		It("should not gate ephemeral runtimes", func() {
+			mode := logicv1.PersistenceModeEphemeral
+			nn := createRuntime(ctx, "test-migration-ephemeral", logicv1.LogicFlowRuntimeSpec{PersistenceMode: &mode})
+			defer cleanup(nn)
+
+			rt := reconcileAndFetch(ctx, r, nn)
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+			Expect(meta.FindStatusCondition(rt.Status.Conditions, logicv1.ConditionDBMigration)).To(BeNil())
+		})
+	})
 })
+
+func TestSetMigrationCondition(t *testing.T) {
+	type platformOpt func(*logicv1.ClusterLogicPlatform)
+	newEff := func(opts ...platformOpt) *runtimePersistenceConfig {
+		clp := testMigrationPlatform(testDatastore("runtime", logicv1.DBMigrationStrategyJob), logicv1.DatastoreSpec{})
+		for _, opt := range opts {
+			opt(clp)
+		}
+		return &runtimePersistenceConfig{Platform: clp, Runtime: &clp.Spec.Runtime.Persistence.Runtime}
+	}
+	withRuntimeMigration := func(phase logicv1.MigrationPhase, currentJob bool) platformOpt {
+		return func(clp *logicv1.ClusterLogicPlatform) {
+			jobRef := "outdated-job"
+			if currentJob {
+				jobRef = buildMigrationJob(clp, flowRunnerMigrationTargets(clp)[0]).Name
+			}
+			clp.Status.DBMigrator = &logicv1.DBMigratorStatus{Migrations: []logicv1.DatastoreMigrationStatus{
+				{Datastore: MigrationStreamRuntime, JobRef: jobRef, Phase: phase, Message: "connection refused"},
+			}}
+		}
+	}
+	serviceStrategy := func(clp *logicv1.ClusterLogicPlatform) {
+		clp.Spec.Runtime.Persistence.Runtime.DBMigrationStrategy = logicv1.DBMigrationStrategyService
+	}
+	failedDataIndex := func(clp *logicv1.ClusterLogicPlatform) {
+		ds := testDatastore("data_index", logicv1.DBMigrationStrategyJob)
+		clp.Spec.DataIndex = &logicv1.DataIndexSpec{Persistence: &ds}
+		clp.Status.DBMigrator.Migrations = append(clp.Status.DBMigrator.Migrations, logicv1.DatastoreMigrationStatus{
+			Datastore: MigrationStreamDataIndex, JobRef: "di-job", Phase: logicv1.MigrationPhaseFailed,
+		})
+	}
+
+	tests := []struct {
+		name        string
+		eff         *runtimePersistenceConfig
+		wantRollout bool
+		wantReason  string
+	}{
+		{name: "ephemeral", eff: nil, wantRollout: true},
+		{name: "service strategy", eff: newEff(serviceStrategy), wantRollout: true},
+		{name: "job not started", eff: newEff(), wantReason: logicv1.ReasonMigrationJobRunning},
+		{name: "job running", eff: newEff(withRuntimeMigration(logicv1.MigrationPhaseRunning, true)), wantReason: logicv1.ReasonMigrationJobRunning},
+		{name: "outdated job succeeded", eff: newEff(withRuntimeMigration(logicv1.MigrationPhaseSucceeded, false)), wantReason: logicv1.ReasonMigrationJobRunning},
+		{name: "job succeeded", eff: newEff(withRuntimeMigration(logicv1.MigrationPhaseSucceeded, true)), wantRollout: true, wantReason: logicv1.ReasonReady},
+		{name: "job failed", eff: newEff(withRuntimeMigration(logicv1.MigrationPhaseFailed, true)), wantReason: logicv1.ReasonMigrationJobFailed},
+		{name: "data index failure does not gate", eff: newEff(withRuntimeMigration(logicv1.MigrationPhaseSucceeded, true), failedDataIndex), wantRollout: true, wantReason: logicv1.ReasonReady},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			rt := &logicv1.LogicFlowRuntime{}
+			logicv1.SetCondition(&rt.Status.Conditions, logicv1.ConditionDBMigration, metav1.ConditionTrue, 1, logicv1.ReasonReady, "")
+
+			g.Expect(setMigrationCondition(rt, tt.eff)).To(Equal(tt.wantRollout))
+			cond := meta.FindStatusCondition(rt.Status.Conditions, logicv1.ConditionDBMigration)
+			if tt.wantReason == "" {
+				g.Expect(cond).To(BeNil())
+				return
+			}
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Reason).To(Equal(tt.wantReason))
+		})
+	}
+}

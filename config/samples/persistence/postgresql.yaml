@@ -7,6 +7,16 @@ stringData:
   POSTGRESQL_USER: flowuser
   POSTGRESQL_PASSWORD: flowpass
 ---
+# DML-only credential for Quartz; its schema changes run as flowuser in the migration Job.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgresql-app-secret
+type: Opaque
+stringData:
+  POSTGRESQL_USER: flowapp
+  POSTGRESQL_PASSWORD: flowapppass
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -16,6 +26,13 @@ data:
     CREATE SCHEMA IF NOT EXISTS data_index;
     CREATE SCHEMA IF NOT EXISTS runtime;
     CREATE SCHEMA IF NOT EXISTS quartz;
+
+    CREATE ROLE flowapp LOGIN PASSWORD 'flowapppass';
+    GRANT USAGE ON SCHEMA runtime, quartz TO flowapp;
+    ALTER DEFAULT PRIVILEGES FOR ROLE flowuser IN SCHEMA runtime, quartz
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO flowapp;
+    ALTER DEFAULT PRIVILEGES FOR ROLE flowuser IN SCHEMA runtime, quartz
+      GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO flowapp;
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

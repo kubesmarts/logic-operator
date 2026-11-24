@@ -49,6 +49,7 @@ OPERATOR_VERSION ?= {operator-version}
 GATEWAY_VERSION ?= {workflow-gateway-version}
 DATA_INDEX_VERSION ?= {data-index-version}
 QUARKUS_FLOW_RUNNER_VERSION ?= {quarkus-flow-runner-version}
+DB_MIGRATOR_VERSION ?= {db-migrator-version}
 ----
 
 `versions.mk` also pins `LOGIC_APPS_REF` to the `logic-apps` tag that provides the Vector configuration (and the `logic-db-migrator` image, which follows the operator version). `make sync-configs` resolves that tag, so release builds do not pick up unreleased `logic-apps` changes. Bump it together with the versions above. To test against unreleased changes, run `make sync-configs LOGIC_APPS_REF=main`.

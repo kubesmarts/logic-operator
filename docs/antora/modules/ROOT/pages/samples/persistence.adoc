@@ -47,12 +47,21 @@ metadata:
 stringData:
   POSTGRESQL_USER: flowuser
   POSTGRESQL_PASSWORD: flowpass
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgresql-app-secret
+stringData:
+  POSTGRESQL_USER: flowapp
+  POSTGRESQL_PASSWORD: flowapppass
 ----
 
 A `postgres:16-alpine` pod connects to a 1 Gi PVC.
 The database is named `logicflow`.
-The secret provides credentials used by both the runtime (for durable state) and Data Index (for workflow instance history).
-On first initialization, the sample creates the schemas used by the runtime, Quartz, and Data Index.
+`postgresql-secret` (`flowuser`) owns the schemas: Data Index creates its own tables with it, and the runtime and Quartz migration Jobs use it as their DDL credential.
+`postgresql-app-secret` (`flowapp`) is a DML-only user the runtime uses for the runtime and Quartz tables.
+On first initialization, the sample creates the `runtime`, `quartz`, and `data_index` schemas and grants `flowapp` DML on the tables `flowuser` creates in `runtime` and `quartz`.
 
 IMPORTANT: Both durable workflows and Data Index integration require PostgreSQL. Without it, neither feature will work.
 
@@ -84,18 +93,24 @@ spec:
   runtime:
     persistence:
       runtime:
+        dbMigrationStrategy: job
+        migrationSecretRef:
+          name: postgresql-secret
         postgresql:
           secretRef:
-            name: postgresql-secret
+            name: postgresql-app-secret
           serviceRef:
             name: postgresql
             namespace: logic-platform
             databaseName: logicflow
             databaseSchema: runtime
       quartz:
+        dbMigrationStrategy: job
+        migrationSecretRef:
+          name: postgresql-secret
         postgresql:
           secretRef:
-            name: postgresql-secret
+            name: postgresql-app-secret
           serviceRef:
             name: postgresql
             namespace: logic-platform

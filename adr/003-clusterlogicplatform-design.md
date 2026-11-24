@@ -256,11 +256,16 @@ This invariant is **the** thing that makes a shared quartz database safe.
   tagged per release so the Flyway scripts always match the `quarkus-flow` version
   (consistent with the "align Alpha2 releases with Quay image tags" work). `kind`/demo
   works out of the box with no image to build.
-- `spec.dbMigrator.image` (optional) **overrides** the default for power users who need
-  custom migrations; when empty it defaults to
-  `quay.io/kubesmarts/logic-db-migrator:<release-tag>`.
-- Future `spec.dbMigrator` also tunes resources/timeouts/baseline handling (the
+- `spec.dbMigrator.application` (an `ApplicationSpec`, optional) **overrides** the image,
+  resources and pod template for power users who need custom migrations; when the image
+  is empty it defaults to `quay.io/kubesmarts/logic-db-migrator:<DB_MIGRATOR_VERSION>`.
+- Future `spec.dbMigrator` also tunes timeouts/baseline handling (the
   populated-database upgrade case needs a Flyway baseline).
+
+> **Amended 2026-11-19 (implementation):** the migrator image takes a single datasource,
+> so the operator runs one Job per migrated datastore (runtime, quartz when it is a
+> separate datastore, and Data Index) rather than one Job for all of them. See
+> [db-migration-strategy.md](implementation/db-migration-strategy.md).
 
 ## Cross-Namespace RBAC
 

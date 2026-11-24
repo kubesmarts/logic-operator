@@ -10,12 +10,14 @@ VERSION_LDFLAGS = -X $(VERSION_PACKAGE).gitCommit=$(GIT_COMMIT) \
 	-X $(VERSION_PACKAGE).operatorVersion=$(OPERATOR_VERSION) \
 	-X $(VERSION_PACKAGE).workflowGatewayVersion=$(GATEWAY_VERSION) \
 	-X $(VERSION_PACKAGE).dataIndexVersion=$(DATA_INDEX_VERSION) \
-	-X $(VERSION_PACKAGE).quarkusFlowRunnerVersion=$(QUARKUS_FLOW_RUNNER_VERSION)
+	-X $(VERSION_PACKAGE).quarkusFlowRunnerVersion=$(QUARKUS_FLOW_RUNNER_VERSION) \
+	-X $(VERSION_PACKAGE).dbMigratorVersion=$(DB_MIGRATOR_VERSION)
 VERSION_BUILD_ARGS = --build-arg GIT_COMMIT=$(GIT_COMMIT) \
 	--build-arg OPERATOR_VERSION=$(OPERATOR_VERSION) \
 	--build-arg GATEWAY_VERSION=$(GATEWAY_VERSION) \
 	--build-arg DATA_INDEX_VERSION=$(DATA_INDEX_VERSION) \
-	--build-arg QUARKUS_FLOW_RUNNER_VERSION=$(QUARKUS_FLOW_RUNNER_VERSION)
+	--build-arg QUARKUS_FLOW_RUNNER_VERSION=$(QUARKUS_FLOW_RUNNER_VERSION) \
+	--build-arg DB_MIGRATOR_VERSION=$(DB_MIGRATOR_VERSION)
 
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
@@ -91,9 +93,9 @@ all: build
 
 .PHONY: print-versions
 print-versions: ## Print resolved release versions and source commit as key=value lines.
-	@printf 'operator_version=%s\ngateway_version=%s\ndata_index_version=%s\nquarkus_flow_runner_version=%s\ngit_commit=%s\n' \
+	@printf 'operator_version=%s\ngateway_version=%s\ndata_index_version=%s\nquarkus_flow_runner_version=%s\ndb_migrator_version=%s\ngit_commit=%s\n' \
 		'$(OPERATOR_VERSION)' '$(GATEWAY_VERSION)' '$(DATA_INDEX_VERSION)' \
-		'$(QUARKUS_FLOW_RUNNER_VERSION)' '$(GIT_COMMIT)'
+		'$(QUARKUS_FLOW_RUNNER_VERSION)' '$(DB_MIGRATOR_VERSION)' '$(GIT_COMMIT)'
 
 ##@ General
 
@@ -119,6 +121,7 @@ docs-versions: ## Generate Antora version attributes from versions.mk.
 		':workflow-gateway-version: $(GATEWAY_VERSION)' \
 		':data-index-version: $(DATA_INDEX_VERSION)' \
 		':quarkus-flow-runner-version: $(QUARKUS_FLOW_RUNNER_VERSION)' \
+		':db-migrator-version: $(DB_MIGRATOR_VERSION)' \
 		> $(DOCS_VERSION_ATTRIBUTES)
 	@awk -v v='$(OPERATOR_VERSION)' ' \
 		/^version:/ { print "version: " v; next } \
@@ -135,9 +138,12 @@ helm-package: kustomize ## Generate and package both Helm charts and CRDs for a 
 
 ##@ Development
 
+# CRD generator options; field descriptions are dropped to keep CRDs under etcd's request size limit.
+CRD_OPTIONS ?= crd:maxDescLen=0
+
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./api/..." paths="./cmd/..." paths="./internal/..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=manager-role $(CRD_OPTIONS) webhook paths="./api/..." paths="./cmd/..." paths="./internal/..." output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -362,10 +368,11 @@ kind-build-gateway: ## Build and load the configured gateway image into KIND.
 	@echo "Workflow gateway image loaded into KIND cluster."
 
 .PHONY: kind-deploy
-kind-deploy: manifests generate kustomize ## Build, load, and deploy the operator into KIND.
+kind-deploy: generate kustomize ## Build, load, and deploy the operator into KIND.
 	$(CONTAINER_TOOL) build $(VERSION_BUILD_ARGS) -t $(KIND_IMG) .
 	$(KIND) load docker-image $(KIND_IMG) --name $(KIND_DEV_CLUSTER)
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(KIND_IMG)
+	$(MAKE) manifests
 	$(KUSTOMIZE) build config/default | $(KUBECTL) apply --server-side -f -
 	@echo "Waiting for operator deployment to be ready..."
 	@$(KUBECTL) wait --namespace logic-operator-system --for=condition=available deployment --all --timeout=120s

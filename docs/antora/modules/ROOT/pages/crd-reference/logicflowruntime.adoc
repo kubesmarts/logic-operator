@@ -121,8 +121,8 @@ search resolves a same-namespace Service. Set `namespace` to build a fully quali
 Service in another namespace. `secretRef.userKey` and `passwordKey` default to `POSTGRESQL_USER`
 and `POSTGRESQL_PASSWORD`. Optional TLS settings are documented in the `PersistenceOptionsSpec`
 source schema. For durable workflows, use the `standard` runner image if setting `image`
-explicitly. `dbMigrationStrategy` is accepted by the schema but is not acted on by the current
-operator; no migration Job is created by this setting.
+explicitly. Schema migration is configured on the platform; see
+xref:crd-reference/clusterlogicplatform.adoc#_runtime_persistence[`runtime.persistence`].
 
 === Security
 

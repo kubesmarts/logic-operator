@@ -29,6 +29,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -50,8 +51,9 @@ type LogicFlowRuntimeReconciler struct {
 }
 
 type runtimePersistenceConfig struct {
-	Runtime *logicv1.DatastoreSpec
-	Quartz  *logicv1.DatastoreSpec
+	Platform *logicv1.ClusterLogicPlatform
+	Runtime  *logicv1.DatastoreSpec
+	Quartz   *logicv1.DatastoreSpec
 }
 
 var errRuntimePersistenceNotConfigured = errors.New("runtime persistence is not configured")
@@ -111,9 +113,13 @@ func (r *LogicFlowRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	logicv1.SetCondition(&rt.Status.Conditions, logicv1.ConditionPersistenceReady,
 		metav1.ConditionTrue, rt.Generation, logicv1.ReasonReady, persistenceMessage)
 
-	if err := r.applyDeployment(ctx, &rt, configMaps, eff); err != nil {
-		log.Error(err, "failed to apply Deployment")
-		return ctrl.Result{}, err
+	if migrated := setMigrationCondition(&rt, eff); migrated {
+		if err := r.applyDeployment(ctx, &rt, configMaps, eff); err != nil {
+			log.Error(err, "failed to apply Deployment")
+			return ctrl.Result{}, err
+		}
+	} else {
+		log.V(1).Info("skipping Deployment apply; platform schema migration not complete")
 	}
 
 	if err := r.reconcilePodRBAC(ctx, &rt, persistenceDatastore(eff)); err != nil {
@@ -122,11 +128,7 @@ func (r *LogicFlowRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	if eff != nil {
-		platform, err := r.resolvePlatform(ctx, &rt)
-		if err != nil {
-			log.Error(err, "failed to resolve platform for DB secret replication")
-			return ctrl.Result{}, err
-		}
+		platform := eff.Platform
 		if err := r.reconcileRuntimeDBSecret(ctx, &rt, eff.Runtime, platform); err != nil {
 			log.Error(err, "failed to reconcile runtime DB secret")
 			return ctrl.Result{}, err
@@ -188,7 +190,8 @@ func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *lo
 		WithFlowVolumeMounts(configMaps),
 	}
 	if eff != nil {
-		opts = append(opts, WithDurableEnvVars(rt), WithQuartzSchedulerEnvVars(rt), DurableStartupProbe())
+		opts = append(opts, WithDurableEnvVars(rt), WithQuartzSchedulerEnvVars(rt), DurableStartupProbe(),
+			WithQuartzMigrationEnvVars(&eff.Platform.Spec.Runtime.Persistence.Quartz))
 	}
 	spec := ToDeploymentSpec(
 		ContainerNameRunner,
@@ -586,12 +589,41 @@ func (r *LogicFlowRuntimeReconciler) effectiveRuntimePersistence(ctx context.Con
 		return nil, fmt.Errorf("%w: ClusterLogicPlatform %q must configure spec.runtime.persistence.runtime.postgresql, or set spec.persistenceMode to Ephemeral",
 			errRuntimePersistenceNotConfigured, clp.Name)
 	}
-	effective := &runtimePersistenceConfig{Runtime: runtimeDatastore}
+	effective := &runtimePersistenceConfig{Platform: clp, Runtime: runtimeDatastore}
 	quartzDatastore := &clp.Spec.Runtime.Persistence.Quartz
 	if quartzDatastore.PostgreSQL != nil {
 		effective.Quartz = quartzDatastore
 	}
 	return effective, nil
+}
+
+// setMigrationCondition reflects the platform's runtime and Quartz migrations onto the runtime and
+// reports whether the Deployment may roll out. Runtimes are gated only when one of those datastores
+// uses the job strategy; the Data Index migration never gates them.
+func setMigrationCondition(rt *logicv1.LogicFlowRuntime, eff *runtimePersistenceConfig) bool {
+	if eff == nil {
+		meta.RemoveStatusCondition(&rt.Status.Conditions, logicv1.ConditionDBMigration)
+		return true
+	}
+	targets := flowRunnerMigrationTargets(eff.Platform)
+	if len(targets) == 0 {
+		meta.RemoveStatusCondition(&rt.Status.Conditions, logicv1.ConditionDBMigration)
+		return true
+	}
+	pending := pendingMigration(eff.Platform, targets)
+	switch {
+	case pending == nil:
+		logicv1.SetCondition(&rt.Status.Conditions, logicv1.ConditionDBMigration, metav1.ConditionTrue, rt.Generation,
+			logicv1.ReasonReady, "Schema migration completed")
+		return true
+	case pending.Phase == logicv1.MigrationPhaseFailed:
+		logicv1.SetCondition(&rt.Status.Conditions, logicv1.ConditionDBMigration, metav1.ConditionFalse, rt.Generation,
+			logicv1.ReasonMigrationJobFailed, fmt.Sprintf("Schema migration failed for %s: %s", pending.Datastore, pending.Message))
+	default:
+		logicv1.SetCondition(&rt.Status.Conditions, logicv1.ConditionDBMigration, metav1.ConditionFalse, rt.Generation,
+			logicv1.ReasonMigrationJobRunning, fmt.Sprintf("Waiting for ClusterLogicPlatform %q to migrate the %s datastore", eff.Platform.Name, pending.Datastore))
+	}
+	return false
 }
 
 func persistenceDatastore(eff *runtimePersistenceConfig) *logicv1.DatastoreSpec {

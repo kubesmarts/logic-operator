@@ -87,9 +87,13 @@ func WithVectorVolumeMounts() ContainerOption {
 }
 
 // WithFlywayPersistenceVars adds Flyway migration env props to Data Index containers for PgSQL persistence.
-// TODO: move this to DbMigration once we have this component set.
-func WithFlywayPersistenceVars() ContainerOption {
+// With the job or none strategy the schema is owned elsewhere, so Flyway must not migrate at start.
+func WithFlywayPersistenceVars(p *logicv1.DatastoreSpec) ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
+		if p != nil && (p.DBMigrationStrategy == logicv1.DBMigrationStrategyJob || p.DBMigrationStrategy == logicv1.DBMigrationStrategyNone) {
+			c.WithEnv(envLiteral("QUARKUS_FLYWAY_MIGRATE_AT_START", "false"))
+			return
+		}
 		c.WithEnv([]*corev1ac.EnvVarApplyConfiguration{
 			envLiteral("QUARKUS_FLYWAY_MIGRATE_AT_START", "true"),
 			envLiteral("QUARKUS_FLYWAY_BASELINE_ON_MIGRATE", "true"),

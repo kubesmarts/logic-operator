@@ -25,6 +25,7 @@ jobs:
       gateway_version: ${{ steps.versions.outputs.gateway_version }}
       data_index_version: ${{ steps.versions.outputs.data_index_version }}
       quarkus_flow_runner_version: ${{ steps.versions.outputs.quarkus_flow_runner_version }}
+      db_migrator_version: ${{ steps.versions.outputs.db_migrator_version }}
       git_commit: ${{ steps.versions.outputs.git_commit }}
       operator_image_tag: ${{ steps.tags.outputs.operator_image_tag }}
       gateway_image_tag: ${{ steps.tags.outputs.gateway_image_tag }}
@@ -139,6 +140,7 @@ jobs:
           GATEWAY_VERSION: ${{ needs.setup.outputs.gateway_version }}
           DATA_INDEX_VERSION: ${{ needs.setup.outputs.data_index_version }}
           QUARKUS_FLOW_RUNNER_VERSION: ${{ needs.setup.outputs.quarkus_flow_runner_version }}
+          DB_MIGRATOR_VERSION: ${{ needs.setup.outputs.db_migrator_version }}
           GIT_COMMIT: ${{ needs.setup.outputs.git_commit }}
           OPERATOR_IMAGE_TAG: ${{ needs.setup.outputs.operator_image_tag }}
         run: |
@@ -149,6 +151,7 @@ jobs:
             --build-arg GATEWAY_VERSION="${GATEWAY_VERSION}" \
             --build-arg DATA_INDEX_VERSION="${DATA_INDEX_VERSION}" \
             --build-arg QUARKUS_FLOW_RUNNER_VERSION="${QUARKUS_FLOW_RUNNER_VERSION}" \
+            --build-arg DB_MIGRATOR_VERSION="${DB_MIGRATOR_VERSION}" \
             --pull \
             -f Dockerfile \
             -t "localhost/kubesmarts/logic-operator:${OPERATOR_IMAGE_TAG}" \

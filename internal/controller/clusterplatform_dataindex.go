@@ -41,8 +41,12 @@ func (c *dataIndexComponent) reconcileDataIndex(ctx context.Context, plat *logic
 		return nil
 	}
 
-	if err := c.applyDataIndexDeployment(ctx, plat); err != nil {
-		return err
+	if pendingMigration(plat, dataIndexMigrationTargets(plat)) == nil {
+		if err := c.applyDataIndexDeployment(ctx, plat); err != nil {
+			return err
+		}
+	} else {
+		log.V(1).Info("skipping Data Index Deployment apply; schema migration not complete")
 	}
 	if err := c.applyDataIndexService(ctx, plat); err != nil {
 		return err
@@ -60,7 +64,7 @@ func (c *dataIndexComponent) applyDataIndexDeployment(ctx context.Context, plat 
 	opts := []ContainerOption{
 		WithDefaultImage(logicv1.DefaultDataIndexImage()),
 		WithQuarkusPersistenceEnvVars(dataIndexPersistence),
-		WithFlywayPersistenceVars(),
+		WithFlywayPersistenceVars(dataIndexPersistence),
 		WithGraphQLVars(),
 		DefaultQuarkusProbes(),
 	}

@@ -40,12 +40,12 @@ func TestQuartzPersistenceEnvVars_UsesNamedDatasourceAndIndependentConfiguration
 
 	envs := quartzPersistenceQuarkusEnvVars(p)
 	g.Expect(envs).To(gomega.HaveLen(3))
-	g.Expect(*envs[0].Name).To(gomega.Equal("QUARKUS_DATASOURCE__FLOW_QUARTZ__USERNAME"))
+	g.Expect(*envs[0].Name).To(gomega.Equal("QUARKUS_DATASOURCE_FLOW_QUARTZ_USERNAME"))
 	g.Expect(*envs[0].ValueFrom.SecretKeyRef.Name).To(gomega.Equal("quartz-creds"))
 	g.Expect(*envs[0].ValueFrom.SecretKeyRef.Key).To(gomega.Equal("SCHEDULER_USER"))
-	g.Expect(*envs[1].Name).To(gomega.Equal("QUARKUS_DATASOURCE__FLOW_QUARTZ__PASSWORD"))
+	g.Expect(*envs[1].Name).To(gomega.Equal("QUARKUS_DATASOURCE_FLOW_QUARTZ_PASSWORD"))
 	g.Expect(*envs[1].ValueFrom.SecretKeyRef.Key).To(gomega.Equal("SCHEDULER_PASSWORD"))
-	g.Expect(*envs[2].Name).To(gomega.Equal("QUARKUS_DATASOURCE__FLOW_QUARTZ__JDBC_URL"))
+	g.Expect(*envs[2].Name).To(gomega.Equal("QUARKUS_DATASOURCE_FLOW_QUARTZ_JDBC_URL"))
 	g.Expect(*envs[2].Value).To(gomega.Equal("jdbc:postgresql://scheduler-postgres.databases.svc.cluster.local:5432/schedulers?currentSchema=quartz-state"))
 }
 
@@ -53,6 +53,25 @@ func TestQuartzPersistenceEnvVars_NilUsesEmbeddedDefaultDatasourceFallback(t *te
 	g := gomega.NewWithT(t)
 	g.Expect(quartzPersistenceQuarkusEnvVars(nil)).To(gomega.BeNil())
 	g.Expect(quartzPersistenceQuarkusEnvVars(&logicv1.DatastoreSpec{})).To(gomega.BeNil())
+}
+
+func TestWithQuartzMigrationEnvVars_DisablesMigrateAtStartWhenSchemaIsOwnedElsewhere(t *testing.T) {
+	for _, strategy := range []logicv1.DBMigrationStrategyType{logicv1.DBMigrationStrategyJob, logicv1.DBMigrationStrategyNone} {
+		g := gomega.NewWithT(t)
+		c := corev1ac.Container().WithName(ContainerNameRunner)
+		WithQuartzMigrationEnvVars(&logicv1.DatastoreSpec{DBMigrationStrategy: strategy})(c)
+		g.Expect(c.Env).To(gomega.HaveLen(1), "strategy %s", strategy)
+		g.Expect(*c.Env[0].Name).To(gomega.Equal("QUARKUS_FLYWAY_FLOW_QUARTZ_MIGRATE_AT_START"))
+		g.Expect(*c.Env[0].Value).To(gomega.Equal("false"))
+	}
+}
+
+func TestWithQuartzMigrationEnvVars_KeepsRunnerMigrationForService(t *testing.T) {
+	g := gomega.NewWithT(t)
+	c := corev1ac.Container().WithName(ContainerNameRunner)
+	WithQuartzMigrationEnvVars(&logicv1.DatastoreSpec{DBMigrationStrategy: logicv1.DBMigrationStrategyService})(c)
+	WithQuartzMigrationEnvVars(nil)(c)
+	g.Expect(c.Env).To(gomega.BeEmpty())
 }
 
 func TestPersistenceEnvVars_CustomSecretKeys(t *testing.T) {
@@ -829,4 +848,74 @@ func TestQuartzEnv_OmittedWhenEphemeral(t *testing.T) {
 			g.Expect(*e.Name).NotTo(gomega.Equal("QUARKUS_QUARTZ_INSTANCE_ID"))
 		}
 	}
+}
+
+func TestPersistenceEnvVars_SchemaManagementStrategy(t *testing.T) {
+	const schemaEnv = "QUARKUS_HIBERNATE_ORM_SCHEMA_MANAGEMENT_STRATEGY"
+	base := func(strategy logicv1.DBMigrationStrategyType) *logicv1.DatastoreSpec {
+		return &logicv1.DatastoreSpec{
+			PostgreSQL: &logicv1.PersistencePostgreSQL{
+				SecretRef:  logicv1.PostgreSQLSecretOptions{Name: testPGCreds},
+				ServiceRef: logicv1.PostgreSQLServiceOptions{Name: "postgres"},
+			},
+			DBMigrationStrategy: strategy,
+		}
+	}
+	findAC := func(envs []*corev1ac.EnvVarApplyConfiguration) *corev1ac.EnvVarApplyConfiguration {
+		for _, e := range envs {
+			if *e.Name == schemaEnv {
+				return e
+			}
+		}
+		return nil
+	}
+
+	for _, strategy := range []logicv1.DBMigrationStrategyType{logicv1.DBMigrationStrategyJob, logicv1.DBMigrationStrategyNone} {
+		t.Run(string(strategy)+" disables Hibernate schema management", func(t *testing.T) {
+			g := gomega.NewWithT(t)
+			env := findAC(persistenceQuarkusEnvVars(base(strategy)))
+			g.Expect(env).NotTo(gomega.BeNil())
+			g.Expect(*env.Value).To(gomega.Equal("none"))
+		})
+	}
+
+	for _, strategy := range []logicv1.DBMigrationStrategyType{logicv1.DBMigrationStrategyService, ""} {
+		t.Run("strategy "+string(strategy)+" omits the env var", func(t *testing.T) {
+			g := gomega.NewWithT(t)
+			g.Expect(findAC(persistenceQuarkusEnvVars(base(strategy)))).To(gomega.BeNil())
+		})
+	}
+
+	t.Run("quartz datasource never sets it", func(t *testing.T) {
+		g := gomega.NewWithT(t)
+		g.Expect(findAC(quartzPersistenceQuarkusEnvVars(base(logicv1.DBMigrationStrategyJob)))).To(gomega.BeNil())
+	})
+}
+
+func TestWithFlywayPersistenceVars(t *testing.T) {
+	envOf := func(p *logicv1.DatastoreSpec) map[string]string {
+		c := corev1ac.Container()
+		WithFlywayPersistenceVars(p)(c)
+		out := map[string]string{}
+		for _, e := range c.Env {
+			out[*e.Name] = *e.Value
+		}
+		return out
+	}
+
+	for _, strategy := range []logicv1.DBMigrationStrategyType{logicv1.DBMigrationStrategyJob, logicv1.DBMigrationStrategyNone} {
+		t.Run(string(strategy)+" disables migrate at start", func(t *testing.T) {
+			g := gomega.NewWithT(t)
+			g.Expect(envOf(&logicv1.DatastoreSpec{DBMigrationStrategy: strategy})).
+				To(gomega.Equal(map[string]string{"QUARKUS_FLYWAY_MIGRATE_AT_START": "false"}))
+		})
+	}
+
+	t.Run("service migrates at start", func(t *testing.T) {
+		g := gomega.NewWithT(t)
+		envs := envOf(&logicv1.DatastoreSpec{DBMigrationStrategy: logicv1.DBMigrationStrategyService})
+		g.Expect(envs).To(gomega.HaveKeyWithValue("QUARKUS_FLYWAY_MIGRATE_AT_START", "true"))
+		g.Expect(envs).To(gomega.HaveKeyWithValue("QUARKUS_FLYWAY_BASELINE_ON_MIGRATE", "true"))
+		g.Expect(envOf(nil)).To(gomega.HaveKeyWithValue("QUARKUS_FLYWAY_MIGRATE_AT_START", "true"))
+	})
 }
