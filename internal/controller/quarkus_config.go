@@ -76,57 +76,77 @@ func WithDefaultImage(image string) ContainerOption {
 }
 
 // DefaultQuarkusProbes returns a ContainerOption that sets liveness and readiness probes
-// using the Quarkus SmallRye Health endpoints. User-specified probes are preserved.
-func DefaultQuarkusProbes() ContainerOption {
+// using the Quarkus SmallRye Health endpoints. User-specified probes are preserved whole.
+// Platform timings (tunings.Liveness, tunings.Readiness) replace only the timings they set on the
+// operator default probe; the zero probeTunings keeps the operator defaults.
+func DefaultQuarkusProbes(tunings probeTunings) ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
 		if c.LivenessProbe == nil {
-			c.WithLivenessProbe(corev1ac.Probe().
+			c.WithLivenessProbe(tuneProbe(corev1ac.Probe().
 				WithHTTPGet(corev1ac.HTTPGetAction().
 					WithPath("/q/health/live").
 					WithPort(intstr.FromInt32(logicv1.QuarkusFlowRunnerHTTPPort))).
 				WithInitialDelaySeconds(30).
 				WithPeriodSeconds(10).
 				WithTimeoutSeconds(3).
-				WithFailureThreshold(3))
+				WithFailureThreshold(3), tunings.Liveness))
 		}
 		if c.ReadinessProbe == nil {
-			c.WithReadinessProbe(corev1ac.Probe().
+			c.WithReadinessProbe(tuneProbe(corev1ac.Probe().
 				WithHTTPGet(corev1ac.HTTPGetAction().
 					WithPath("/q/health/ready").
 					WithPort(intstr.FromInt32(logicv1.QuarkusFlowRunnerHTTPPort))).
 				WithInitialDelaySeconds(10).
 				WithPeriodSeconds(5).
 				WithTimeoutSeconds(3).
-				WithFailureThreshold(3))
+				WithFailureThreshold(3), tunings.Readiness))
 		}
 	}
 }
 
 // DurableStartupProbe returns a ContainerOption that adds a startup probe for durable runtimes.
-// This gives the runtime up to 60 seconds (12 failures × 5s) to acquire a lease and become ready,
+// By default, this gives the runtime up to 60 seconds (12 failures × 5s) to acquire a lease and become ready,
 // after which the pod is restarted if still unhealthy. User-specified startup probes are preserved.
-func DurableStartupProbe() ContainerOption {
+// Platform timings (tunings.Startup) replace only the timings they set on the operator default probe.
+func DurableStartupProbe(tunings probeTunings) ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
 		if c.StartupProbe == nil {
-			c.WithStartupProbe(corev1ac.Probe().
+			c.WithStartupProbe(tuneProbe(corev1ac.Probe().
 				WithHTTPGet(corev1ac.HTTPGetAction().
 					WithPath("/q/health/ready").
 					WithPort(intstr.FromInt32(logicv1.QuarkusFlowRunnerHTTPPort))).
 				WithInitialDelaySeconds(0).
 				WithPeriodSeconds(5).
 				WithTimeoutSeconds(3).
-				WithFailureThreshold(12))
+				WithFailureThreshold(12), tunings.Startup))
 		}
 	}
+}
+
+// tuneProbe replaces on the probe only the timings set in the tuning and returns the probe.
+func tuneProbe(p *corev1ac.ProbeApplyConfiguration, t *logicv1.ProbeTuning) *corev1ac.ProbeApplyConfiguration {
+	if t == nil {
+		return p
+	}
+	if t.InitialDelaySeconds != nil {
+		p.WithInitialDelaySeconds(*t.InitialDelaySeconds)
+	}
+	if t.PeriodSeconds != nil {
+		p.WithPeriodSeconds(*t.PeriodSeconds)
+	}
+	if t.TimeoutSeconds != nil {
+		p.WithTimeoutSeconds(*t.TimeoutSeconds)
+	}
+	if t.FailureThreshold != nil {
+		p.WithFailureThreshold(*t.FailureThreshold)
+	}
+	return p
 }
 
 // WithQuarkusPersistenceEnvVars returns a ContainerOption that appends Quarkus datasource environment variables.
 func WithQuarkusPersistenceEnvVars(p *logicv1.DatastoreSpec) ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
-		envs := persistenceQuarkusEnvVars(p)
-		if len(envs) > 0 {
-			c.WithEnv(envs...)
-		}
+		setEnv(c, persistenceQuarkusEnvVars(p)...)
 	}
 }
 
@@ -146,10 +166,7 @@ func persistenceQuarkusEnvVars(p *logicv1.DatastoreSpec) []*corev1ac.EnvVarApply
 // When p is nil, the runner's embedded profile falls back to the default datasource.
 func WithQuarkusQuartzPersistenceEnvVars(p *logicv1.DatastoreSpec) ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
-		envs := quartzPersistenceQuarkusEnvVars(p)
-		if len(envs) > 0 {
-			c.WithEnv(envs...)
-		}
+		setEnv(c, quartzPersistenceQuarkusEnvVars(p)...)
 	}
 }
 
@@ -200,17 +217,14 @@ func datasourcePersistenceEnvVars(p *logicv1.DatastoreSpec, envPrefix string) []
 // WithSecurityEnvVars returns a ContainerOption that appends Quarkus Flow runner security environment variables.
 func WithSecurityEnvVars(sec logicv1.RuntimeSecuritySpec) ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
-		c.WithEnv(securityEnvVars(sec)...)
+		setEnv(c, securityEnvVars(sec)...)
 	}
 }
 
 // WithStructuredLoggingEnvVars returns a ContainerOption that configures structured logging environment variables.
 func WithStructuredLoggingEnvVars(logging *logicv1.StructuredLoggingSpec) ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
-		envs := structuredLoggingEnvVars(logging)
-		if len(envs) > 0 {
-			c.WithEnv(envs...)
-		}
+		setEnv(c, structuredLoggingEnvVars(logging)...)
 	}
 }
 
@@ -237,18 +251,10 @@ func structuredLoggingEnvVars(logging *logicv1.StructuredLoggingSpec) []*corev1a
 }
 
 // WithFlowSourcePath returns a ContainerOption that sets the QUARKUS_FLOW_RUNNER_SOURCE_PATH environment variable.
-// Filters out any user-provided duplicate before adding the canonical value.
+// Any user-provided value is replaced by the canonical one.
 func WithFlowSourcePath() ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
-		filtered := make([]corev1ac.EnvVarApplyConfiguration, 0, len(c.Env))
-		for _, e := range c.Env {
-			if e.Name != nil && *e.Name == "QUARKUS_FLOW_RUNNER_SOURCE_PATH" {
-				continue
-			}
-			filtered = append(filtered, e)
-		}
-		c.Env = filtered
-		c.WithEnv(envLiteral("QUARKUS_FLOW_RUNNER_SOURCE_PATH", WorkflowMountPath))
+		setEnv(c, envLiteral("QUARKUS_FLOW_RUNNER_SOURCE_PATH", WorkflowMountPath))
 	}
 }
 
@@ -268,47 +274,19 @@ func WithFlowVolumeMounts(configMaps []corev1.ConfigMap) ContainerOption {
 	}
 }
 
-// WithDurableEnvVars sets durable lease env vars, filtering user-provided duplicates for immutable vars.
+// WithDurableEnvVars sets the durable lease env vars. The operator owns all of them except
+// the lease acquire timeout, which a runtime or platform value may override.
 func WithDurableEnvVars(rt *logicv1.LogicFlowRuntime) ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
-		immutable := map[string]bool{
-			"QUARKUS_FLOW_DURABLE_KUBE_LEASE_LEADER_ENABLED": true,
-			"QUARKUS_FLOW_DURABLE_KUBE_POOL_NAME":            true,
-			"POD_NAME":                                       true,
-			"POD_NAMESPACE":                                  true,
-		}
-		filtered := make([]corev1ac.EnvVarApplyConfiguration, 0, len(c.Env))
-		for _, e := range c.Env {
-			if e.Name != nil && immutable[*e.Name] {
-				continue
-			}
-			filtered = append(filtered, e)
-		}
-		c.Env = filtered
-
-		// Set defaults, but allow users to override lease timeout via env vars
-		defaultEnvs := []*corev1ac.EnvVarApplyConfiguration{
+		setEnv(c,
 			envLiteral("QUARKUS_FLOW_DURABLE_KUBE_LEASE_LEADER_ENABLED", "false"),
 			envLiteral("QUARKUS_FLOW_DURABLE_KUBE_POOL_NAME", rt.Name),
 			envLiteral("QUARKUS_FLOW_DURABLE_KUBE_LEASE_MEMBER_DURATION", fmt.Sprint(LeaseDuration)),
 			envLiteral("QUARKUS_FLOW_DURABLE_KUBE_SCHEDULERS_MEMBER_INTERVAL", LeaseRenewSchedulingInterval),
 			envFieldRef("POD_NAME", "metadata.name"),
 			envFieldRef("POD_NAMESPACE", "metadata.namespace"),
-		}
-
-		// Add lease timeout default if user hasn't specified it
-		hasLeaseTimeout := false
-		for _, e := range c.Env {
-			if e.Name != nil && *e.Name == "QUARKUS_FLOW_DURABLE_KUBE_LEASE_MEMBER_ACQUIRE_TIMEOUT" {
-				hasLeaseTimeout = true
-				break
-			}
-		}
-		if !hasLeaseTimeout {
-			defaultEnvs = append(defaultEnvs, envLiteral("QUARKUS_FLOW_DURABLE_KUBE_LEASE_MEMBER_ACQUIRE_TIMEOUT", LeaseAcquireTimeoutDuration))
-		}
-
-		c.WithEnv(defaultEnvs...)
+		)
+		setEnvIfAbsent(c, envLiteral("QUARKUS_FLOW_DURABLE_KUBE_LEASE_MEMBER_ACQUIRE_TIMEOUT", LeaseAcquireTimeoutDuration))
 	}
 }
 
@@ -321,7 +299,7 @@ func WithQuartzSchedulerEnvVars(rt *logicv1.LogicFlowRuntime) ContainerOption {
 		if replicas > 1 {
 			clustered = "true"
 		}
-		c.WithEnv(
+		setEnv(c,
 			envLiteral("QUARKUS_QUARTZ_INSTANCE_NAME", schedName(rt)),
 			envLiteral("QUARKUS_QUARTZ_CLUSTERED", clustered),
 			envLiteral("QUARKUS_QUARTZ_INSTANCE_ID", "AUTO"),

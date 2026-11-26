@@ -62,7 +62,7 @@ func (c *dataIndexComponent) applyDataIndexDeployment(ctx context.Context, plat 
 		WithQuarkusPersistenceEnvVars(dataIndexPersistence),
 		WithFlywayPersistenceVars(),
 		WithGraphQLVars(),
-		DefaultQuarkusProbes(),
+		DefaultQuarkusProbes(probeTunings{}),
 	}
 	spec := ToDeploymentSpec(
 		ContainerNameDataIndex,

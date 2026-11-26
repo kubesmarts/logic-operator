@@ -97,7 +97,7 @@ func WithVectorEnvVarsCLP(plat *logicv1.ClusterLogicPlatform) ContainerOption {
 				envLiteral("POSTGRES_HOST", BuildPostgresAddress(pg.ServiceRef.Name, ns, 0)),
 			)
 		}
-		c.WithEnv(envs...)
+		setEnv(c, envs...)
 	}
 }
 

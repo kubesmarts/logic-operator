@@ -11,7 +11,6 @@ type ApplicationSpec struct {
 
 	// ImagePullPolicy specifies when to pull the image.
 	// +optional
-	// +kubebuilder:default=IfNotPresent
 	// +kubebuilder:validation:Enum=Always;Never;IfNotPresent
 	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
 

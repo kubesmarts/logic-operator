@@ -1297,7 +1297,6 @@ spec:
                 description: Image specifies the container image.
                 type: string
               imagePullPolicy:
-                default: IfNotPresent
                 description: ImagePullPolicy specifies when to pull the image.
                 enum:
                 - Always

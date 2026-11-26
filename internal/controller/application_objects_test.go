@@ -93,6 +93,65 @@ func TestToDeploymentSpec_ResourcesPrecedence(t *testing.T) {
 	g.Expect(spec.Template.Spec.Containers[0].Resources.Requests.Memory().String()).To(gomega.Equal("512Mi"))
 }
 
+func TestToDeploymentSpec_ImagePullPolicy(t *testing.T) {
+	sel := SelectorLabels("test")
+
+	tests := []struct {
+		name     string
+		app      logicv1.ApplicationSpec
+		expected corev1.PullPolicy
+	}{
+		{
+			name:     "fallback when no tier sets it",
+			app:      logicv1.ApplicationSpec{Image: testImageBase},
+			expected: DefaultImagePullPolicy,
+		},
+		{
+			name:     "top-level explicit is kept",
+			app:      logicv1.ApplicationSpec{Image: testImageBase, ImagePullPolicy: corev1.PullAlways},
+			expected: corev1.PullAlways,
+		},
+		{
+			name: "container overrides top-level",
+			app: logicv1.ApplicationSpec{
+				Image:           testImageBase,
+				ImagePullPolicy: corev1.PullAlways,
+				Container:       logicv1.ContainerSpec{ImagePullPolicy: corev1.PullNever},
+			},
+			expected: corev1.PullNever,
+		},
+		{
+			name: "podTemplate.container overrides all",
+			app: logicv1.ApplicationSpec{
+				Image:           testImageBase,
+				ImagePullPolicy: corev1.PullAlways,
+				Container:       logicv1.ContainerSpec{ImagePullPolicy: corev1.PullNever},
+				PodTemplate: logicv1.PodTemplateSpec{
+					Container: logicv1.ContainerSpec{ImagePullPolicy: corev1.PullIfNotPresent},
+				},
+			},
+			expected: corev1.PullIfNotPresent,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := gomega.NewWithT(t)
+			spec := ToDeploymentSpec(ContainerNameRunner, &tt.app, sel, sel)
+			g.Expect(*spec.Template.Spec.Containers[0].ImagePullPolicy).To(gomega.Equal(tt.expected))
+		})
+	}
+}
+
+func TestToDaemonSetSpec_ImagePullPolicyFallback(t *testing.T) {
+	g := gomega.NewWithT(t)
+	sel := SelectorLabels("test")
+
+	spec := ToDaemonSetSpec(ContainerNameRunner, &logicv1.ApplicationSpec{Image: testImageBase}, sel, sel, nil)
+
+	g.Expect(*spec.Template.Spec.Containers[0].ImagePullPolicy).To(gomega.Equal(DefaultImagePullPolicy))
+}
+
 func TestToDeploymentSpec_Replicas(t *testing.T) {
 	g := gomega.NewWithT(t)
 	sel := SelectorLabels("test")
@@ -152,6 +211,30 @@ func TestToDeploymentSpec_PodLabels(t *testing.T) {
 		g.Expect(spec.Template.Labels).To(gomega.HaveKeyWithValue(testLabelTeam, testPlatformLabel))
 		g.Expect(spec.Template.Labels).To(gomega.HaveKeyWithValue("env", "prod"))
 		g.Expect(spec.Template.Labels).To(gomega.HaveKeyWithValue(testLabelKeyManagedBy, LabelManagedBy))
+	})
+
+	t.Run("operator labels win over colliding podTemplate labels", func(t *testing.T) {
+		g = gomega.NewWithT(t)
+		app := &logicv1.ApplicationSpec{
+			Image: testImageBase,
+			PodTemplate: logicv1.PodTemplateSpec{
+				Metadata: &logicv1.PodTemplateMetadata{
+					Labels: map[string]string{
+						testLabelKeyManagedBy:       "user-value",
+						"app.kubernetes.io/part-of": "user-value",
+						testLabelKeyName:            "user-value",
+						testLabelTeam:               testPlatformLabel,
+					},
+				},
+			},
+		}
+		rt := &logicv1.LogicFlowRuntime{}
+		rt.Name = testRuntimeName
+		spec := ToDeploymentSpec(ContainerNameRunner, app, ChildLabels(rt), sel)
+		g.Expect(spec.Template.Labels).To(gomega.HaveKeyWithValue(testLabelKeyManagedBy, LabelManagedBy))
+		g.Expect(spec.Template.Labels).To(gomega.HaveKeyWithValue("app.kubernetes.io/part-of", LabelPartOf))
+		g.Expect(spec.Template.Labels).To(gomega.HaveKeyWithValue(testLabelKeyName, testRuntimeName))
+		g.Expect(spec.Template.Labels).To(gomega.HaveKeyWithValue(testLabelTeam, testPlatformLabel))
 	})
 }
 

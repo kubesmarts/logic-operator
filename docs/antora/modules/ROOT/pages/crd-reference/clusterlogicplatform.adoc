@@ -74,6 +74,79 @@ use `spec.persistenceMode: PlatformDB`. Configure `runtime` and `quartz` indepen
 `runtime.persistence`. Each datastore has its own PostgreSQL connection and schema settings. See
 xref:samples/persistence.adoc[the persistence sample] for the complete YAML.
 
+[[runtime-defaults]]
+=== `runtime.defaults`
+
+Optional default deployment settings for runtimes. A `LogicFlowRuntime` inherits them only when it
+names the platform with `spec.platformRef.name`; a runtime without a `platformRef` gets no platform
+defaults. Precedence is the runtime value, then the platform value, then the operator fallback. A
+platform value is never required, and it never causes a runtime to be rejected.
+
+[source,yaml]
+----
+spec:
+  runtime:
+    defaults:
+      imagePullPolicy: IfNotPresent
+      resources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
+      container:
+        env:
+          - name: TZ
+            value: UTC
+        livenessProbe:
+          initialDelaySeconds: 30
+      podTemplate:
+        metadata:
+          labels:
+            team: payments
+----
+
+Supported fields:
+
+[cols="1,3",options="header"]
+|===
+|Field |Behavior
+
+|`imagePullPolicy`, `resources`
+|Used only when the runtime sets no value in any tier. `resources` is replaced whole: a runtime
+that sets any request or limit ignores the platform `resources` entirely.
+
+|`container.env`, `podTemplate.container.env`
+|Literal `name` and `value` pairs, merged by name. The runtime wins on a name conflict, and
+platform-only variables are added before the runtime ones. `valueFrom` is not supported.
+
+|`container` and `podTemplate.container` probes
+|Timings only (`initialDelaySeconds`, `periodSeconds`, `timeoutSeconds`, `failureThreshold`),
+applied onto the operator's default probes while keeping their handlers. A probe the runtime
+defines wins whole. `startupProbe` affects durable runtimes only.
+
+|`podTemplate.metadata.labels`, `podTemplate.metadata.annotations`
+|Merged as maps; the runtime wins on a key conflict. Operator labels (`app.kubernetes.io/name`,
+`app.kubernetes.io/managed-by`, `app.kubernetes.io/part-of`) always win over platform and runtime
+values.
+|===
+
+`image`, `replicas`, and scheduling fields (such as `nodeSelector`, `tolerations`, and `affinity`)
+are not supported as defaults. The runner image is always chosen per runtime from its persistence
+mode.
+
+[WARNING]
+====
+Changing a default that alters a runtime's pod template (`env`, `resources`, `imagePullPolicy`,
+probe timings, pod labels or annotations) rolls out every inheriting runtime at once. A runtime
+that already overrides the field is not restarted. Single-replica runtimes use the `Recreate`
+strategy, so they are briefly unavailable during the rollout.
+
+`env` values are visible to anyone who can read the `ClusterLogicPlatform`; do not put credentials
+there. A variable whose name the operator sets itself, such as `QUARKUS_DATASOURCE_*` and
+`QUARKUS_QUARTZ_*`, is replaced by the operator's value, so setting it has no effect. The only
+exception is `QUARKUS_FLOW_DURABLE_KUBE_LEASE_MEMBER_ACQUIRE_TIMEOUT`, which the operator sets only
+when no platform or runtime value exists.
+====
+
 == Status
 
 Status reports readiness for configured components and includes an aggregate `phase` and

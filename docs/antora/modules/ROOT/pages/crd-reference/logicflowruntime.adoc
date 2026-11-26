@@ -27,7 +27,8 @@ no persistence is configured and the `standard` variant when PostgreSQL persiste
 The minimal image is intended for in-memory execution; use the standard image for durable
 workflow state.
 
-`imagePullPolicy` defaults to `IfNotPresent` and accepts `Always`, `Never`, or `IfNotPresent`.
+`imagePullPolicy` accepts `Always`, `Never`, or `IfNotPresent`. When neither the runtime nor its
+platform sets it, the operator uses `IfNotPresent`.
 
 === Replicas and autoscaling
 
@@ -92,6 +93,14 @@ spec:
 The application container name and operator-managed labels/selectors are controlled by the
 operator. `podTemplate` also supports scheduling constraints, volumes, image pull secrets,
 init containers, sidecars, and a PodDisruptionBudget.
+
+=== Platform defaults
+
+A runtime that sets `spec.platformRef.name` inherits the defaults in
+xref:crd-reference/clusterlogicplatform.adoc#runtime-defaults[`ClusterLogicPlatform.spec.runtime.defaults`]:
+`imagePullPolicy`, `resources`, container `env`, probe timings, and pod labels and annotations. The
+value set on the runtime always wins, and a runtime without a `platformRef` inherits nothing.
+`image` and `replicas` are never taken from the platform.
 
 === Persistence
 
