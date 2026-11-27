@@ -111,7 +111,19 @@ func (r *LogicFlowRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	logicv1.SetCondition(&rt.Status.Conditions, logicv1.ConditionPersistenceReady,
 		metav1.ConditionTrue, rt.Generation, logicv1.ReasonReady, persistenceMessage)
 
-	if err := r.applyDeployment(ctx, &rt, configMaps, eff); err != nil {
+	defaults, err := r.resolvePlatformDefaults(ctx, &rt)
+	if err != nil {
+		log.Error(err, "failed to resolve platform defaults")
+		return ctrl.Result{}, err
+	}
+
+	app, tunings, err := mergeApplicationDefaults(&rt.Spec.ApplicationSpec, defaults)
+	if err != nil {
+		log.Error(err, "failed to merge platform defaults")
+		return ctrl.Result{}, err
+	}
+
+	if err := r.applyDeployment(ctx, &rt, &app, tunings, configMaps, eff); err != nil {
 		log.Error(err, "failed to apply Deployment")
 		return ctrl.Result{}, err
 	}
@@ -170,7 +182,10 @@ func (r *LogicFlowRuntimeReconciler) listConfigMaps(ctx context.Context, rt *log
 	return cmList.Items, nil
 }
 
-func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *logicv1.LogicFlowRuntime, configMaps []corev1.ConfigMap, eff *runtimePersistenceConfig) error {
+// applyDeployment applies the Deployment built from app, the effective ApplicationSpec
+// (the runtime spec merged with the platform defaults). The tunings adjust the timings of the
+// operator default probes; a probe defined by the runtime is never tuned.
+func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *logicv1.LogicFlowRuntime, app *logicv1.ApplicationSpec, tunings probeTunings, configMaps []corev1.ConfigMap, eff *runtimePersistenceConfig) error {
 	childLabels := ChildLabels(rt)
 	var runtimeDatastore, quartzDatastore *logicv1.DatastoreSpec
 	if eff != nil {
@@ -183,16 +198,16 @@ func (r *LogicFlowRuntimeReconciler) applyDeployment(ctx context.Context, rt *lo
 		WithQuarkusQuartzPersistenceEnvVars(quartzDatastore),
 		WithSecurityEnvVars(rt.Spec.Security),
 		WithStructuredLoggingEnvVars(rt.Spec.Logging),
-		DefaultQuarkusProbes(),
+		DefaultQuarkusProbes(tunings),
 		WithFlowSourcePath(),
 		WithFlowVolumeMounts(configMaps),
 	}
 	if eff != nil {
-		opts = append(opts, WithDurableEnvVars(rt), WithQuartzSchedulerEnvVars(rt), DurableStartupProbe())
+		opts = append(opts, WithDurableEnvVars(rt), WithQuartzSchedulerEnvVars(rt), DurableStartupProbe(tunings))
 	}
 	spec := ToDeploymentSpec(
 		ContainerNameRunner,
-		&rt.Spec.ApplicationSpec,
+		app,
 		childLabels,
 		SelectorLabels(rt.Name),
 		opts...,
@@ -565,6 +580,23 @@ func (r *LogicFlowRuntimeReconciler) resolvePlatform(ctx context.Context, rt *lo
 	default:
 		return nil, fmt.Errorf("multiple ClusterLogicPlatforms found; set spec.platformRef.name on runtime %s/%s", rt.Namespace, rt.Name)
 	}
+}
+
+// resolvePlatformDefaults returns spec.runtime.defaults of the platform the runtime refers to.
+// It returns nil when the runtime has no platformRef or the platform sets no defaults,
+// so callers must handle nil. A failure to read the platform is returned as an error.
+func (r *LogicFlowRuntimeReconciler) resolvePlatformDefaults(ctx context.Context, rt *logicv1.LogicFlowRuntime) (*logicv1.ApplicationDefaultsSpec, error) {
+	if rt.Spec.PlatformRef == nil || rt.Spec.PlatformRef.Name == "" {
+		return nil, nil
+	}
+	clp, err := r.resolvePlatform(ctx, rt)
+	if err != nil {
+		return nil, err
+	}
+	if clp.Spec.Runtime == nil {
+		return nil, nil
+	}
+	return clp.Spec.Runtime.Defaults, nil
 }
 
 // effectiveRuntimePersistence resolves the operational runtime datastore and an

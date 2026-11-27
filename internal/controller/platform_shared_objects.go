@@ -90,19 +90,17 @@ func WithVectorVolumeMounts() ContainerOption {
 // TODO: move this to DbMigration once we have this component set.
 func WithFlywayPersistenceVars() ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
-		c.WithEnv([]*corev1ac.EnvVarApplyConfiguration{
+		setEnv(c,
 			envLiteral("QUARKUS_FLYWAY_MIGRATE_AT_START", "true"),
 			envLiteral("QUARKUS_FLYWAY_BASELINE_ON_MIGRATE", "true"),
 			envLiteral("QUARKUS_FLYWAY_BASELINE_VERSION", "0"),
-		}...)
+		)
 	}
 }
 
 // WithGraphQLVars returns container options for GraphQL configuration.
 func WithGraphQLVars() ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
-		c.WithEnv([]*corev1ac.EnvVarApplyConfiguration{
-			envLiteral("QUARKUS_SMALLRYE_GRAPHQL_UI_ENABLE", "true"),
-		}...)
+		setEnv(c, envLiteral("QUARKUS_SMALLRYE_GRAPHQL_UI_ENABLE", "true"))
 	}
 }

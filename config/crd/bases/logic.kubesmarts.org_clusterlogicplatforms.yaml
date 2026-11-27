@@ -1315,7 +1315,6 @@ spec:
                         description: Image specifies the container image.
                         type: string
                       imagePullPolicy:
-                        default: IfNotPresent
                         description: ImagePullPolicy specifies when to pull the image.
                         enum:
                         - Always
@@ -10681,7 +10680,6 @@ spec:
                             description: Image specifies the container image.
                             type: string
                           imagePullPolicy:
-                            default: IfNotPresent
                             description: ImagePullPolicy specifies when to pull the
                               image.
                             enum:
@@ -19983,7 +19981,6 @@ spec:
                         description: Image specifies the container image.
                         type: string
                       imagePullPolicy:
-                        default: IfNotPresent
                         description: ImagePullPolicy specifies when to pull the image.
                         enum:
                         - Always
@@ -27986,6 +27983,403 @@ spec:
                 description: Runtime configures runtime-wide platform settings, including
                   persistence datastores.
                 properties:
+                  defaults:
+                    description: Defaults are inherited by LogicFlowRuntimes; the
+                      runtime value wins.
+                    properties:
+                      container:
+                        description: ContainerDefaultsSpec mirrors ContainerSpec for
+                          the allowed container-level defaults.
+                        properties:
+                          env:
+                            items:
+                              description: EnvVarDefault is a literal name/value pair,
+                                a field subset of corev1.EnvVar.
+                              properties:
+                                name:
+                                  minLength: 1
+                                  type: string
+                                value:
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                          imagePullPolicy:
+                            description: PullPolicy describes a policy for if/when
+                              to pull a container image
+                            enum:
+                            - Always
+                            - Never
+                            - IfNotPresent
+                            type: string
+                          livenessProbe:
+                            description: ProbeTuning holds probe timings, a field
+                              subset of corev1.Probe.
+                            properties:
+                              failureThreshold:
+                                format: int32
+                                minimum: 1
+                                type: integer
+                              initialDelaySeconds:
+                                format: int32
+                                minimum: 0
+                                type: integer
+                              periodSeconds:
+                                format: int32
+                                minimum: 1
+                                type: integer
+                              timeoutSeconds:
+                                format: int32
+                                minimum: 1
+                                type: integer
+                            type: object
+                          readinessProbe:
+                            description: ProbeTuning holds probe timings, a field
+                              subset of corev1.Probe.
+                            properties:
+                              failureThreshold:
+                                format: int32
+                                minimum: 1
+                                type: integer
+                              initialDelaySeconds:
+                                format: int32
+                                minimum: 0
+                                type: integer
+                              periodSeconds:
+                                format: int32
+                                minimum: 1
+                                type: integer
+                              timeoutSeconds:
+                                format: int32
+                                minimum: 1
+                                type: integer
+                            type: object
+                          resources:
+                            description: ResourceRequirements describes the compute
+                              resource requirements.
+                            properties:
+                              claims:
+                                description: |-
+                                  Claims lists the names of resources, defined in spec.resourceClaims,
+                                  that are used by this container.
+
+                                  This field depends on the
+                                  DynamicResourceAllocation feature gate.
+
+                                  This field is immutable. It can only be set for containers.
+                                items:
+                                  description: ResourceClaim references one entry
+                                    in PodSpec.ResourceClaims.
+                                  properties:
+                                    name:
+                                      description: |-
+                                        Name must match the name of one entry in pod.spec.resourceClaims of
+                                        the Pod where this field is used. It makes that resource available
+                                        inside a container.
+                                      type: string
+                                    request:
+                                      description: |-
+                                        Request is the name chosen for a request in the referenced claim.
+                                        If empty, everything from the claim is made available, otherwise
+                                        only the result of this request.
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
+                              limits:
+                                additionalProperties:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
+                                description: |-
+                                  Limits describes the maximum amount of compute resources allowed.
+                                  More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                                type: object
+                              requests:
+                                additionalProperties:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
+                                description: |-
+                                  Requests describes the minimum amount of compute resources required.
+                                  If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                                  otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                                  More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                                type: object
+                            type: object
+                          startupProbe:
+                            description: StartupProbe applies to durable runtimes
+                              only.
+                            properties:
+                              failureThreshold:
+                                format: int32
+                                minimum: 1
+                                type: integer
+                              initialDelaySeconds:
+                                format: int32
+                                minimum: 0
+                                type: integer
+                              periodSeconds:
+                                format: int32
+                                minimum: 1
+                                type: integer
+                              timeoutSeconds:
+                                format: int32
+                                minimum: 1
+                                type: integer
+                            type: object
+                        type: object
+                      imagePullPolicy:
+                        description: PullPolicy describes a policy for if/when to
+                          pull a container image
+                        enum:
+                        - Always
+                        - Never
+                        - IfNotPresent
+                        type: string
+                      podTemplate:
+                        description: PodTemplateDefaultsSpec mirrors PodTemplateSpec
+                          for the allowed pod-level defaults.
+                        properties:
+                          container:
+                            description: ContainerDefaultsSpec mirrors ContainerSpec
+                              for the allowed container-level defaults.
+                            properties:
+                              env:
+                                items:
+                                  description: EnvVarDefault is a literal name/value
+                                    pair, a field subset of corev1.EnvVar.
+                                  properties:
+                                    name:
+                                      minLength: 1
+                                      type: string
+                                    value:
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                type: array
+                              imagePullPolicy:
+                                description: PullPolicy describes a policy for if/when
+                                  to pull a container image
+                                enum:
+                                - Always
+                                - Never
+                                - IfNotPresent
+                                type: string
+                              livenessProbe:
+                                description: ProbeTuning holds probe timings, a field
+                                  subset of corev1.Probe.
+                                properties:
+                                  failureThreshold:
+                                    format: int32
+                                    minimum: 1
+                                    type: integer
+                                  initialDelaySeconds:
+                                    format: int32
+                                    minimum: 0
+                                    type: integer
+                                  periodSeconds:
+                                    format: int32
+                                    minimum: 1
+                                    type: integer
+                                  timeoutSeconds:
+                                    format: int32
+                                    minimum: 1
+                                    type: integer
+                                type: object
+                              readinessProbe:
+                                description: ProbeTuning holds probe timings, a field
+                                  subset of corev1.Probe.
+                                properties:
+                                  failureThreshold:
+                                    format: int32
+                                    minimum: 1
+                                    type: integer
+                                  initialDelaySeconds:
+                                    format: int32
+                                    minimum: 0
+                                    type: integer
+                                  periodSeconds:
+                                    format: int32
+                                    minimum: 1
+                                    type: integer
+                                  timeoutSeconds:
+                                    format: int32
+                                    minimum: 1
+                                    type: integer
+                                type: object
+                              resources:
+                                description: ResourceRequirements describes the compute
+                                  resource requirements.
+                                properties:
+                                  claims:
+                                    description: |-
+                                      Claims lists the names of resources, defined in spec.resourceClaims,
+                                      that are used by this container.
+
+                                      This field depends on the
+                                      DynamicResourceAllocation feature gate.
+
+                                      This field is immutable. It can only be set for containers.
+                                    items:
+                                      description: ResourceClaim references one entry
+                                        in PodSpec.ResourceClaims.
+                                      properties:
+                                        name:
+                                          description: |-
+                                            Name must match the name of one entry in pod.spec.resourceClaims of
+                                            the Pod where this field is used. It makes that resource available
+                                            inside a container.
+                                          type: string
+                                        request:
+                                          description: |-
+                                            Request is the name chosen for a request in the referenced claim.
+                                            If empty, everything from the claim is made available, otherwise
+                                            only the result of this request.
+                                          type: string
+                                      required:
+                                      - name
+                                      type: object
+                                    type: array
+                                    x-kubernetes-list-map-keys:
+                                    - name
+                                    x-kubernetes-list-type: map
+                                  limits:
+                                    additionalProperties:
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                      x-kubernetes-int-or-string: true
+                                    description: |-
+                                      Limits describes the maximum amount of compute resources allowed.
+                                      More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                                    type: object
+                                  requests:
+                                    additionalProperties:
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                      x-kubernetes-int-or-string: true
+                                    description: |-
+                                      Requests describes the minimum amount of compute resources required.
+                                      If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                                      otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                                      More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                                    type: object
+                                type: object
+                              startupProbe:
+                                description: StartupProbe applies to durable runtimes
+                                  only.
+                                properties:
+                                  failureThreshold:
+                                    format: int32
+                                    minimum: 1
+                                    type: integer
+                                  initialDelaySeconds:
+                                    format: int32
+                                    minimum: 0
+                                    type: integer
+                                  periodSeconds:
+                                    format: int32
+                                    minimum: 1
+                                    type: integer
+                                  timeoutSeconds:
+                                    format: int32
+                                    minimum: 1
+                                    type: integer
+                                type: object
+                            type: object
+                          metadata:
+                            description: PodTemplateMetadata defines labels and annotations
+                              applied to pods.
+                            properties:
+                              annotations:
+                                additionalProperties:
+                                  type: string
+                                description: Annotations are merged with operator-managed
+                                  pod annotations.
+                                type: object
+                              labels:
+                                additionalProperties:
+                                  type: string
+                                description: Labels are merged with operator-managed
+                                  pod labels.
+                                type: object
+                            type: object
+                        type: object
+                      resources:
+                        description: ResourceRequirements describes the compute resource
+                          requirements.
+                        properties:
+                          claims:
+                            description: |-
+                              Claims lists the names of resources, defined in spec.resourceClaims,
+                              that are used by this container.
+
+                              This field depends on the
+                              DynamicResourceAllocation feature gate.
+
+                              This field is immutable. It can only be set for containers.
+                            items:
+                              description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                              properties:
+                                name:
+                                  description: |-
+                                    Name must match the name of one entry in pod.spec.resourceClaims of
+                                    the Pod where this field is used. It makes that resource available
+                                    inside a container.
+                                  type: string
+                                request:
+                                  description: |-
+                                    Request is the name chosen for a request in the referenced claim.
+                                    If empty, everything from the claim is made available, otherwise
+                                    only the result of this request.
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            x-kubernetes-list-type: map
+                          limits:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: |-
+                              Limits describes the maximum amount of compute resources allowed.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                            type: object
+                          requests:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: |-
+                              Requests describes the minimum amount of compute resources required.
+                              If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                              otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                            type: object
+                        type: object
+                    type: object
                   persistence:
                     description: Persistence configures separate workflow runtime
                       and Quartz datastores.
@@ -29463,7 +29857,6 @@ spec:
                         description: Image specifies the container image.
                         type: string
                       imagePullPolicy:
-                        default: IfNotPresent
                         description: ImagePullPolicy specifies when to pull the image.
                         enum:
                         - Always

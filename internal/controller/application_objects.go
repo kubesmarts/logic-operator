@@ -10,6 +10,11 @@ import (
 	metav1ac "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
+// DefaultImagePullPolicy is the operator fallback applied to the main container when no
+// ApplicationSpec tier sets imagePullPolicy. It applies to every ApplicationSpec consumer
+// (runtime, Data Index, gateway), since the CRD no longer defaults the field.
+const DefaultImagePullPolicy = corev1.PullIfNotPresent
+
 // ContainerOption decorates the main container before it's placed in the pod spec.
 type ContainerOption func(*corev1ac.ContainerApplyConfiguration)
 
@@ -21,6 +26,44 @@ func WithEnvVars(envs ...*corev1ac.EnvVarApplyConfiguration) ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
 		c.WithEnv(envs...)
 	}
+}
+
+// setEnv sets env vars the operator owns. A variable already on the container with the same name,
+// from the runtime or the platform defaults, is removed first, so a name never appears twice.
+func setEnv(c *corev1ac.ContainerApplyConfiguration, envs ...*corev1ac.EnvVarApplyConfiguration) {
+	for _, e := range envs {
+		removeEnv(c, *e.Name)
+		c.WithEnv(e)
+	}
+}
+
+// setEnvIfAbsent sets env vars that a runtime or platform value may override.
+// A variable already on the container with the same name is kept.
+func setEnvIfAbsent(c *corev1ac.ContainerApplyConfiguration, envs ...*corev1ac.EnvVarApplyConfiguration) {
+	for _, e := range envs {
+		if !hasEnv(c, *e.Name) {
+			c.WithEnv(e)
+		}
+	}
+}
+
+func hasEnv(c *corev1ac.ContainerApplyConfiguration, name string) bool {
+	for _, e := range c.Env {
+		if e.Name != nil && *e.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func removeEnv(c *corev1ac.ContainerApplyConfiguration, name string) {
+	filtered := make([]corev1ac.EnvVarApplyConfiguration, 0, len(c.Env))
+	for _, e := range c.Env {
+		if e.Name == nil || *e.Name != name {
+			filtered = append(filtered, e)
+		}
+	}
+	c.Env = filtered
 }
 
 // ToDeploymentSpec converts an ApplicationSpec into a DeploymentSpecApplyConfiguration.
@@ -54,8 +97,10 @@ func ToDeploymentSpec(
 // resolveContainerAC resolves the 3-tier container precedence into a single ContainerApplyConfiguration.
 // Precedence: podTemplate.container > container > top-level shortcuts.
 // Each layer overrides non-zero fields from the previous layer.
+// imagePullPolicy falls back to DefaultImagePullPolicy when no tier sets it.
 func resolveContainerAC(containerName string, app *logicv1.ApplicationSpec) *corev1ac.ContainerApplyConfiguration {
 	c := corev1ac.Container().WithName(containerName).
+		WithImagePullPolicy(DefaultImagePullPolicy).
 		WithSecurityContext(restrictedContainerSecurity())
 
 	applyContainerFields(c, &logicv1.ContainerSpec{
@@ -77,7 +122,7 @@ func applyContainerFields(c *corev1ac.ContainerApplyConfiguration, cs *logicv1.C
 	if cs.ImagePullPolicy != "" {
 		c.WithImagePullPolicy(cs.ImagePullPolicy)
 	}
-	if cs.Resources.Requests != nil || cs.Resources.Limits != nil {
+	if hasResources(cs.Resources) {
 		c.WithResources(convertTo[corev1ac.ResourceRequirementsApplyConfiguration](cs.Resources))
 	}
 	if cs.Command != nil {
@@ -125,9 +170,10 @@ func toPodTemplateSpecAC(containerName string,
 	}
 	podSpec := toPodSpecAC(&app.PodTemplate, container)
 
+	// controller labels are merged last so they always win over the runtime and platform podTemplate labels.
 	templateLabels := MergeMaps(podLabels)
 	if app.PodTemplate.Metadata != nil {
-		templateLabels = MergeMaps(podLabels, app.PodTemplate.Metadata.Labels)
+		templateLabels = MergeMaps(app.PodTemplate.Metadata.Labels, podLabels)
 	}
 
 	podTemplate := corev1ac.PodTemplateSpec().

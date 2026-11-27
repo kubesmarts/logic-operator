@@ -325,7 +325,7 @@ func TestDefaultProbes_SetsWhenNil(t *testing.T) {
 	g := gomega.NewWithT(t)
 	c := corev1ac.Container().WithName("test")
 
-	DefaultQuarkusProbes()(c)
+	DefaultQuarkusProbes(probeTunings{})(c)
 
 	g.Expect(c.LivenessProbe).NotTo(gomega.BeNil())
 	g.Expect(*c.LivenessProbe.HTTPGet.Path).To(gomega.Equal("/q/health/live"))
@@ -348,12 +348,134 @@ func TestDefaultProbes_PreservesUserOverride(t *testing.T) {
 			WithHTTPGet(corev1ac.HTTPGetAction().WithPath("/custom/ready")).
 			WithInitialDelaySeconds(5))
 
-	DefaultQuarkusProbes()(c)
+	DefaultQuarkusProbes(probeTunings{})(c)
 
 	g.Expect(*c.LivenessProbe.HTTPGet.Path).To(gomega.Equal("/custom/live"))
 	g.Expect(*c.LivenessProbe.InitialDelaySeconds).To(gomega.Equal(int32(60)))
 	g.Expect(*c.ReadinessProbe.HTTPGet.Path).To(gomega.Equal("/custom/ready"))
 	g.Expect(*c.ReadinessProbe.InitialDelaySeconds).To(gomega.Equal(int32(5)))
+}
+
+func TestDefaultProbes_AppliesPlatformTimingsKeepingHandler(t *testing.T) {
+	g := gomega.NewWithT(t)
+	c := corev1ac.Container().WithName("test")
+	tunings := probeTunings{
+		Liveness:  &logicv1.ProbeTuning{PeriodSeconds: ptr.To(int32(20)), FailureThreshold: ptr.To(int32(6))},
+		Readiness: &logicv1.ProbeTuning{InitialDelaySeconds: ptr.To(int32(0)), TimeoutSeconds: ptr.To(int32(9))},
+	}
+
+	DefaultQuarkusProbes(tunings)(c)
+
+	// tuned timings replace the defaults, the handler is kept
+	g.Expect(*c.LivenessProbe.HTTPGet.Path).To(gomega.Equal("/q/health/live"))
+	g.Expect(*c.LivenessProbe.PeriodSeconds).To(gomega.Equal(int32(20)))
+	g.Expect(*c.LivenessProbe.FailureThreshold).To(gomega.Equal(int32(6)))
+	// timings the platform did not set keep the operator default
+	g.Expect(*c.LivenessProbe.InitialDelaySeconds).To(gomega.Equal(int32(30)))
+	g.Expect(*c.LivenessProbe.TimeoutSeconds).To(gomega.Equal(int32(3)))
+
+	g.Expect(*c.ReadinessProbe.HTTPGet.Path).To(gomega.Equal("/q/health/ready"))
+	// an explicit zero is a value, not unset
+	g.Expect(*c.ReadinessProbe.InitialDelaySeconds).To(gomega.Equal(int32(0)))
+	g.Expect(*c.ReadinessProbe.TimeoutSeconds).To(gomega.Equal(int32(9)))
+	g.Expect(*c.ReadinessProbe.PeriodSeconds).To(gomega.Equal(int32(5)))
+	g.Expect(*c.ReadinessProbe.FailureThreshold).To(gomega.Equal(int32(3)))
+}
+
+func TestDefaultProbes_RuntimeProbeWinsWholeOverPlatformTimings(t *testing.T) {
+	g := gomega.NewWithT(t)
+	c := corev1ac.Container().WithName("test").
+		WithLivenessProbe(corev1ac.Probe().
+			WithHTTPGet(corev1ac.HTTPGetAction().WithPath("/custom/live")).
+			WithInitialDelaySeconds(60))
+	tunings := probeTunings{
+		Liveness:  &logicv1.ProbeTuning{InitialDelaySeconds: ptr.To(int32(1)), PeriodSeconds: ptr.To(int32(20))},
+		Readiness: &logicv1.ProbeTuning{PeriodSeconds: ptr.To(int32(7))},
+	}
+
+	DefaultQuarkusProbes(tunings)(c)
+
+	g.Expect(*c.LivenessProbe.HTTPGet.Path).To(gomega.Equal("/custom/live"))
+	g.Expect(*c.LivenessProbe.InitialDelaySeconds).To(gomega.Equal(int32(60)))
+	g.Expect(c.LivenessProbe.PeriodSeconds).To(gomega.BeNil())
+	// the probe the runtime did not define is still tuned
+	g.Expect(*c.ReadinessProbe.PeriodSeconds).To(gomega.Equal(int32(7)))
+}
+
+func TestDefaultProbes_EmptyTuningKeepsOperatorDefaults(t *testing.T) {
+	g := gomega.NewWithT(t)
+	c := corev1ac.Container().WithName("test")
+
+	DefaultQuarkusProbes(probeTunings{Liveness: &logicv1.ProbeTuning{}})(c)
+
+	g.Expect(*c.LivenessProbe.InitialDelaySeconds).To(gomega.Equal(int32(30)))
+	g.Expect(*c.LivenessProbe.PeriodSeconds).To(gomega.Equal(int32(10)))
+	g.Expect(*c.ReadinessProbe.PeriodSeconds).To(gomega.Equal(int32(5)))
+}
+
+func TestDurableStartupProbe_DefaultsWithoutTunings(t *testing.T) {
+	g := gomega.NewWithT(t)
+	c := corev1ac.Container().WithName("test")
+
+	DurableStartupProbe(probeTunings{})(c)
+
+	g.Expect(*c.StartupProbe.HTTPGet.Path).To(gomega.Equal("/q/health/ready"))
+	g.Expect(*c.StartupProbe.InitialDelaySeconds).To(gomega.Equal(int32(0)))
+	g.Expect(*c.StartupProbe.PeriodSeconds).To(gomega.Equal(int32(5)))
+	g.Expect(*c.StartupProbe.TimeoutSeconds).To(gomega.Equal(int32(3)))
+	g.Expect(*c.StartupProbe.FailureThreshold).To(gomega.Equal(int32(12)))
+}
+
+func TestDurableStartupProbe_AppliesPlatformTimingsKeepingHandler(t *testing.T) {
+	g := gomega.NewWithT(t)
+	c := corev1ac.Container().WithName("test")
+	tunings := probeTunings{
+		Startup: &logicv1.ProbeTuning{PeriodSeconds: ptr.To(int32(10)), FailureThreshold: ptr.To(int32(30))},
+	}
+
+	DurableStartupProbe(tunings)(c)
+
+	g.Expect(*c.StartupProbe.HTTPGet.Path).To(gomega.Equal("/q/health/ready"))
+	g.Expect(*c.StartupProbe.PeriodSeconds).To(gomega.Equal(int32(10)))
+	g.Expect(*c.StartupProbe.FailureThreshold).To(gomega.Equal(int32(30)))
+	g.Expect(*c.StartupProbe.TimeoutSeconds).To(gomega.Equal(int32(3)))
+}
+
+func TestDurableStartupProbe_RuntimeProbeWinsWhole(t *testing.T) {
+	g := gomega.NewWithT(t)
+	c := corev1ac.Container().WithName("test").
+		WithStartupProbe(corev1ac.Probe().
+			WithHTTPGet(corev1ac.HTTPGetAction().WithPath("/custom/started")).
+			WithFailureThreshold(2))
+	tunings := probeTunings{
+		Startup: &logicv1.ProbeTuning{PeriodSeconds: ptr.To(int32(10)), FailureThreshold: ptr.To(int32(30))},
+	}
+
+	DurableStartupProbe(tunings)(c)
+
+	g.Expect(*c.StartupProbe.HTTPGet.Path).To(gomega.Equal("/custom/started"))
+	g.Expect(*c.StartupProbe.FailureThreshold).To(gomega.Equal(int32(2)))
+	g.Expect(c.StartupProbe.PeriodSeconds).To(gomega.BeNil())
+}
+
+func TestPlatformProbeTimingsFlowFromMergeToContainer(t *testing.T) {
+	g := gomega.NewWithT(t)
+	sel := SelectorLabels("test")
+	app := &logicv1.ApplicationSpec{Image: testImageBase}
+	defaults := &logicv1.ApplicationDefaultsSpec{
+		Container: logicv1.ContainerDefaultsSpec{
+			LivenessProbe: &logicv1.ProbeTuning{PeriodSeconds: ptr.To(int32(20))},
+		},
+	}
+
+	effective, tunings, err := mergeApplicationDefaults(app, defaults)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	spec := ToDeploymentSpec(ContainerNameRunner, &effective, sel, sel, DefaultQuarkusProbes(tunings))
+
+	probe := spec.Template.Spec.Containers[0].LivenessProbe
+	g.Expect(*probe.HTTPGet.Path).To(gomega.Equal("/q/health/live"))
+	g.Expect(*probe.PeriodSeconds).To(gomega.Equal(int32(20)))
 }
 
 func TestDeploymentAndServiceAreWiredTogether(t *testing.T) {
@@ -588,6 +710,94 @@ func TestWithDurableEnvVars_AllowsUserLeaseTimeout(t *testing.T) {
 	g.Expect(*c.Env[5].Name).To(gomega.Equal("POD_NAME"))
 	g.Expect(*c.Env[6].Name).To(gomega.Equal("POD_NAMESPACE"))
 }
+func envCount(c *corev1ac.ContainerApplyConfiguration, name string) (count int, value string) {
+	for _, e := range c.Env {
+		if e.Name != nil && *e.Name == name {
+			count++
+			if e.Value != nil {
+				value = *e.Value
+			}
+		}
+	}
+	return count, value
+}
+
+func TestSetEnv_ReplacesExistingVarWithoutDuplicates(t *testing.T) {
+	g := gomega.NewWithT(t)
+	c := corev1ac.Container().WithName("test").
+		WithEnv(
+			corev1ac.EnvVar().WithName("A").WithValue("user"),
+			corev1ac.EnvVar().WithName("B").WithValue("keep"),
+		)
+
+	setEnv(c, envLiteral("A", "operator"), envLiteral("C", "new"))
+
+	g.Expect(c.Env).To(gomega.HaveLen(3))
+	count, value := envCount(c, "A")
+	g.Expect(count).To(gomega.Equal(1))
+	g.Expect(value).To(gomega.Equal("operator"))
+	_, value = envCount(c, "B")
+	g.Expect(value).To(gomega.Equal("keep"))
+}
+
+func TestSetEnvIfAbsent_KeepsExistingVar(t *testing.T) {
+	g := gomega.NewWithT(t)
+	c := corev1ac.Container().WithName("test").
+		WithEnv(corev1ac.EnvVar().WithName("A").WithValue("user"))
+
+	setEnvIfAbsent(c, envLiteral("A", "default"), envLiteral("B", "default"))
+
+	g.Expect(c.Env).To(gomega.HaveLen(2))
+	_, value := envCount(c, "A")
+	g.Expect(value).To(gomega.Equal("user"))
+	_, value = envCount(c, "B")
+	g.Expect(value).To(gomega.Equal("default"))
+}
+
+// Every operator-set variable must replace a same-named runtime or platform variable.
+func TestOperatorOptions_NeverDuplicateExistingEnv(t *testing.T) {
+	g := gomega.NewWithT(t)
+	rt := &logicv1.LogicFlowRuntime{}
+	rt.Name = testRuntimeName
+	pg := &logicv1.DatastoreSpec{
+		PostgreSQL: &logicv1.PersistencePostgreSQL{
+			SecretRef:  logicv1.PostgreSQLSecretOptions{Name: "creds"},
+			ServiceRef: logicv1.PostgreSQLServiceOptions{Name: "pg", Namespace: "db", DatabaseName: "flow", DatabaseSchema: "public"},
+		},
+	}
+	enabled := true
+	opts := []ContainerOption{
+		WithQuarkusPersistenceEnvVars(pg),
+		WithQuarkusQuartzPersistenceEnvVars(pg),
+		WithSecurityEnvVars(logicv1.RuntimeSecuritySpec{}),
+		WithStructuredLoggingEnvVars(&logicv1.StructuredLoggingSpec{Enabled: &enabled}),
+		WithFlowSourcePath(),
+		WithDurableEnvVars(rt),
+		WithQuartzSchedulerEnvVars(rt),
+	}
+
+	// First pass collects the names the operator sets.
+	probe := corev1ac.Container().WithName("test")
+	for _, opt := range opts {
+		opt(probe)
+	}
+	g.Expect(probe.Env).NotTo(gomega.BeEmpty())
+
+	// Second pass: the same names already exist with a user value.
+	c := corev1ac.Container().WithName("test")
+	for _, e := range probe.Env {
+		c.WithEnv(corev1ac.EnvVar().WithName(*e.Name).WithValue("user"))
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	g.Expect(c.Env).To(gomega.HaveLen(len(probe.Env)))
+	for _, e := range probe.Env {
+		count, _ := envCount(c, *e.Name)
+		g.Expect(count).To(gomega.Equal(1), "env var %s duplicated", *e.Name)
+	}
+}
 
 func TestNewMemberLease_Fields(t *testing.T) {
 	g := gomega.NewWithT(t)
@@ -653,7 +863,7 @@ func TestWithMetricsEnvVars_NotInjectedAfterUpgrade(t *testing.T) {
 	DefaultRunnerImage(nil)(c)
 	WithQuarkusPersistenceEnvVars(nil)(c)
 	WithSecurityEnvVars(logicv1.RuntimeSecuritySpec{})(c)
-	DefaultQuarkusProbes()(c)
+	DefaultQuarkusProbes(probeTunings{})(c)
 	WithFlowSourcePath()(c)
 	WithFlowVolumeMounts(nil)(c)
 
@@ -814,7 +1024,7 @@ func TestQuartzEnv_OmittedWhenEphemeral(t *testing.T) {
 	opts := []ContainerOption{
 		DefaultRunnerImage(nil),
 		WithQuarkusPersistenceEnvVars(nil),
-		DefaultQuarkusProbes(),
+		DefaultQuarkusProbes(probeTunings{}),
 		WithFlowSourcePath(),
 	}
 	for _, opt := range opts {

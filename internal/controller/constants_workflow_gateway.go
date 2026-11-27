@@ -17,7 +17,7 @@ const (
 // WorkflowGatewayEnvVars returns environment variable configuration for the Workflow Gateway.
 func WorkflowGatewayEnvVars() ContainerOption {
 	return func(c *corev1ac.ContainerApplyConfiguration) {
-		c.WithEnv(envFieldRef("POD_NAMESPACE", "metadata.namespace"))
+		setEnv(c, envFieldRef("POD_NAMESPACE", "metadata.namespace"))
 	}
 }
 

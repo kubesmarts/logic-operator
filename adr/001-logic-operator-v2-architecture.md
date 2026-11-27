@@ -40,6 +40,7 @@
 | Validating Admission Webhooks | ✅ Implemented | [Webhook Plan](implementation/webhook-validation-plan.md) |
 | Lease-based durable coordination | ✅ Implemented | [Durable Leases Design](implementation/logicflowruntime-durable-leases.md) |
 | HPA / Autoscaling | ✅ Implemented | [HPA Support](implementation/hpa-support.md) |
+| ClusterLogicPlatform runtime defaults | ✅ Implemented | [Runtime Defaults Design](implementation/clusterlogicplatform-runtime-defaults.md) |
 | Metrics / Observability (basic) | ✅ Implemented | `internal/controller/` |
 | E2E Tests (minimal runtime lifecycle) | ✅ Implemented | [E2E Plan](implementation/e2e-minimal-runtime-plan.md) |
 | LogicPlatform Controller (local mode) | 🔄 In Progress | EPIC 5 (#8), [ADR 002](implementation/002-logicplatform-vector-implementation.md) |

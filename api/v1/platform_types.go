@@ -90,9 +90,78 @@ type WorkflowGatewaySpec struct {
 
 // RuntimePlatformSpec contains platform-level settings used by runtimes.
 type RuntimePlatformSpec struct {
+	// Defaults are inherited by LogicFlowRuntimes; the runtime value wins.
+	// +optional
+	Defaults *ApplicationDefaultsSpec `json:"defaults,omitempty"`
+
 	// Persistence configures separate workflow runtime and Quartz datastores.
 	// +optional
 	Persistence *RuntimePersistenceSpec `json:"persistence,omitempty"`
+}
+
+// ApplicationDefaultsSpec is the subset of ApplicationSpec allowed as platform defaults.
+// JSON paths and field types must match ApplicationSpec; adding a field means adding it here.
+type ApplicationDefaultsSpec struct {
+	// +kubebuilder:validation:Enum=Always;Never;IfNotPresent
+	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
+
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+
+	PodTemplate PodTemplateDefaultsSpec `json:"podTemplate,omitempty"`
+
+	Container ContainerDefaultsSpec `json:"container,omitempty"`
+}
+
+// PodTemplateDefaultsSpec mirrors PodTemplateSpec for the allowed pod-level defaults.
+type PodTemplateDefaultsSpec struct {
+	Metadata *PodTemplateMetadata `json:"metadata,omitempty"`
+
+	Container ContainerDefaultsSpec `json:"container,omitempty"`
+
+	PodSpecDefaults `json:",inline"`
+}
+
+// PodSpecDefaults mirrors PodSpec. It is empty in v1; allowed pod-level fields are added here.
+type PodSpecDefaults struct{}
+
+// ContainerDefaultsSpec mirrors ContainerSpec for the allowed container-level defaults.
+type ContainerDefaultsSpec struct {
+	// +kubebuilder:validation:Enum=Always;Never;IfNotPresent
+	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
+
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+
+	Env []EnvVarDefault `json:"env,omitempty"`
+
+	LivenessProbe *ProbeTuning `json:"livenessProbe,omitempty"`
+
+	ReadinessProbe *ProbeTuning `json:"readinessProbe,omitempty"`
+
+	// StartupProbe applies to durable runtimes only.
+	StartupProbe *ProbeTuning `json:"startupProbe,omitempty"`
+}
+
+// EnvVarDefault is a literal name/value pair, a field subset of corev1.EnvVar.
+type EnvVarDefault struct {
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
+	Value string `json:"value,omitempty"`
+}
+
+// ProbeTuning holds probe timings, a field subset of corev1.Probe.
+type ProbeTuning struct {
+	// +kubebuilder:validation:Minimum=0
+	InitialDelaySeconds *int32 `json:"initialDelaySeconds,omitempty"`
+
+	// +kubebuilder:validation:Minimum=1
+	PeriodSeconds *int32 `json:"periodSeconds,omitempty"`
+
+	// +kubebuilder:validation:Minimum=1
+	TimeoutSeconds *int32 `json:"timeoutSeconds,omitempty"`
+
+	// +kubebuilder:validation:Minimum=1
+	FailureThreshold *int32 `json:"failureThreshold,omitempty"`
 }
 
 // DataIndexStatus contains status information for the Data Index component.

@@ -16,6 +16,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -615,6 +616,119 @@ var _ = Describe("LogicFlowRuntime Controller", func() {
 			Expect(svcCond.Reason).To(Equal(logicv1.ReasonReady))
 
 			Expect(rt.Status.Phase).To(Equal(logicv1.ApplicationPhasePending))
+		})
+	})
+	Context("Platform runtime defaults", func() {
+		const platformName = "test-defaults-platform"
+		var r *LogicFlowRuntimeReconciler
+		var nn types.NamespacedName
+
+		deletePlatform := func() {
+			clp := &logicv1.ClusterLogicPlatform{}
+			err := k8sClient.Get(ctx, types.NamespacedName{Name: platformName}, clp)
+			if errors.IsNotFound(err) {
+				return
+			}
+			Expect(err).NotTo(HaveOccurred())
+			Expect(k8sClient.Delete(ctx, clp)).To(Succeed())
+		}
+
+		BeforeEach(func() {
+			r = newReconciler()
+			deletePlatform()
+			clp := &logicv1.ClusterLogicPlatform{
+				ObjectMeta: metav1.ObjectMeta{Name: platformName},
+				Spec: logicv1.ClusterLogicPlatformSpec{
+					TargetNamespace: testNamespace,
+					Runtime: &logicv1.RuntimePlatformSpec{
+						Defaults: &logicv1.ApplicationDefaultsSpec{
+							ImagePullPolicy: corev1.PullAlways,
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("256Mi")},
+							},
+							PodTemplate: logicv1.PodTemplateDefaultsSpec{
+								Metadata: &logicv1.PodTemplateMetadata{Labels: map[string]string{"team": "platform"}},
+							},
+							Container: logicv1.ContainerDefaultsSpec{
+								Env: []logicv1.EnvVarDefault{
+									{Name: "PLATFORM_ONLY", Value: "pf"},
+									{Name: "SHARED", Value: "pf"},
+								},
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, clp)).To(Succeed())
+		})
+		AfterEach(func() {
+			deleteRuntime(ctx, nn)
+			deletePlatform()
+		})
+
+		It("should apply the platform defaults to the Deployment", func() {
+			spec := ephemeralSpec()
+			spec.PlatformRef = &logicv1.PlatformReference{Name: platformName}
+			nn = createRuntime(ctx, "test-defaults-applied", spec)
+
+			reconcileAndFetch(ctx, r, nn)
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+			c := mainContainer(&dep)
+			Expect(c.ImagePullPolicy).To(Equal(corev1.PullAlways))
+			Expect(c.Resources.Requests.Memory().String()).To(Equal("256Mi"))
+			Expect(findEnvVar(c.Env, "PLATFORM_ONLY")).NotTo(BeNil())
+			Expect(findEnvVar(c.Env, "PLATFORM_ONLY").Value).To(Equal("pf"))
+			Expect(dep.Spec.Template.Labels).To(HaveKeyWithValue("team", "platform"))
+		})
+
+		It("should let the runtime win over the platform defaults", func() {
+			spec := ephemeralSpec()
+			spec.PlatformRef = &logicv1.PlatformReference{Name: platformName}
+			spec.ImagePullPolicy = corev1.PullNever
+			spec.Container.Env = []corev1.EnvVar{{Name: "SHARED", Value: "rt"}}
+			nn = createRuntime(ctx, "test-defaults-runtime-wins", spec)
+
+			reconcileAndFetch(ctx, r, nn)
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+			c := mainContainer(&dep)
+			Expect(c.ImagePullPolicy).To(Equal(corev1.PullNever))
+			shared := 0
+			for _, e := range c.Env {
+				if e.Name == "SHARED" {
+					shared++
+					Expect(e.Value).To(Equal("rt"))
+				}
+			}
+			Expect(shared).To(Equal(1))
+			Expect(findEnvVar(c.Env, "PLATFORM_ONLY")).NotTo(BeNil())
+		})
+
+		It("should not apply any platform defaults without a platformRef", func() {
+			nn = createRuntime(ctx, "test-defaults-no-ref", ephemeralSpec())
+
+			reconcileAndFetch(ctx, r, nn)
+
+			var dep appsv1.Deployment
+			Expect(k8sClient.Get(ctx, nn, &dep)).To(Succeed())
+			c := mainContainer(&dep)
+			Expect(c.ImagePullPolicy).To(Equal(DefaultImagePullPolicy))
+			Expect(findEnvVar(c.Env, "PLATFORM_ONLY")).To(BeNil())
+			Expect(dep.Spec.Template.Labels).NotTo(HaveKey("team"))
+		})
+
+		It("should fail when the referenced platform does not exist", func() {
+			spec := ephemeralSpec()
+			spec.PlatformRef = &logicv1.PlatformReference{Name: "does-not-exist"}
+			nn = createRuntime(ctx, "test-defaults-missing-platform", spec)
+
+			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+
+			Expect(err).To(HaveOccurred())
+			Expect(errors.IsNotFound(err)).To(BeTrue())
 		})
 	})
 
