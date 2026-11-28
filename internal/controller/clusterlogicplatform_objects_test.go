@@ -7,7 +7,50 @@ import (
 	corev1ac "k8s.io/client-go/applyconfigurations/core/v1"
 )
 
-func TestVectorUsesDataIndexPersistenceAndConfiguredWatchNamespace(t *testing.T) {
+func vectorEnvByName(platform *logicv1.ClusterLogicPlatform) map[string]corev1ac.EnvVarApplyConfiguration {
+	container := corev1ac.Container().WithName(ContainerNameVector)
+	WithVectorEnvVarsCLP(platform)(container)
+
+	env := make(map[string]corev1ac.EnvVarApplyConfiguration, len(container.Env))
+	for _, entry := range container.Env {
+		env[*entry.Name] = entry
+	}
+	return env
+}
+
+func TestVectorWorkflowNamespacesEnv(t *testing.T) {
+	tests := []struct {
+		name   string
+		vector *logicv1.VectorSpec
+		want   string
+	}{
+		{name: "single namespace", vector: &logicv1.VectorSpec{WatchNamespaces: []string{"ns-a"}}, want: "ns-a"},
+		{name: "multiple namespaces", vector: &logicv1.VectorSpec{WatchNamespaces: []string{"ns-a", "ns-b", "ns-c"}}, want: "ns-a,ns-b,ns-c"},
+		{name: "order preserved", vector: &logicv1.VectorSpec{WatchNamespaces: []string{"ns-b", "ns-a"}}, want: "ns-b,ns-a"},
+		{name: "omitted list defaults to targetNamespace", vector: &logicv1.VectorSpec{}, want: "platform-ns"},
+		{name: "nil vector defaults to targetNamespace", vector: nil, want: "platform-ns"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := vectorEnvByName(&logicv1.ClusterLogicPlatform{
+				Spec: logicv1.ClusterLogicPlatformSpec{TargetNamespace: "platform-ns", Vector: tt.vector},
+			})
+
+			entry, found := env["WORKFLOW_NAMESPACES"]
+			if !found || entry.Value == nil {
+				t.Fatal("WORKFLOW_NAMESPACES is missing")
+			}
+			if *entry.Value != tt.want {
+				t.Errorf("WORKFLOW_NAMESPACES = %q, want %q", *entry.Value, tt.want)
+			}
+			if _, found := env["WORKFLOW_NAMESPACE"]; found {
+				t.Error("legacy WORKFLOW_NAMESPACE must not be set")
+			}
+		})
+	}
+}
+
+func TestVectorUsesDataIndexPersistenceAndConfiguredWatchNamespaces(t *testing.T) {
 	platform := &logicv1.ClusterLogicPlatform{
 		Spec: logicv1.ClusterLogicPlatformSpec{
 			TargetNamespace: "platform-ns",
@@ -34,17 +77,11 @@ func TestVectorUsesDataIndexPersistenceAndConfiguredWatchNamespace(t *testing.T)
 					},
 				}},
 			}},
-			Vector: &logicv1.VectorSpec{WatchNamespaces: []string{"workflow-ns"}},
+			Vector: &logicv1.VectorSpec{WatchNamespaces: []string{"workflow-ns", "workflow-ns-2"}},
 		},
 	}
 
-	container := corev1ac.Container().WithName(ContainerNameVector)
-	WithVectorEnvVarsCLP(platform)(container)
-
-	env := make(map[string]corev1ac.EnvVarApplyConfiguration, len(container.Env))
-	for _, entry := range container.Env {
-		env[*entry.Name] = entry
-	}
+	env := vectorEnvByName(platform)
 
 	assertEnvValue := func(name, want string) {
 		t.Helper()
@@ -57,7 +94,7 @@ func TestVectorUsesDataIndexPersistenceAndConfiguredWatchNamespace(t *testing.T)
 			t.Errorf("%s = %q, want %q", name, got, want)
 		}
 	}
-	assertEnvValue("WORKFLOW_NAMESPACE", "workflow-ns")
+	assertEnvValue("WORKFLOW_NAMESPACES", "workflow-ns,workflow-ns-2")
 	assertEnvValue("POSTGRES_HOST", "data-index-db.database-ns.svc.cluster.local")
 	assertEnvValue("POSTGRES_DB", "logicflow")
 	assertEnvValue("POSTGRES_SCHEMA", "data_index")

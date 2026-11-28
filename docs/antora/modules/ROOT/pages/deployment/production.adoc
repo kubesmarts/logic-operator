@@ -37,9 +37,8 @@ webhook requires PostgreSQL connection settings with Secret, Service, database, 
 is configured independently under `vector`; workflow execution does not require either
 component.
 
-Vector currently receives a filter for only the first exact namespace in
-`vector.watchNamespaces`. Omit the field to default to `spec.targetNamespace`. A
-wildcard or multiple namespace entries are not supported by the current filter implementation.
+Vector collects logs from every namespace listed in `vector.watchNamespaces`. Omit the field to
+default to `spec.targetNamespace`. Wildcards are not supported.
 
 Structured logging is configured on each runtime. Keep workflow and task payload logging disabled
 unless it is required, since payloads may contain sensitive data and increase storage volume.

@@ -41,8 +41,8 @@ type DataIndexSpec struct {
 
 // VectorSpec configures the Vector DaemonSet for log forwarding; when nil, Vector is not deployed.
 type VectorSpec struct {
-	// WatchNamespaces sets the namespace to tail logs from; defaults to targetNamespace.
-	// Only the first entry is used; wildcards are not supported.
+	// WatchNamespaces lists the namespaces to tail logs from; defaults to targetNamespace.
+	// Wildcards are not supported.
 	// +optional
 	WatchNamespaces []string `json:"watchNamespaces,omitempty"`
 	// DebugEvents logs all workflow events to Vector's stdout.

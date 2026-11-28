@@ -43,10 +43,10 @@ Payloads can contain sensitive data and increase log volume.
 
 == Vector namespace filter
 
-When `vector.watchNamespaces` is omitted, the admission webhook defaults it to the
-`targetNamespace`. The current controller passes only the first list entry to Vector as an exact
-namespace filter. Use one namespace name; wildcard values and multiple namespace filtering are not
-currently supported.
+Vector collects logs from every namespace listed in `vector.watchNamespaces`, so runtimes in
+several namespaces can feed the same Data Index. When the field is omitted, the controller
+collects logs from the `targetNamespace`. Wildcard values are not supported. Vector only tails
+pods labeled `app.kubernetes.io/managed-by=logic-operator`.
 
 [source,yaml]
 ----
@@ -68,7 +68,8 @@ spec:
           databaseSchema: data_index
   vector:
     watchNamespaces:
-      - workflows
+      - team-a-workflows
+      - team-b-workflows
   gateway: {}
 ----
 

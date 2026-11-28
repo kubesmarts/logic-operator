@@ -64,8 +64,8 @@ xref:components/workflow-gateway.adoc[Workflow Gateway].
 === `vector`
 
 Presence of `vector` enables the Vector DaemonSet for structured workflow logs. Configure
-`vector.watchNamespaces` for the namespace whose runtime logs it should collect. Vector's current
-upstream configuration supports a single namespace; configure one exact namespace value.
+`vector.watchNamespaces` with the namespaces whose runtime logs it should collect; it defaults to
+`spec.targetNamespace`. Wildcards are not supported.
 
 === `runtime.persistence`
 
