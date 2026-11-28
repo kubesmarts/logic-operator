@@ -18702,8 +18702,8 @@ spec:
                         type: boolean
                       watchNamespaces:
                         description: |-
-                          WatchNamespaces sets the namespace to tail logs from; defaults to targetNamespace.
-                          Only the first entry is used; wildcards are not supported.
+                          WatchNamespaces lists the namespaces to tail logs from; defaults to targetNamespace.
+                          Wildcards are not supported.
                         items:
                           type: string
                         type: array
@@ -37788,8 +37788,8 @@ spec:
                     type: boolean
                   watchNamespaces:
                     description: |-
-                      WatchNamespaces sets the namespace to tail logs from; defaults to targetNamespace.
-                      Only the first entry is used; wildcards are not supported.
+                      WatchNamespaces lists the namespaces to tail logs from; defaults to targetNamespace.
+                      Wildcards are not supported.
                     items:
                       type: string
                     type: array

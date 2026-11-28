@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"maps"
 	"strconv"
+	"strings"
 
 	logicv1 "github.com/kubesmarts/logic-operator/api/v1"
 	routev1 "github.com/openshift/api/route/v1"
@@ -59,12 +60,11 @@ func WithVectorEnvVarsCLP(plat *logicv1.ClusterLogicPlatform) ContainerOption {
 			envFieldRef("VECTOR_SELF_POD_NAMESPACE", "metadata.namespace"),
 			envFieldRef("NODE_NAME", "spec.nodeName"),
 		}
-		// TODO: change the config to fetch for multiple namespaces
-		workflowNamespace := plat.Spec.TargetNamespace
+		workflowNamespaces := plat.Spec.TargetNamespace
 		if plat.Spec.Vector != nil && len(plat.Spec.Vector.WatchNamespaces) > 0 {
-			workflowNamespace = plat.Spec.Vector.WatchNamespaces[0]
+			workflowNamespaces = strings.Join(plat.Spec.Vector.WatchNamespaces, ",")
 		}
-		envs = append(envs, envLiteral("WORKFLOW_NAMESPACE", workflowNamespace))
+		envs = append(envs, envLiteral("WORKFLOW_NAMESPACES", workflowNamespaces))
 		if plat.Spec.Vector != nil && plat.Spec.Vector.DebugEvents {
 			envs = append(envs, envLiteral("DEBUG_EVENTS", "true"))
 		}

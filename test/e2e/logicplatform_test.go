@@ -19,6 +19,50 @@ const dataIndexName = platformName + "-data-index"
 const runtimeName = "hello-runtime"
 const runtimeReplicaCount = "2"
 
+// Second runtime namespace, used to verify Vector collects logs from several namespaces.
+const secondRuntimeNamespace = "logic-runtime-b"
+const secondRuntimeName = "hello-runtime-b"
+const vectorName = platformName + "-vector"
+
+// secondRuntimeYAML - runtime deployed in a namespace other than the operator one.
+const secondRuntimeYAML = `
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowRuntime
+metadata:
+  name: hello-runtime-b
+  namespace: logic-runtime-b
+spec:
+  replicas: 1
+  platformRef:
+    name: default
+  persistenceMode: PlatformDB
+  logging:
+    enabled: true
+    includeWorkflowPayloads: true
+`
+
+// secondRuntimeWorkflowYAML - workflow deployed to the runtime in the second namespace.
+const secondRuntimeWorkflowYAML = `
+apiVersion: logic.kubesmarts.org/v1
+kind: LogicFlowDefinition
+metadata:
+  name: e2e-dataindex-integration-wf-b
+  namespace: logic-runtime-b
+spec:
+  runtimeRef:
+    name: hello-runtime-b
+  flow:
+    document:
+      dsl: "1.0.0"
+      namespace: logic-runtime-b
+      name: dataindex-test-b
+      version: "1.0.0"
+    do:
+      - log:
+          set:
+            result: '${ "DataIndex multi-namespace test completed for " + .name }'
+`
+
 // dataIndexIntegrationWorkflowYAML - test-specific workflow for DataIndex integration verification
 const dataIndexIntegrationWorkflowYAML = `
 apiVersion: logic.kubesmarts.org/v1
@@ -74,10 +118,20 @@ func platformTests() {
 			_, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("configuring Vector to watch the namespace where this test deploys runtimes")
+			By("creating the second runtime namespace")
+			cmd = exec.Command("kubectl", "create", "namespace", secondRuntimeNamespace)
+			_, _ = utils.Run(cmd) // ignore error if namespace already exists
+
+			By("configuring Vector to watch the namespaces where this test deploys runtimes")
 			cmd = exec.Command("kubectl", "patch", "clusterlogicplatform", platformName,
 				"--type=merge",
-				"-p", `{"spec":{"vector":{"watchNamespaces":["`+namespace+`"]}}}`)
+				"-p", `{"spec":{"vector":{"watchNamespaces":["`+namespace+`","`+secondRuntimeNamespace+`"]}}}`)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("deploying the runtime in the second namespace")
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(secondRuntimeYAML)
 			_, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -101,6 +155,17 @@ func platformTests() {
 				g.Expect(out).To(Equal(runtimeName))
 			}
 			Eventually(waitForRuntime, 30*time.Second, 2*time.Second).Should(Succeed())
+
+			By("waiting for the second LogicFlowRuntime to be deployed")
+			waitForSecondRuntime := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "logicflowruntime", secondRuntimeName,
+					"-n", secondRuntimeNamespace,
+					"-o", "jsonpath={.metadata.name}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal(secondRuntimeName))
+			}
+			Eventually(waitForSecondRuntime, 30*time.Second, 2*time.Second).Should(Succeed())
 		})
 
 		AfterAll(func() {
@@ -119,6 +184,9 @@ func platformTests() {
 				g.Expect(err).To(HaveOccurred())
 			}).WithTimeout(2 * time.Minute).Should(Succeed())
 			cmd = exec.Command("kubectl", "delete", "namespace", platformNamespace, "--ignore-not-found")
+			_, _ = utils.Run(cmd)
+			By("deleting the second runtime namespace")
+			cmd = exec.Command("kubectl", "delete", "namespace", secondRuntimeNamespace, "--ignore-not-found")
 			_, _ = utils.Run(cmd)
 		})
 
@@ -399,6 +467,115 @@ spec:
 			cmd = exec.Command("kubectl", "delete", "logicflowdefinition", "e2e-dataindex-integration-wf",
 				"-n", namespace, "--ignore-not-found")
 			_, _ = utils.Run(cmd)
+		})
+
+		It("should collect workflow logs from multiple runtime namespaces into the same DataIndex", func() {
+			By("verifying Vector receives the comma-separated list of watched namespaces")
+			expectedNamespaces := namespace + "," + secondRuntimeNamespace
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "daemonset", vectorName,
+					"-n", platformNamespace,
+					"-o", `jsonpath={.spec.template.spec.containers[0].env[?(@.name=="WORKFLOW_NAMESPACES")].value}`)
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal(expectedNamespaces))
+			}, 2*time.Minute, 5*time.Second).Should(Succeed())
+
+			By("waiting for the Vector rollout to finish")
+			cmd := exec.Command("kubectl", "rollout", "status", "daemonset/"+vectorName,
+				"-n", platformNamespace, "--timeout=3m")
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("waiting for the runtime in the second namespace to be available")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "deployment", secondRuntimeName,
+					"-n", secondRuntimeNamespace,
+					"-o", "jsonpath={.status.availableReplicas} {.status.updatedReplicas} {.spec.replicas}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(strings.Fields(out)).To(Equal([]string{"1", "1", "1"}))
+			}, 3*time.Minute, 5*time.Second).Should(Succeed())
+
+			By("creating the workflow definition in the second namespace")
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(secondRuntimeWorkflowYAML)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func() {
+				cmd := exec.Command("kubectl", "delete", "logicflowdefinition", "e2e-dataindex-integration-wf-b",
+					"-n", secondRuntimeNamespace, "--ignore-not-found")
+				_, _ = utils.Run(cmd)
+			})
+
+			By("waiting for the workflow to be registered in the second runtime")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "logicflowruntime", secondRuntimeName,
+					"-n", secondRuntimeNamespace,
+					"-o", `jsonpath={.status.definitions[?(@.name=="dataindex-test-b")].name}`)
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("dataindex-test-b"))
+			}, 2*time.Minute, 5*time.Second).Should(Succeed())
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "exec", "-n", secondRuntimeNamespace,
+					"deployment/"+secondRuntimeName, "--",
+					"sh", "-c", "curl -s http://localhost:8080/q/flow/definitions")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(ContainSubstring("dataindex-test-b"))
+			}, 3*time.Minute, 10*time.Second).Should(Succeed())
+
+			By("executing a workflow in each runtime namespace")
+			execIn := func(runtimeNamespace, runtime, flowName string) {
+				Eventually(func(g Gomega) {
+					execCmd := fmt.Sprintf(`curl -s -X POST -H "Content-Type: application/json" -d '{"name":"test"}' http://localhost:8080/q/flow/exec/%s/%s/1.0.0`,
+						runtimeNamespace, flowName)
+					cmd := exec.Command("kubectl", "exec", "-n", runtimeNamespace,
+						"deployment/"+runtime, "--", "sh", "-c", execCmd)
+					out, err := utils.Run(cmd)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(out).To(ContainSubstring("instanceId"))
+				}, 1*time.Minute, 5*time.Second).Should(Succeed())
+			}
+			execIn(namespace, runtimeName, "dataindex-test")
+			execIn(secondRuntimeNamespace, secondRuntimeName, "dataindex-test-b")
+
+			By("waiting for workflow instances of both namespaces in the same DataIndex")
+			graphqlEndpoint, err := utils.Run(exec.Command("kubectl", "get", "clusterlogicplatform", platformName,
+				"-o", "jsonpath={.status.dataIndex.service.graphqlEndpoint}"))
+			Expect(err).NotTo(HaveOccurred())
+
+			graphqlQuery := `{"query":"{ getWorkflowInstances { id name namespace status } }"}`
+			completed := func(flowName, flowNamespace string) string {
+				return fmt.Sprintf(`"name":\s*"%s",\s*"namespace":\s*"%s",\s*"status":\s*"COMPLETED"`, flowName, flowNamespace)
+			}
+
+			waitForBothNamespaces := func(g Gomega) {
+				graphqlCurl := fmt.Sprintf(
+					`curl -s -X POST -H 'Content-Type: application/json' -d '%s' %s`,
+					graphqlQuery, graphqlEndpoint)
+
+				podName := fmt.Sprintf("curl-multi-ns-%d", time.Now().UnixNano())
+				defer func() {
+					cmd := exec.Command("kubectl", "delete", "pod", podName,
+						"-n", namespace, "--ignore-not-found")
+					_, _ = utils.Run(cmd)
+				}()
+				_, err := utils.RunCurlPod(podName, namespace, graphqlCurl)
+				g.Expect(err).NotTo(HaveOccurred())
+
+				_, err = utils.Run(exec.Command("kubectl", "wait", "--for=jsonpath={.status.phase}=Succeeded",
+					"pod/"+podName, "-n", namespace, "--timeout=30s"))
+				g.Expect(err).NotTo(HaveOccurred())
+
+				graphqlResponse, err := utils.Run(
+					exec.Command("kubectl", "logs", podName, "-n", namespace))
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(graphqlResponse).To(MatchRegexp(completed("dataindex-test", namespace)))
+				g.Expect(graphqlResponse).To(MatchRegexp(completed("dataindex-test-b", secondRuntimeNamespace)))
+			}
+			Eventually(waitForBothNamespaces, 3*time.Minute, 10*time.Second).Should(Succeed())
 		})
 	})
 }
