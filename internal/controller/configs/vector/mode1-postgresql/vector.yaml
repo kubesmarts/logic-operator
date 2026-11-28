@@ -36,9 +36,6 @@ sources:
   kubernetes_logs:
     type: kubernetes_logs
 
-    # Only tail logs from pods managed by the operator.
-    extra_label_selector: "app.kubernetes.io/managed-by=logic-operator"
-    
     # Only tail logs from the workflow namespaces, a comma-separated list
     # (e.g. "team-a,team-b"). Field selectors can't match a set, so we select
     # on the namespace name label (set by Kubernetes >= 1.21).
